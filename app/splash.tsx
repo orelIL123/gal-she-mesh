@@ -30,7 +30,7 @@ export default function SplashScreen() {
         if (user) {
           router.replace('/(tabs)');
         } else {
-          router.replace('/screens/WelcomeAuthScreen');
+          router.replace('/auth-choice');
         }
       });
     }, 1800);

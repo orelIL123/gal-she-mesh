@@ -1,4 +1,4 @@
-import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRef } from "react";
 import { Animated, Dimensions, StyleSheet, TouchableOpacity, View } from "react-native";
@@ -89,10 +89,10 @@ export default function BottomNav({ onOrderPress, onTabPress, activeTab }: {
           </LinearGradient>
         </View>
 
-        {/* Right side - Profile and Team */}
+        {/* Right side - Profile and Settings */}
         <View style={styles.rightSide}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => onTabPress && onTabPress('team')}>
-            <MaterialIcons name="people-outline" size={26} color={activeTab === 'team' ? "#3b82f6" : "#ccc"} />
+          <TouchableOpacity style={styles.iconBtn} onPress={() => onTabPress && onTabPress('settings')}>
+            <Ionicons name="settings" size={26} color={activeTab === 'settings' ? "#3b82f6" : "#ccc"} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={() => onTabPress && onTabPress('profile')}>
             <Ionicons name="person" size={26} color={activeTab === 'profile' ? "#3b82f6" : "#ccc"} />

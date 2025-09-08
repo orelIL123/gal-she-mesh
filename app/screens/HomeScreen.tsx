@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { collection, doc, getDoc, getDocs, getFirestore, query, where } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,6 +29,7 @@ const { height } = Dimensions.get('window');
 
 interface HomeScreenProps {
   onNavigate: (screen: string) => void;
+  isGuestMode?: boolean;
 }
 
 // Simple NeonButton component
@@ -56,8 +58,9 @@ const NeonButton: React.FC<{
   );
 };
 
-function HomeScreen({ onNavigate }: HomeScreenProps) {
+function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
   const { t } = useTranslation();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [sideMenuVisible, setSideMenuVisible] = useState(false);
   const [notificationPanelVisible, setNotificationPanelVisible] = useState(false);
@@ -530,6 +533,26 @@ function HomeScreen({ onNavigate }: HomeScreenProps) {
         contentContainerStyle={styles.scrollContent}
       >
         <View style={styles.contentWrapper}>
+          {/* Guest Mode Banner */}
+          {isGuestMode && (
+            <Animated.View 
+              style={[
+                styles.guestBanner,
+                { 
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }]
+                }
+              ]}
+            >
+              <Text style={styles.guestBannerText}>
+                👀 מצב אורח - צפייה בלבד
+              </Text>
+              <Text style={styles.guestBannerSubtext}>
+                להתחברות מלאה ולקביעת תורים
+              </Text>
+            </Animated.View>
+          )}
+
           {/* Greeting and CTA Section */}
           <Animated.View 
             style={[
@@ -548,7 +571,20 @@ function HomeScreen({ onNavigate }: HomeScreenProps) {
             />
             <NeonButton
               title={t('home.book_appointment')}
-              onPress={() => onNavigate('booking')}
+              onPress={() => {
+                if (isGuestMode) {
+                  Alert.alert(
+                    'התחברות נדרשת',
+                    'חייב להתחבר כדי לקבוע תור. האם תרצה להתחבר עכשיו?',
+                    [
+                      { text: 'ביטול', style: 'cancel' },
+                      { text: 'התחבר', onPress: () => router.push('/auth-choice') }
+                    ]
+                  );
+                } else {
+                  onNavigate('booking');
+                }
+              }}
               variant="primary"
               style={styles.ctaButton}
             />
@@ -564,7 +600,20 @@ function HomeScreen({ onNavigate }: HomeScreenProps) {
             <View style={styles.quickActionsGrid}>
               <TouchableOpacity 
                 style={styles.quickActionCard}
-                onPress={() => onNavigate('booking')}
+                onPress={() => {
+                  if (isGuestMode) {
+                    Alert.alert(
+                      'התחברות נדרשת',
+                      'חייב להתחבר כדי לקבוע תור. האם תרצה להתחבר עכשיו?',
+                      [
+                        { text: 'ביטול', style: 'cancel' },
+                        { text: 'התחבר', onPress: () => router.push('/auth-choice') }
+                      ]
+                    );
+                  } else {
+                    onNavigate('booking');
+                  }
+                }}
               >
                 <Ionicons name="calendar" size={32} color="#007bff" />
                 <Text style={styles.quickActionTitle}>{t('home.book_new')}</Text>
@@ -750,6 +799,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
+  },
+  guestBanner: {
+    backgroundColor: '#fff3cd',
+    borderColor: '#ffeaa7',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  guestBannerText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#856404',
+    marginBottom: 4,
+  },
+  guestBannerSubtext: {
+    fontSize: 14,
+    color: '#856404',
   },
   loadingContainer: {
     flex: 1,

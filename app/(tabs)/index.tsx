@@ -1,12 +1,14 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import HomeScreen from '../screens/HomeScreen';
 
 export default function HomeTab() {
   const router = useRouter();
+  const { guest } = useLocalSearchParams<{ guest?: string }>();
+  const isGuestMode = guest === 'true';
 
   const handleNavigate = (screen: string) => {
-    console.log('Navigating to:', screen);
+    console.log('handleNavigate called with screen:', screen);
     switch (screen) {
       case 'profile':
         router.replace('/profile');
@@ -44,6 +46,10 @@ export default function HomeTab() {
       case 'admin-settings':
         router.replace('/admin-settings');
         break;
+      case 'auth-choice':
+        console.log('Navigating to AuthChoiceScreen');
+        router.push('/auth-choice');
+        break;
       case 'home':
         router.replace('/(tabs)');
         break;
@@ -54,6 +60,6 @@ export default function HomeTab() {
   };
 
   return (
-    <HomeScreen onNavigate={handleNavigate} />
+    <HomeScreen onNavigate={handleNavigate} isGuestMode={isGuestMode} />
   );
 }

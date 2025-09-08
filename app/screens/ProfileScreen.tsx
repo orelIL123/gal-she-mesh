@@ -1,36 +1,27 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { RecaptchaVerifier } from 'firebase/auth';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    Image,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import {
-    Appointment,
-    checkPhoneUserExists,
-    createUserProfileFromAuth,
-    getUserAppointments,
-    getUserProfile,
-    loginUser,
-    loginWithPhoneAndPassword,
-    logoutUser,
-    onAuthStateChange,
-    registerUser,
-    registerUserWithPhone,
-    sendSMSVerification,
-    setPasswordForPhoneUser,
-    updateUserProfile,
-    UserProfile,
-    verifySMSCode
+  Appointment,
+  createUserProfileFromAuth,
+  getUserAppointments,
+  getUserProfile,
+  logoutUser,
+  onAuthStateChange,
+  updateUserProfile,
+  UserProfile
 } from '../../services/firebase';
 import { NeonButton } from '../components/NeonButton';
 import TopNav from '../components/TopNav';
@@ -47,27 +38,17 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showLoginForm, setShowLoginForm] = useState(false);
-  const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [tab, setTab] = useState<'login' | 'register'>('login');
-  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('phone'); // Default to phone
+  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('phone');
   const [step, setStep] = useState<'input' | 'otp'>('input');
-  const [verificationId, setVerificationId] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [confirmationResult, setConfirmationResult] = useState<any>(null);
-  const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
-  
-  // Form states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState('');
-  
-  // New states for improved phone auth
+  const [verificationCode, setVerificationCode] = useState('');
   const [phoneUserExists, setPhoneUserExists] = useState(false);
   const [phoneUserHasPassword, setPhoneUserHasPassword] = useState(false);
-  const [showSetPassword, setShowSetPassword] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (currentUser) => {
@@ -94,208 +75,27 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
     return unsubscribe;
   }, []);
 
-  // Utility: validate phone format (simple, Israeli +972-5X...)
-  const isValidPhone = (phone: string) => /^\+972-5\d{1}-\d{3}-\d{4}$/.test(phone.trim());
-  
-  // Check if phone user exists and has password
   const checkPhoneUser = async (phoneNumber: string) => {
-    if (!isValidPhone(phoneNumber)) {
-      setPhoneUserExists(false);
-      setPhoneUserHasPassword(false);
-      return;
-    }
-    
-    try {
-      const userCheck = await checkPhoneUserExists(phoneNumber);
-      setPhoneUserExists(userCheck.exists);
-      setPhoneUserHasPassword(userCheck.hasPassword);
-    } catch (error) {
-      console.error('Error checking phone user:', error);
-      setPhoneUserExists(false);
-      setPhoneUserHasPassword(false);
-    }
-  };
-
-  const handleSendSMSVerification = async () => {
-    if (!phone.trim()) {
-      Alert.alert('שגיאה', 'נא להזין מספר טלפון');
-      return;
-    }
-    if (!displayName.trim()) {
-      Alert.alert('שגיאה', 'נא להזין שם מלא');
-      return;
-    }
-    if (!isValidPhone(phone)) {
-      Alert.alert('שגיאה', 'נא להזין מספר טלפון בפורמט +972-5X-XXX-XXXX');
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      // For React Native, we need to handle reCAPTCHA differently
-      const confirmationResult = await sendSMSVerification(phone, null as any);
-      setConfirmationResult(confirmationResult);
-      setStep('otp');
-      Alert.alert('הצלחה', 'קוד אימות נשלח לטלפון שלך');
-    } catch (error: any) {
-      console.error('Error sending SMS:', error);
-      Alert.alert('שגיאה', 'לא ניתן לשלוח קוד אימות. ודא שהמספר תקין ונסה שוב.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyCode = async () => {
-    if (!verificationCode.trim()) {
-      Alert.alert('שגיאה', 'נא להזין קוד אימות');
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      if (tab === 'login') {
-        await verifySMSCode(confirmationResult, verificationCode);
-        setStep('input');
-        setVerificationCode('');
-        setPhone('');
-      } else {
-        // Register new user
-        await registerUserWithPhone(phone, displayName, verificationId, verificationCode);
-        setStep('input');
-        setVerificationCode('');
-        setPhone('');
-        setDisplayName('');
-        Alert.alert('הצלחה', 'המשתמש נרשם בהצלחה!');
-      }
-    } catch (error: any) {
-      console.error('Error verifying code:', error);
-      Alert.alert('שגיאה', 'קוד האימות שגוי או פג תוקף');
-    } finally {
-      setLoading(false);
-    }
+    // Simple implementation for now
+    setPhoneUserExists(false);
+    setPhoneUserHasPassword(false);
   };
 
   const handleLogin = async () => {
-    if (authMethod === 'phone') {
-      // Validate phone format first
-      if (!isValidPhone(phone)) {
-        Alert.alert('שגיאה', 'מספר הטלפון אינו תקין');
-        return;
-      }
-
-      // Always check if user exists before login attempt
-      await checkPhoneUser(phone);
-
-      // If user exists and has password, REQUIRE password (no SMS option)
-      if (phoneUserExists && phoneUserHasPassword) {
-        if (!password.trim()) {
-          Alert.alert('שגיאה', 'משתמש רשום - נא להזין סיסמה');
-          return;
-        }
-
-        setLoading(true);
-        try {
-          await loginWithPhoneAndPassword(phone, password);
-          setPhone('');
-          setPassword('');
-        } catch (error: any) {
-          Alert.alert('שגיאה', 'פרטי הכניסה שגויים');
-        } finally {
-          setLoading(false);
-        }
-        return;
-      }
-      
-      // Only use SMS if user doesn't exist or has no password (first time)
-      handleSendSMSVerification();
-      return;
-    }
-    
-    if (!email.trim()) {
-      Alert.alert('שגיאה', 'נא להזין כתובת מייל');
-      return;
-    }
-    if (!password.trim()) {
-      Alert.alert('שגיאה', 'נא להזין סיסמה');
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      await loginUser(email, password);
-      setShowLoginForm(false);
-      setEmail('');
-      setPassword('');
-    } catch (error: any) {
-      let errorMessage = 'פרטי הכניסה שגויים';
-      if (error.code === 'auth/user-not-found') {
-        errorMessage = 'המשתמש לא נמצא במערכת';
-      } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'סיסמה שגויה';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'כתובת המייל לא תקינה';
-      }
-      Alert.alert('שגיאה', errorMessage);
-    } finally {
-      setLoading(false);
-    }
+    // Navigate to new login screen
+    onNavigate('auth-choice');
   };
 
   const handleRegister = async () => {
-    if (!displayName.trim()) {
-      Alert.alert('שגיאה', 'נא להזין שם מלא');
-      return;
-    }
-    
-    if (authMethod === 'phone') {
-      if (!phone.trim()) {
-        Alert.alert('שגיאה', 'נא להזין מספר טלפון');
-        return;
-      }
-      if (!isValidPhone(phone)) {
-        Alert.alert('שגיאה', 'נא להזין מספר טלפון בפורמט +972-5X-XXX-XXXX');
-        return;
-      }
-      handleSendSMSVerification();
-      return;
-    }
-    
-    if (!email.trim()) {
-      Alert.alert('שגיאה', 'נא להזין כתובת מייל');
-      return;
-    }
-    if (!password.trim()) {
-      Alert.alert('שגיאה', 'נא להזין סיסמה');
-      return;
-    }
-    if (password.length < 6) {
-      Alert.alert('שגיאה', 'הסיסמה חייבת להיות באורך של לפחות 6 תווים');
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      await registerUser(email, password, displayName, phone);
-      setShowRegisterForm(false);
-      setEmail('');
-      setPassword('');
-      setDisplayName('');
-      setPhone('');
-      Alert.alert('הצלחה', 'המשתמש נרשם בהצלחה!');
-    } catch (error: any) {
-      let errorMessage = 'לא ניתן ליצור חשבון';
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'כתובת המייל כבר רשומה במערכת';
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'הסיסמה חלשה מדי';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'כתובת המייל לא תקינה';
-      }
-      Alert.alert('שגיאה', errorMessage);
-    } finally {
-      setLoading(false);
-    }
+    // Navigate to new register screen
+    onNavigate('auth-choice');
   };
+
+  const handleVerifyCode = async () => {
+    // Navigate to new auth screen
+    onNavigate('auth-choice');
+  };
+
 
   const handleLogout = async () => {
     try {

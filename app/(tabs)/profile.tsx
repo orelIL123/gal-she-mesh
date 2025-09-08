@@ -1,9 +1,10 @@
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import ProfileScreen from '../screens/ProfileScreen';
-import { useRouter } from 'expo-router';
 
 export default function ProfileTab() {
   const router = useRouter();
+  const { mode } = useLocalSearchParams<{ mode?: string }>();
 
   const handleNavigate = (screen: string) => {
     switch (screen) {
@@ -36,6 +37,7 @@ export default function ProfileTab() {
     <ProfileScreen 
       onNavigate={handleNavigate} 
       onBack={handleBack}
+      initialMode={mode}
     />
   );
 } 

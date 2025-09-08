@@ -1,7 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { getCurrentUser, getUserProfile } from '../../services/firebase';
-import AdminGalleryScreen from '../screens/AdminGalleryScreen';
 import ShopScreen from './explore-client';
 
 export default function ExploreTab() {
@@ -35,8 +34,7 @@ export default function ExploreTab() {
     router.replace('/(tabs)');
   };
 
-  if (isAdmin) {
-    return <AdminGalleryScreen initialTab="shop" />;
-  }
-  return <ShopScreen onNavigate={handleNavigate} onBack={handleBack} />;
+  // Both admin and clients can view the shop
+  // Admin gets additional features for shop management via AdminGalleryScreen
+  return <ShopScreen onNavigate={handleNavigate} onBack={handleBack} isAdmin={isAdmin} />;
 }

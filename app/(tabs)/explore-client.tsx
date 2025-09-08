@@ -1,4 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -10,10 +12,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { getActiveShopItems, ShopItem } from '../../services/firebase';
+import { addShopItem, deleteShopItem, getAllStorageImages, getActiveShopItems, ShopItem, updateShopItem, uploadImageToStorage } from '../../services/firebase';
 import TopNav from '../components/TopNav';
 
 const { width, height } = Dimensions.get('window');
@@ -21,14 +24,28 @@ const { width, height } = Dimensions.get('window');
 interface ShopScreenProps {
   onNavigate?: (screen: string) => void;
   onBack?: () => void;
+  isAdmin?: boolean;
 }
 
-const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack }) => {
+const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack, isAdmin = false }) => {
+  const router = useRouter();
   const [shopItems, setShopItems] = useState<ShopItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<ShopItem | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  
+  // Admin add/edit product states
+  const [addProductModal, setAddProductModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<ShopItem | null>(null);
+  const [productForm, setProductForm] = useState({
+    name: '',
+    description: '',
+    price: '',
+    category: '',
+    imageUrl: '',
+    stock: ''
+  });
 
   useEffect(() => {
     loadShopItems();
@@ -81,6 +98,177 @@ const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack }) => {
     closeModal();
   };
 
+  // Admin functions
+  const pickImageFromDevice = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('שגיאה', 'נדרשת הרשאה לגישה לגלריה');
+        return null;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        return result.assets[0].uri;
+      }
+    } catch (error) {
+      Alert.alert('שגיאה', 'שגיאה בבחירת התמונה');
+    }
+    return null;
+  };
+
+  const uploadProductImage = async () => {
+    try {
+      const imageUri = await pickImageFromDevice();
+      if (!imageUri) return;
+
+      const fileName = `product_${Date.now()}.jpg`;
+      const downloadURL = await uploadImageToStorage(imageUri, 'shop', fileName);
+      setProductForm(prev => ({ ...prev, imageUrl: downloadURL }));
+      Alert.alert('הצלחה', 'התמונה הועלתה בהצלחה');
+    } catch (error) {
+      Alert.alert('שגיאה', 'שגיאה בהעלאת התמונה');
+    }
+  };
+
+  const addNewProduct = async () => {
+    if (!productForm.name.trim() || !productForm.price.trim() || !productForm.imageUrl) {
+      Alert.alert('שגיאה', 'נא למלא לפחות שם, מחיר ותמונה');
+      return;
+    }
+
+    try {
+      if (editingProduct) {
+        // Update existing product
+        await updateShopItem(editingProduct.id, {
+          name: productForm.name.trim(),
+          description: productForm.description.trim(),
+          price: Number(productForm.price),
+          category: productForm.category.trim() || 'כללי',
+          imageUrl: productForm.imageUrl,
+          stock: productForm.stock ? Number(productForm.stock) : undefined,
+          isActive: true
+        });
+        Alert.alert('הצלחה', 'המוצר עודכן בהצלחה');
+      } else {
+        // Add new product
+        await addShopItem({
+          name: productForm.name.trim(),
+          description: productForm.description.trim(),
+          price: Number(productForm.price),
+          category: productForm.category.trim() || 'כללי',
+          imageUrl: productForm.imageUrl,
+          stock: productForm.stock ? Number(productForm.stock) : undefined,
+          isActive: true
+        });
+        Alert.alert('הצלחה', 'המוצר נוסף בהצלחה');
+      }
+
+      // Reset form
+      setProductForm({
+        name: '',
+        description: '',
+        price: '',
+        category: '',
+        imageUrl: '',
+        stock: ''
+      });
+      
+      setEditingProduct(null);
+      setAddProductModal(false);
+      loadShopItems(); // Refresh items list
+    } catch (error) {
+      Alert.alert('שגיאה', editingProduct ? 'שגיאה בעדכון המוצר' : 'שגיאה בהוספת המוצר');
+    }
+  };
+
+  const editProduct = (product: ShopItem) => {
+    setEditingProduct(product);
+    setProductForm({
+      name: product.name,
+      description: product.description || '',
+      price: product.price.toString(),
+      category: product.category || '',
+      imageUrl: product.imageUrl,
+      stock: product.stock?.toString() || ''
+    });
+    setAddProductModal(true);
+  };
+
+  const deleteProduct = async (productId: string) => {
+    Alert.alert(
+      'מחיקת מוצר',
+      'האם אתה בטוח שברצונך למחוק מוצר זה?',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'מחק',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteShopItem(productId);
+              loadShopItems(); // Refresh items list
+              Alert.alert('הצלחה', 'המוצר נמחק בהצלחה');
+            } catch (error) {
+              Alert.alert('שגיאה', 'שגיאה במחיקת המוצר');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const importFromStorage = async () => {
+    try {
+      setLoading(true);
+      Alert.alert('מייבא מוצרים', 'טוען תמונות מ-Firebase Storage...');
+      
+      const storageImages = await getAllStorageImages();
+      const shopImages = storageImages.shop || [];
+      
+      if (shopImages.length === 0) {
+        Alert.alert('אין תמונות', 'לא נמצאו תמונות בתיקיית shop ב-Storage');
+        return;
+      }
+
+      let importedCount = 0;
+      for (let i = 0; i < shopImages.length; i++) {
+        const imageUrl = shopImages[i];
+        
+        // בדוק אם המוצר כבר קיים (לפי URL של התמונה)
+        const existingItems = await getActiveShopItems();
+        const alreadyExists = existingItems.some(item => item.imageUrl === imageUrl);
+        
+        if (!alreadyExists) {
+          await addShopItem({
+            name: `מוצר מ-Storage ${i + 1}`,
+            description: 'מוצר איכותי למספרה שהועלה מ-Storage',
+            price: 50 + (i * 10),
+            category: 'מוצרי טיפוח',
+            imageUrl: imageUrl,
+            stock: 10,
+            isActive: true
+          });
+          importedCount++;
+        }
+      }
+      
+      loadShopItems(); // Refresh items list
+      Alert.alert('הושלם!', `יובאו ${importedCount} מוצרים חדשים מ-Storage`);
+    } catch (error) {
+      console.error('Error importing from storage:', error);
+      Alert.alert('שגיאה', 'שגיאה בייבוא מוצרים מ-Storage');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <TopNav 
@@ -97,7 +285,41 @@ const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack }) => {
         })}
       />
       
-      <View style={styles.content}>
+      {/* Admin Controls */}
+      {isAdmin && (
+        <View style={styles.adminControls}>
+          <View style={styles.adminButtonsRow}>
+            <TouchableOpacity 
+              style={[styles.addProductButton, { flex: 1, marginRight: 8 }]}
+              onPress={() => {
+                setEditingProduct(null);
+                setProductForm({
+                  name: '',
+                  description: '',
+                  price: '',
+                  category: '',
+                  imageUrl: '',
+                  stock: ''
+                });
+                setAddProductModal(true);
+              }}
+            >
+              <Ionicons name="add" size={24} color="#fff" />
+              <Text style={[styles.adminButtonText, { marginLeft: 8 }]}>הוסף מוצר</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.importButton, { flex: 1, marginLeft: 8 }]}
+              onPress={importFromStorage}
+            >
+              <Ionicons name="cloud-download" size={20} color="#fff" />
+              <Text style={[styles.adminButtonText, { marginLeft: 8 }]}>ייבא מ-Storage</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      
+      <View style={[styles.content, isAdmin && { paddingTop: 170 }]}>
         {/* Categories */}
         <ScrollView 
           horizontal 
@@ -137,21 +359,47 @@ const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack }) => {
             ) : (
               <View style={styles.itemsGrid}>
                 {getFilteredItems().map((item) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={styles.itemCard}
-                    onPress={() => openItemModal(item)}
-                  >
-                    <Image source={{ uri: item.imageUrl }} style={styles.itemImage} />
-                    <View style={styles.itemInfo}>
-                      <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                      <Text style={styles.itemCategory}>{item.category}</Text>
-                      <Text style={styles.itemPrice}>{item.price} ₪</Text>
-                      {item.stock && item.stock <= 5 && (
-                        <Text style={styles.lowStockText}>נותרו {item.stock} יחידות</Text>
-                      )}
-                    </View>
-                  </TouchableOpacity>
+                  <View key={item.id} style={styles.itemCard}>
+                    <TouchableOpacity
+                      style={styles.itemCardContent}
+                      onPress={() => openItemModal(item)}
+                    >
+                      <Image source={{ uri: item.imageUrl }} style={styles.itemImage} />
+                      <View style={styles.itemInfo}>
+                        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={styles.itemCategory}>{item.category}</Text>
+                        <Text style={styles.itemPrice}>{item.price} ₪</Text>
+                        {item.stock && item.stock <= 5 && (
+                          <Text style={styles.lowStockText}>נותרו {item.stock} יחידות</Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                    
+                    {/* Admin buttons */}
+                    {isAdmin && (
+                      <View style={styles.adminProductButtons}>
+                        <TouchableOpacity
+                          style={styles.editProductButton}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            editProduct(item);
+                          }}
+                        >
+                          <Ionicons name="create-outline" size={18} color="#fff" />
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          style={styles.deleteProductButton}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            deleteProduct(item.id);
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={18} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
                 ))}
               </View>
             )}
@@ -205,11 +453,141 @@ const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack }) => {
                     onPress={handleOrderItem}
                   >
                     <Ionicons name="logo-whatsapp" size={20} color="#fff" />
-                    <Text style={styles.orderButtonText}>הזמן עכשיו</Text>
+                    <Text style={[styles.orderButtonText, { marginLeft: 8 }]}>הזמן עכשיו</Text>
                   </TouchableOpacity>
                 </View>
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add Product Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={addProductModal}
+        onRequestClose={() => setAddProductModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {editingProduct ? 'עריכת מוצר' : 'הוספת מוצר חדש'}
+              </Text>
+              <TouchableOpacity onPress={() => {
+                setAddProductModal(false);
+                setEditingProduct(null);
+                setProductForm({
+                  name: '',
+                  description: '',
+                  price: '',
+                  category: '',
+                  imageUrl: '',
+                  stock: ''
+                });
+              }}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>שם המוצר *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={productForm.name}
+                  onChangeText={(text) => setProductForm(prev => ({ ...prev, name: text }))}
+                  placeholder="שם המוצר"
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>תיאור</Text>
+                <TextInput
+                  style={[styles.textInput, { height: 80 }]}
+                  value={productForm.description}
+                  onChangeText={(text) => setProductForm(prev => ({ ...prev, description: text }))}
+                  placeholder="תיאור המוצר"
+                  multiline
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>קטגוריה</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={productForm.category}
+                  onChangeText={(text) => setProductForm(prev => ({ ...prev, category: text }))}
+                  placeholder="קטגוריה (למשל: שמפו, מוצרי טיפוח)"
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>מחיר *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={productForm.price}
+                  onChangeText={(text) => setProductForm(prev => ({ ...prev, price: text }))}
+                  placeholder="מחיר בשקלים"
+                  keyboardType="numeric"
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>מלאי (אופציונלי)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={productForm.stock}
+                  onChangeText={(text) => setProductForm(prev => ({ ...prev, stock: text }))}
+                  placeholder="כמות במלאי"
+                  keyboardType="numeric"
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>תמונה *</Text>
+                <TouchableOpacity
+                  style={styles.uploadButton}
+                  onPress={uploadProductImage}
+                >
+                  <Ionicons name="camera" size={20} color="#007bff" />
+                  <Text style={[styles.uploadButtonText, { color: '#007bff', marginLeft: 8 }]}>
+                    {productForm.imageUrl ? 'החלף תמונה' : 'העלה תמונה'}
+                  </Text>
+                </TouchableOpacity>
+
+                {productForm.imageUrl && (
+                  <Image 
+                    source={{ uri: productForm.imageUrl }} 
+                    style={styles.previewImage}
+                  />
+                )}
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.cancelButton]}
+                onPress={() => setAddProductModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>ביטול</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.actionButton, styles.saveButton]}
+                onPress={addNewProduct}
+              >
+                <Text style={styles.saveButtonText}>
+                  {editingProduct ? 'עדכן מוצר' : 'הוסף מוצר'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -225,6 +603,59 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingTop: 100,
+  },
+  adminControls: {
+    position: 'absolute',
+    top: 100,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    zIndex: 1,
+  },
+  adminButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dc3545',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    flex: 1,
+    marginLeft: 4,
+  },
+  adminButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  adminButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  addProductButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#28a745',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    flex: 1,
+    marginRight: 4,
+  },
+  importButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#17a2b8',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 4,
   },
   categoriesContainer: {
     paddingHorizontal: 16,
@@ -292,6 +723,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  itemCardContent: {
+    flex: 1,
   },
   itemImage: {
     width: '100%',
@@ -412,12 +848,99 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 14,
     borderRadius: 8,
-    gap: 8,
   },
   orderButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+    textAlign: 'right',
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: '#fff',
+    textAlign: 'right',
+  },
+  uploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#007bff',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  uploadButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  previewImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+    alignSelf: 'center',
+    marginTop: 8,
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    marginRight: 8,
+  },
+  saveButton: {
+    backgroundColor: '#007bff',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  adminProductButtons: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'column',
+  },
+  editProductButton: {
+    backgroundColor: 'rgba(255, 193, 7, 0.9)',
+    borderRadius: 16,
+    padding: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteProductButton: {
+    backgroundColor: 'rgba(220, 53, 69, 0.9)',
+    borderRadius: 16,
+    padding: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
   },
 });
 
