@@ -1017,15 +1017,17 @@ export const cancelAppointment = async (appointmentId: string) => {
       cancelledAt: Timestamp.now()
     });
     
-    // Send notification to admins about cancellation
+    // Send notification to admin about cancellation
     try {
-      await sendNotificationToAdmins(
+      console.log('🔔 Sending cancellation notification to admin...');
+      await sendNotificationToAdmin(
         'תור בוטל 🚫',
         `לקוח ביטל תור לתאריך ${appointmentData.date.toDate().toLocaleDateString('he-IL')}`,
         { appointmentId: appointmentId }
       );
+      console.log('✅ Cancellation notification sent successfully');
     } catch (notificationError) {
-      console.log('Failed to send cancellation notification to admins:', notificationError);
+      console.log('❌ Failed to send cancellation notification to admin:', notificationError);
     }
     
     console.log('Appointment cancelled successfully');
@@ -2580,8 +2582,11 @@ export const sendRemindersToAllUsers = async () => {
 // Send notification to admin about new appointment
 export const sendNotificationToAdmin = async (title: string, body: string, data?: any) => {
   try {
+    console.log(`🔔 sendNotificationToAdmin called with title: "${title}"`);
     const users = await getAllUsers();
+    console.log(`👥 Total users found: ${users.length}`);
     const adminUsers = users.filter(user => user.isAdmin && user.pushToken);
+    console.log(`👨‍💼 Admin users with push tokens: ${adminUsers.length}`);
     
     console.log(`📱 Sending notification to ${adminUsers.length} admin users`);
     
