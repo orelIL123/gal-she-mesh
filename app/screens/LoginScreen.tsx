@@ -262,8 +262,8 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   logo: {
-    width: screenWidth * 0.25,
-    height: screenWidth * 0.25,
+    width: screenWidth * 0.18,
+    height: screenWidth * 0.18,
   },
   title: {
     fontSize: 24,

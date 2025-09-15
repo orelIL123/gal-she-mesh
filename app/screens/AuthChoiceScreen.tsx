@@ -45,7 +45,7 @@ export default function AuthChoiceScreen() {
           <Image
             source={require('../../assets/images/icon.png')}
             style={styles.logo}
-            resizeMode="contain"
+            resizeMode="cover"
           />
           <Text style={styles.appName}>רון תורגמן</Text>
           <Text style={styles.tagline}>המספרה המקצועית שלך</Text>
@@ -172,10 +172,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logo: {
-    width: screenWidth * 0.3,
-    height: screenWidth * 0.3,
+    width: screenWidth * 0.22,
+    height: screenWidth * 0.22,
     marginBottom: 24,
-    borderRadius: (screenWidth * 0.3) / 2,
+    borderRadius: (screenWidth * 0.22) / 2,
+    overflow: 'hidden',
   },
   appName: {
     fontSize: 32,

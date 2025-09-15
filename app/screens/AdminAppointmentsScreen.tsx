@@ -44,6 +44,7 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
   const [modalVisible, setModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed'>('all');
+  const [selectedDayFilter, setSelectedDayFilter] = useState<string | null>(null); // null = all days, date string = specific date
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
 
   // Add appointment form state
@@ -299,6 +300,12 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
       if (filter === 'all') return true;
       return apt.status === filter;
     })
+    .filter(apt => {
+      // Filter by selected specific date if any
+      if (selectedDayFilter === null) return true;
+      const aptDate = apt.date.toMillis ? new Date(apt.date.toMillis()) : new Date(apt.date);
+      return aptDate.toDateString() === selectedDayFilter;
+    })
     .sort((a, b) => {
       // Sort by date - nearest first
       const aTime = a.date.toMillis ? a.date.toMillis() : new Date(a.date).getTime();
@@ -332,6 +339,34 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
     { key: 'completed', label: 'הושלם', count: appointments.filter(a => a.status === 'completed').length },
   ];
 
+  // Generate week days starting from today
+  const getWeekDays = () => {
+    const today = new Date();
+    const days = [];
+    
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      days.push({
+        date,
+        dateString: date.toDateString(),
+        isToday: i === 0,
+        label: date.toLocaleDateString('he-IL', { 
+          weekday: 'short',
+          day: 'numeric'
+        }) + (i === 0 ? ' (היום)' : ''),
+        count: appointments.filter(apt => {
+          const aptDate = apt.date.toMillis ? new Date(apt.date.toMillis()) : new Date(apt.date);
+          return aptDate.toDateString() === date.toDateString();
+        }).length
+      });
+    }
+    
+    return days;
+  };
+
+  const weekDays = getWeekDays();
+
   return (
     <SafeAreaView style={styles.container}>
       <TopNav 
@@ -343,6 +378,62 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
       />
       
       <View style={styles.content}>
+        {/* Week Days View */}
+        <View style={styles.weekContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <TouchableOpacity
+              style={[
+                styles.weekDayButton,
+                selectedDayFilter === null && styles.activeWeekDayButton
+              ]}
+              onPress={() => setSelectedDayFilter(null)}
+            >
+              <Text style={[
+                styles.weekDayText,
+                selectedDayFilter === null && styles.activeWeekDayText
+              ]}>
+                כל השבוע
+              </Text>
+              <Text style={[
+                styles.weekDayCount,
+                selectedDayFilter === null && styles.activeWeekDayCount
+              ]}>
+                {appointments.length}
+              </Text>
+            </TouchableOpacity>
+            
+            {weekDays.map((day) => (
+              <TouchableOpacity
+                key={day.dateString}
+                style={[
+                  styles.weekDayButton,
+                  selectedDayFilter === day.dateString && styles.activeWeekDayButton,
+                  // Only show today styling when that specific day is selected
+                  day.isToday && selectedDayFilter === day.dateString && styles.todayButton
+                ]}
+                onPress={() => setSelectedDayFilter(day.dateString)}
+              >
+                <Text style={[
+                  styles.weekDayText,
+                  selectedDayFilter === day.dateString && styles.activeWeekDayText,
+                  // Only show today text styling when that specific day is selected
+                  day.isToday && selectedDayFilter === day.dateString && styles.todayText
+                ]}>
+                  {day.label}
+                </Text>
+                <Text style={[
+                  styles.weekDayCount,
+                  selectedDayFilter === day.dateString && styles.activeWeekDayCount,
+                  // Only show today count styling when that specific day is selected
+                  day.isToday && selectedDayFilter === day.dateString && styles.todayCount
+                ]}>
+                  {day.count}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
         {/* Filter Buttons */}
         <View style={styles.filterContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -811,7 +902,52 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingTop: 100,
+    paddingTop: 40,
+  },
+  weekContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  weekDayButton: {
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginRight: 8,
+    borderRadius: 12,
+    backgroundColor: '#f8f9fa',
+    minWidth: 70,
+  },
+  activeWeekDayButton: {
+    backgroundColor: '#007bff',
+  },
+  todayButton: {
+    backgroundColor: '#28a745',
+  },
+  weekDayText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 2,
+  },
+  activeWeekDayText: {
+    color: '#fff',
+  },
+  todayText: {
+    color: '#fff',
+  },
+  weekDayCount: {
+    fontSize: 12,
+    color: '#999',
+    fontWeight: '500',
+  },
+  activeWeekDayCount: {
+    color: '#fff',
+  },
+  todayCount: {
+    color: '#fff',
   },
   filterContainer: {
     paddingHorizontal: 16,
