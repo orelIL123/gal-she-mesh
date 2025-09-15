@@ -1,16 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  Switch,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import React, { useEffect, useState } from 'react';
+import {
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import {
+    clearAllUserNotifications,
+    createTestNotification,
+    getCurrentUser,
+    getUserNotifications,
+    markNotificationAsRead
+} from '../../services/firebase';
 import TopNav from '../components/TopNav';
 
 interface NotificationsScreenProps {
@@ -31,46 +38,37 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigate, o
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appointmentNotifications, setAppointmentNotifications] = useState(true);
   const [generalNotifications, setGeneralNotifications] = useState(true);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Mock notifications - in real app this would come from Firebase
-    const mockNotifications: Notification[] = [
-      {
-        id: '1',
-        type: 'reminder',
-        title: 'תזכורת לתור',
-        message: 'התור שלך מתחיל בעוד 10 דקות',
-        time: '10:50',
-        isRead: false,
-      },
-      {
-        id: '2',
-        type: 'appointment',
-        title: 'אישור תור',
-        message: 'התור שלך למחר בשעה 14:00 אושר',
-        time: 'אתמול',
-        isRead: false,
-      },
-      {
-        id: '3',
-        type: 'general',
-        title: 'הודעה מהספר',
-        message: 'זמנים מיוחדים לחגים - אנא בדקו שעות פתיחה',
-        time: '2 ימים',
-        isRead: true,
-      },
-      {
-        id: '4',
-        type: 'appointment',
-        title: 'תזכורת לתור מחר',
-        message: 'יש לך תור מחר בשעה 14:00 עם יוסי',
-        time: 'אתמול',
-        isRead: true,
-      },
-    ];
-    
-    setNotifications(mockNotifications);
+    loadNotifications();
   }, []);
+
+  const loadNotifications = async () => {
+    try {
+      setLoading(true);
+      const user = getCurrentUser();
+      if (user) {
+        const userNotifications = await getUserNotifications(user.uid);
+        setNotifications(userNotifications);
+        
+        // If no notifications, create some test ones
+        if (userNotifications.length === 0) {
+          await createTestNotification(user.uid, 'general', 'ברוכים הבאים! 🎉', 'תודה שהצטרפתם לאפליקציה של רון תורגמן');
+          await createTestNotification(user.uid, 'appointment', 'תזכורת לתור', 'התור שלך מתחיל בעוד 10 דקות');
+          await createTestNotification(user.uid, 'general', 'הודעה מהספר', 'זמנים מיוחדים לחגים - אנא בדקו שעות פתיחה');
+          
+          // Reload notifications
+          const updatedNotifications = await getUserNotifications(user.uid);
+          setNotifications(updatedNotifications);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -98,12 +96,17 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigate, o
     }
   };
 
-  const markAsRead = (id: string) => {
-    setNotifications(prev => 
-      prev.map(notif => 
-        notif.id === id ? { ...notif, isRead: true } : notif
-      )
-    );
+  const markAsRead = async (id: string) => {
+    try {
+      await markNotificationAsRead(id);
+      setNotifications(prev => 
+        prev.map(notif => 
+          notif.id === id ? { ...notif, isRead: true } : notif
+        )
+      );
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
   };
 
   const clearAllNotifications = () => {
@@ -115,7 +118,18 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigate, o
         { 
           text: 'מחק הכל', 
           style: 'destructive',
-          onPress: () => setNotifications([])
+          onPress: async () => {
+            try {
+              const user = getCurrentUser();
+              if (user) {
+                await clearAllUserNotifications(user.uid);
+                setNotifications([]);
+              }
+            } catch (error) {
+              console.error('Error clearing notifications:', error);
+              Alert.alert('שגיאה', 'לא ניתן למחוק את ההודעות');
+            }
+          }
         }
       ]
     );
@@ -183,7 +197,12 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigate, o
           </View>
 
           {/* Notifications List */}
-          {notifications.length === 0 ? (
+          {loading ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="hourglass" size={64} color="#ccc" />
+              <Text style={styles.emptyStateText}>טוען הודעות...</Text>
+            </View>
+          ) : notifications.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="notifications-off" size={64} color="#ccc" />
               <Text style={styles.emptyStateText}>אין הודעות חדשות</Text>

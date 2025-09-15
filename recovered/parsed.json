@@ -1,0 +1,22 @@
+[
+  {
+    "id": "97bf7bf2-6bc2-4e62-b1cd-574c5a743e34",
+    "group": "bf3e22db-d677-455e-89eb-ec0e5acf84ae",
+    "platform": "ios",
+    "createdAt": "2025-09-07T19:36:34.381Z",
+    "branch": "master",
+    "runtimeVersion": "1.1.4",
+    "sourceMapUrl": null,
+    "assets": []
+  },
+  {
+    "id": "7c67d796-4b68-4858-ad7e-f0720ac3fa4b",
+    "group": "bf3e22db-d677-455e-89eb-ec0e5acf84ae",
+    "platform": "android",
+    "createdAt": "2025-09-07T19:36:34.381Z",
+    "branch": "master",
+    "runtimeVersion": "1.1.4",
+    "sourceMapUrl": null,
+    "assets": []
+  }
+]

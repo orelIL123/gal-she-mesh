@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const { width } = Dimensions.get('window');
+const {} = Dimensions.get('window');
 
 interface NotificationPanelProps {
   visible: boolean;

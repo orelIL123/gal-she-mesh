@@ -1,0 +1,33 @@
+{
+  "home": {
+    "title": "Welcome",
+    "subtitle": "The best barbershop in town",
+    "about": "About Us",
+    "gallery": "Gallery",
+    "bookNow": "Book Now",
+    "ourTeam": "Our Team"
+  },
+  "booking": {
+    "title": "Book Appointment",
+    "selectDate": "Select Date",
+    "selectTime": "Select Time",
+    "selectTreatment": "Select Treatment",
+    "selectBarber": "Select Barber",
+    "confirm": "Confirm Appointment"
+  },
+  "profile": {
+    "title": "Profile",
+    "name": "Name",
+    "phone": "Phone",
+    "email": "Email",
+    "logout": "Logout"
+  },
+  "team": {
+    "title": "Our Team",
+    "subtitle": "Meet our professional team"
+  },
+  "explore": {
+    "title": "Gallery",
+    "subtitle": "Photos from our work"
+  }
+}

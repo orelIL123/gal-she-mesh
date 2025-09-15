@@ -42,7 +42,7 @@ ron turgeman שומר לעצמו את הזכות לעדכן את תנאי השי
 10. יצירת קשר
 לשאלות או פניות:
 ✉️ orel895@gmail.com
-📞 052-398-5505`;
+📞 054-228-0222`;
 
 const TermsModal: React.FC<TermsModalProps> = ({ visible, onClose }) => (
   <Modal visible={visible} animationType="slide" transparent>

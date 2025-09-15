@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     Alert,
     Linking,
@@ -11,10 +12,9 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { useTranslation } from 'react-i18next';
-import { changeLanguage } from '../i18n';
 import TermsModal from '../components/TermsModal';
 import TopNav from '../components/TopNav';
+import { changeLanguage } from '../i18n';
 
 interface SettingsScreenProps {
   onNavigate: (screen: string) => void;
@@ -74,11 +74,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, onBack }) =
   };
 
   const handleTermsOfService = () => {
-    Alert.alert(
-      'תנאי שימוש',
-      'שימוש באפליקציה כפוף לתנאי השימוש שלנו. אנא קרא את התנאים לפני השימוש.',
-      [{ text: 'הבנתי', style: 'default' }]
-    );
+    setShowTerms(true);
   };
 
   const handleSupport = () => {
@@ -94,7 +90,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, onBack }) =
         onBellPress={() => {}} 
         onMenuPress={() => {}}
         showBackButton={true}
-        onBackPress={() => onNavigate('home')}
+        onBackPress={onBack || (() => onNavigate('home'))}
       />
       
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>

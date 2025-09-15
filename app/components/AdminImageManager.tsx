@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -47,9 +47,9 @@ const AdminImageManager: React.FC<AdminImageManagerProps> = ({ onClose }) => {
 
   useEffect(() => {
     loadImages();
-  }, []);
+  }, [loadImages]);
 
-  const loadImages = async () => {
+  const loadImages = useCallback(async () => {
     try {
       const appImages = await getAppImages();
       setImages(appImages);
@@ -59,7 +59,7 @@ const AdminImageManager: React.FC<AdminImageManagerProps> = ({ onClose }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [t]);
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({

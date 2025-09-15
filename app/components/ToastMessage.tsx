@@ -1,13 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import {
   Animated,
   Dimensions,
   StyleSheet,
   Text,
-  View,
 } from 'react-native';
 
-const { width } = Dimensions.get('window');
+const {} = Dimensions.get('window');
 
 interface ToastMessageProps {
   message: string;
@@ -50,9 +49,9 @@ const ToastMessage: React.FC<ToastMessageProps> = ({
 
       return () => clearTimeout(timer);
     }
-  }, [visible]);
+  }, [visible, duration, hideToast, opacityAnim, slideAnim]);
 
-  const hideToast = () => {
+  const hideToast = useCallback(() => {
     Animated.parallel([
       Animated.timing(slideAnim, {
         toValue: 100,
@@ -67,7 +66,7 @@ const ToastMessage: React.FC<ToastMessageProps> = ({
     ]).start(() => {
       onHide?.();
     });
-  };
+  }, [onHide, opacityAnim, slideAnim]);
 
   if (!visible) return null;
 

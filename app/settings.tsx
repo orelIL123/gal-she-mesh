@@ -1,6 +1,6 @@
+import { useRouter } from 'expo-router';
 import React from 'react';
 import SettingsScreen from './screens/SettingsScreen';
-import { useRouter } from 'expo-router';
 
 export default function SettingsTab() {
   const router = useRouter();
@@ -9,7 +9,7 @@ export default function SettingsTab() {
     console.log('Settings navigating to:', screen);
     switch (screen) {
       case 'home':
-        router.replace('/');
+        router.replace('/(tabs)');
         break;
       case 'profile':
         router.replace('/profile');
@@ -24,12 +24,12 @@ export default function SettingsTab() {
         router.replace('/admin-home');
         break;
       default:
-        router.replace('/');
+        router.replace('/(tabs)');
     }
   };
 
   const handleBack = () => {
-    router.replace('/');
+    router.replace('/(tabs)');
   };
 
   return (

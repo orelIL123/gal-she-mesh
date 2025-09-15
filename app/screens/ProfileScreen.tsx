@@ -24,6 +24,7 @@ import {
   UserProfile
 } from '../../services/firebase';
 import { NeonButton } from '../components/NeonButton';
+import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
 
 const { width, height } = Dimensions.get('window');
@@ -47,8 +48,19 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
+  const [verificationId, setVerificationId] = useState('');
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
   const [phoneUserExists, setPhoneUserExists] = useState(false);
   const [phoneUserHasPassword, setPhoneUserHasPassword] = useState(false);
+  const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ visible: true, message, type });
+  };
+
+  const hideToast = () => {
+    setToast({ ...toast, visible: false });
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (currentUser) => {
@@ -76,14 +88,50 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
   }, []);
 
   const checkPhoneUser = async (phoneNumber: string) => {
-    // Simple implementation for now
-    setPhoneUserExists(false);
-    setPhoneUserHasPassword(false);
+    try {
+      // Import the function from firebase service
+      const { checkPhoneUserExists } = await import('../../services/firebase');
+      const result = await checkPhoneUserExists(phoneNumber);
+      setPhoneUserExists(result.exists);
+      setPhoneUserHasPassword(result.hasPassword);
+    } catch (error) {
+      console.error('Error checking phone user:', error);
+      setPhoneUserExists(false);
+      setPhoneUserHasPassword(false);
+    }
   };
 
   const handleLogin = async () => {
-    // Navigate to new login screen
-    onNavigate('auth-choice');
+    if (authMethod === 'phone') {
+      if (phoneUserExists && phoneUserHasPassword) {
+        // User exists with password - use phone+password login
+        try {
+          const { loginWithPhoneAndPassword } = await import('../../services/firebase');
+          await loginWithPhoneAndPassword(phone, password);
+          showToast('התחברת בהצלחה!', 'success');
+          // The auth state change will handle navigation
+        } catch (error) {
+          console.error('Phone login error:', error);
+          showToast('פרטי הכניסה שגויים', 'error');
+        }
+      } else {
+        // New user or no password - send SMS verification
+        try {
+          const { sendSMSVerification } = await import('../../services/firebase');
+          const result = await sendSMSVerification(phone);
+          setConfirmationResult(result);
+          setVerificationId(result.verificationId);
+          setStep('otp');
+          showToast('קוד אימות נשלח לטלפון', 'success');
+        } catch (error) {
+          console.error('SMS verification error:', error);
+          showToast('שגיאה בשליחת קוד אימות', 'error');
+        }
+      }
+    } else {
+      // Email login - navigate to dedicated login screen
+      onNavigate('auth-choice');
+    }
   };
 
   const handleRegister = async () => {
@@ -92,8 +140,15 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
   };
 
   const handleVerifyCode = async () => {
-    // Navigate to new auth screen
-    onNavigate('auth-choice');
+    try {
+      const { verifySMSCode } = await import('../../services/firebase');
+      await verifySMSCode(verificationId, verificationCode);
+      showToast('קוד האימות נבדק...', 'success');
+      // The auth state change will handle navigation
+    } catch (error) {
+      console.error('Phone verification error:', error);
+      showToast('קוד האימות שגוי', 'error');
+    }
   };
 
 
@@ -293,7 +348,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
                       </>
                     )}
                     <NeonButton 
-                      title={authMethod === 'phone' ? 'שלח קוד אימות' : 'התחברות'} 
+                      title={
+                        authMethod === 'phone' 
+                          ? (phoneUserExists && phoneUserHasPassword ? 'התחבר' : 'שלח קוד אימות')
+                          : 'התחברות'
+                      } 
                       onPress={handleLogin} 
                       disabled={loading} 
                       {...(loading ? { textStyle: { opacity: 0.5 }, children: <ActivityIndicator color="#fff" /> } : {})}
@@ -609,7 +668,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
         {/* Settings Button */}
         <TouchableOpacity 
           style={styles.settingsButton} 
-          onPress={() => onNavigate('settings')}
+          onPress={() => onNavigate('/settings')}
         >
           <Text style={styles.settingsButtonText}>הגדרות</Text>
         </TouchableOpacity>
@@ -619,6 +678,13 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
           <Text style={styles.logoutButtonText}>התנתק</Text>
         </TouchableOpacity>
       </ScrollView>
+      
+      <ToastMessage
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={hideToast}
+      />
     </SafeAreaView>
   );
 };

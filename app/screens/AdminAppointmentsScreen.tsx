@@ -1,34 +1,31 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Timestamp } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  Linking,
-  Modal,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Linking,
+    Modal,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import { 
-  Appointment, 
-  getAllAppointments,
-  getCurrentMonthAppointments,
-  getRecentAppointments, 
-  getBarbers, 
-  updateAppointment, 
-  deleteAppointment,
-  Barber,
-  getAllUsers,
-  getTreatments,
-  createAppointment,
-  UserProfile,
-  Treatment
+import {
+    Appointment,
+    Barber,
+    createAppointment,
+    deleteAppointment,
+    getAllUsers,
+    getBarbers,
+    getCurrentMonthAppointments,
+    getTreatments,
+    Treatment,
+    updateAppointment,
+    UserProfile
 } from '../../services/firebase';
-import { Timestamp } from 'firebase/firestore';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
 
@@ -400,10 +397,13 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
                 <Text style={styles.emptyStateText}>אין תורים למצב זה</Text>
               </View>
             ) : (
-              filteredAppointments.map((appointment) => (
+              filteredAppointments.map((appointment, index) => (
                 <TouchableOpacity
                   key={appointment.id}
-                  style={styles.appointmentCard}
+                  style={[
+                    styles.appointmentCard,
+                    index === 0 && styles.nextAppointmentCard
+                  ]}
                   onPress={() => {
                     setSelectedAppointment(appointment);
                     setModalVisible(true);
@@ -415,10 +415,13 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
                       { backgroundColor: getStatusColor(appointment.status) }
                     ]}>
                       <Text style={styles.statusText}>
-                        {getStatusText(appointment.status)}
+                        {index === 0 ? 'התור הבא' : getStatusText(appointment.status)}
                       </Text>
                     </View>
-                    <Text style={styles.appointmentDate}>
+                    <Text style={[
+                      styles.appointmentDate,
+                      index === 0 && styles.nextAppointmentDate
+                    ]}>
                       {formatDate(appointment.date)}
                     </Text>
                   </View>
@@ -869,6 +872,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
+  },
+  nextAppointmentCard: {
+    borderWidth: 3,
+    borderColor: '#28a745',
+    backgroundColor: '#f8fff8',
+    shadowColor: '#28a745',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  nextAppointmentDate: {
+    color: '#28a745',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
   appointmentHeader: {
     flexDirection: 'row',

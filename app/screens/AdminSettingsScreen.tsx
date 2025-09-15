@@ -2,14 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { db } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
@@ -274,6 +274,27 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Notification Settings Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>הגדרות התראות</Text>
+          <Text style={styles.sectionDescription}>
+            נהל איזה התראות ברצונך לקבל
+          </Text>
+          
+          <TouchableOpacity 
+            style={styles.notificationButton} 
+            onPress={() => {
+              // Use Expo Router for navigation
+              const { router } = require('expo-router');
+              router.push('/admin-notification-settings');
+            }}
+          >
+            <Ionicons name="notifications" size={24} color="#007bff" />
+            <Text style={styles.notificationButtonText}>הגדרות התראות</Text>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
       <ToastMessage
@@ -390,6 +411,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  notificationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  notificationButtonText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+    marginLeft: 12,
+    textAlign: 'right',
   },
 });
 

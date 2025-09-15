@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Barber App",
+    "name": "Ron Turgeman",
     "slug": "barber_app",
-    "version": "1.0.0",
+    "version": "1.1.5",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "barberapp",
@@ -35,15 +35,19 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/splash.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#000000"
         }
       ],
       "expo-notifications",
       "expo-font"
     ],
+    "runtimeVersion": "1.1.5",
+    "updates": {
+      "url": "https://u.expo.dev/229bec8c-f551-41b7-8e6b-e8e26fb31945"
+    },
     "experiments": {
       "typedRoutes": true
     },

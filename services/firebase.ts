@@ -1,34 +1,38 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import {
-    createUserWithEmailAndPassword,
-    EmailAuthProvider,
-    linkWithCredential,
-    onAuthStateChanged,
-    PhoneAuthProvider,
-    signInWithCredential,
-    signInWithEmailAndPassword,
-    signInWithPhoneNumber,
-    signOut,
-    updateProfile,
-    User
+  createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  linkWithCredential,
+  onAuthStateChanged,
+  PhoneAuthProvider,
+  signInWithCredential,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+  User
 } from 'firebase/auth';
 import {
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    getDoc,
-    getDocs,
-    orderBy,
-    query,
-    setDoc,
-    Timestamp,
-    updateDoc,
-    where
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+  writeBatch
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, listAll, ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '../config/firebase';
+import { CacheUtils } from './cache';
+import { ImageOptimizer } from './imageOptimization';
 
 // Export db for use in other components
 export { db };
@@ -97,8 +101,6 @@ export const makeCurrentUserAdmin = async (): Promise<boolean> => {
     return false;
   }
 };
-import { CacheUtils } from './cache';
-import { ImageOptimizer } from './imageOptimization';
 
 
 export interface UserProfile {
@@ -262,8 +264,7 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
 // Phone authentication functions
 export const sendSMSVerification = async (phoneNumber: string) => {
   try {
-    // For React Native, we don't need reCAPTCHA
-    // The phone number should be in international format
+    // Format phone number for SMS service
     let formattedPhone = phoneNumber;
     
     // Add +972 prefix if not present
@@ -277,18 +278,146 @@ export const sendSMSVerification = async (phoneNumber: string) => {
     
     console.log('📱 Sending SMS to:', formattedPhone);
     
-    // For React Native, we'll use a simpler approach without reCAPTCHA
-    const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone);
-    return confirmationResult;
+    // Generate a verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const verificationId = `sms4free_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Use SMS4Free service
+    const { MessagingService } = await import('../app/services/messaging/service');
+    const { messagingConfig } = await import('../app/config/messaging');
+
+    const messagingService = new MessagingService(messagingConfig);
+
+    const smsMessage = `קוד האימות שלך: ${verificationCode}\nתוקף 10 דקות\n- רון תורגמן מספרה`;
+
+    const result = await messagingService.sendMessage({
+      to: formattedPhone,
+      message: smsMessage
+    });
+
+    if (result.success) {
+      console.log('✅ SMS sent successfully via SMS4Free');
+
+      // Store verification code in AsyncStorage
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      const verificationData = {
+        code: verificationCode,
+        phone: formattedPhone,
+        timestamp: Date.now()
+      };
+
+      await AsyncStorage.setItem(`verification_${verificationId}`, JSON.stringify(verificationData));
+      console.log('💾 Verification data stored for ID:', verificationId);
+      console.log('💾 Stored data:', verificationData);
+
+      return { verificationId };
+    } else {
+      console.error('❌ SMS4Free error:', result.error);
+      throw new Error(`Failed to send SMS: ${result.error}`);
+    }
   } catch (error) {
     console.error('Error sending SMS:', error);
     throw error;
   }
 };
 
-export const verifySMSCode = async (confirmationResult: any, verificationCode: string) => {
+export const verifySMSCode = async (verificationId: string, verificationCode: string) => {
   try {
-    const result = await confirmationResult.confirm(verificationCode);
+    // Handle SMS4Free verification
+    if (verificationId.startsWith('sms4free_')) {
+      console.log('🔧 Verifying SMS4Free code for ID:', verificationId);
+
+      // Get stored verification data from AsyncStorage
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+
+      // Debug: List all keys in AsyncStorage
+      const allKeys = await AsyncStorage.getAllKeys();
+      console.log('🔍 All AsyncStorage keys:', allKeys);
+      console.log('🔍 Looking for key:', `verification_${verificationId}`);
+
+      const storedData = await AsyncStorage.getItem(`verification_${verificationId}`);
+
+      if (!storedData) {
+        console.error('❌ Verification ID not found in storage:', verificationId);
+        console.error('❌ Available keys:', allKeys);
+        throw new Error('Verification ID not found or expired');
+      }
+
+      const verificationData = JSON.parse(storedData);
+      console.log('📱 Retrieved verification data:', {
+        storedCode: verificationData.code,
+        enteredCode: verificationCode,
+        phone: verificationData.phone
+      });
+
+      // Check if verification code matches
+      if (verificationData.code !== verificationCode) {
+        console.error('❌ Code mismatch:', { stored: verificationData.code, entered: verificationCode });
+        throw new Error('Invalid verification code');
+      }
+
+      // Check if verification is not expired (10 minutes)
+      const now = Date.now();
+      const verificationAge = now - verificationData.timestamp;
+      const tenMinutes = 10 * 60 * 1000; // 10 minutes in milliseconds
+
+      if (verificationAge > tenMinutes) {
+        // Clean up expired verification
+        await AsyncStorage.removeItem(`verification_${verificationId}`);
+        console.error('❌ Verification expired:', { age: verificationAge, limit: tenMinutes });
+        throw new Error('Verification code expired');
+      }
+
+      console.log('✅ SMS4Free verification successful');
+
+      // For login purposes, try to find and log in the existing user
+      try {
+        const existingUser = await findUserByPhoneNumber(verificationData.phone);
+        if (existingUser) {
+          console.log('📞 Found existing user for phone:', verificationData.phone);
+
+          // Sign in with the existing user's email and temp password
+          if (existingUser.email) {
+            // For temp email users, we need to handle login differently
+            // Just clean up and return success - the login screen will handle navigation
+            await AsyncStorage.removeItem(`verification_${verificationId}`);
+            return {
+              sms4freeVerified: true,
+              phone: verificationData.phone,
+              existingUser: existingUser
+            };
+          }
+        }
+      } catch (error) {
+        console.log('🔍 No existing user found, this is for registration');
+      }
+
+      // Don't clean up verification yet - let registerUserWithPhone handle it
+      // This allows for retry in case of registration failure
+
+      // Return verification success indicator
+      return {
+        sms4freeVerified: true,
+        phone: verificationData.phone,
+        verificationData: verificationData  // Pass the data for later cleanup
+      };
+    }
+
+    // Handle legacy mock verification
+    if (verificationId.startsWith('mock_verification_')) {
+      console.log('🔧 Using mock SMS verification');
+
+      if (verificationCode.length === 6 && /^\d+$/.test(verificationCode)) {
+        console.log('✅ Mock SMS verification successful');
+        return { mockUser: true };
+      } else {
+        throw new Error('Invalid verification code format');
+      }
+    }
+
+    // Real Firebase verification (for when you set up proper Firebase phone auth)
+    const credential = PhoneAuthProvider.credential(verificationId, verificationCode);
+    const result = await signInWithCredential(auth, credential);
     return result.user;
   } catch (error) {
     console.error('Error verifying SMS code:', error);
@@ -296,8 +425,88 @@ export const verifySMSCode = async (confirmationResult: any, verificationCode: s
   }
 };
 
-export const registerUserWithPhone = async (phoneNumber: string, displayName: string, verificationId: string, verificationCode: string) => {
+export const registerUserWithPhone = async (phoneNumber: string, displayName: string, verificationId: string, verificationCode: string, password: string) => {
   try {
+    // Verify the SMS code first
+    const verificationResult = await verifySMSCode(verificationId, verificationCode);
+    if (!verificationResult) {
+      throw new Error('SMS verification failed');
+    }
+
+    // Handle SMS4Free registration
+    if (verificationId.startsWith('sms4free_')) {
+      console.log('🔧 Using SMS4Free phone registration');
+
+      // Create a temporary email for Firebase Auth (since Anonymous is not enabled)
+      const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+      // Use consistent format: 972523985505@ronbarber.app
+      const tempEmail = `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@ronbarber.app`;
+      // Use the password chosen by the user, not a temporary one
+      const userPassword = password;
+
+      console.log('📧 Creating user with temporary email:', tempEmail);
+
+      // Create Firebase Auth user with the user's chosen password
+      const userCredential = await createUserWithEmailAndPassword(auth, tempEmail, userPassword);
+      const user = userCredential.user;
+
+      // Update the user's display name
+      await updateProfile(user, {
+        displayName: displayName
+      });
+
+      // Check if this is the admin phone number
+      const isAdminPhone = phoneNumber === '+972523985505' || phoneNumber === '+972542280222';
+
+      const userProfile: UserProfile = {
+        uid: user.uid,  // Use Firebase Auth UID
+        email: tempEmail, // Store the temporary email
+        displayName: displayName,
+        phone: phoneNumber,
+        isAdmin: isAdminPhone,
+        hasPassword: true, // Has a temporary password
+        createdAt: Timestamp.now()
+      };
+
+      await setDoc(doc(db, 'users', user.uid), userProfile);
+      console.log('✅ SMS4Free user registered successfully with temp email auth');
+
+      // Clean up verification data after successful registration
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      await AsyncStorage.removeItem(`verification_${verificationId}`);
+      console.log('🧹 Verification data cleaned up after successful registration');
+
+      // Return the Firebase Auth user object
+      return user;
+    }
+
+    // Handle legacy mock verification
+    if (verificationId.startsWith('mock_verification_')) {
+      console.log('🔧 Using mock phone registration');
+
+      const mockUserId = `mock_user_${Date.now()}`;
+      const isAdminPhone = phoneNumber === '+972542280222';
+
+      const userProfile: UserProfile = {
+        uid: mockUserId,
+        displayName: displayName,
+        phone: phoneNumber,
+        isAdmin: isAdminPhone,
+        hasPassword: false,
+        createdAt: Timestamp.now()
+      };
+
+      await setDoc(doc(db, 'users', mockUserId), userProfile);
+      console.log('✅ Mock user registered successfully');
+
+      return {
+        uid: mockUserId,
+        displayName: displayName,
+        phoneNumber: phoneNumber
+      };
+    }
+
+    // Real Firebase registration
     const credential = PhoneAuthProvider.credential(verificationId, verificationCode);
     const userCredential = await signInWithCredential(auth, credential);
     const user = userCredential.user;
@@ -307,14 +516,14 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
     });
     
     // Check if this is the admin phone number
-    const isAdminPhone = phoneNumber === '+972542280222';
+    const isAdminPhone = phoneNumber === '+972523985505' || phoneNumber === '+972542280222';
     
     const userProfile: UserProfile = {
       uid: user.uid,
       displayName: displayName,
       phone: phoneNumber,
       isAdmin: isAdminPhone,
-      hasPassword: false, // New field to track if user has password
+      hasPassword: false,
       createdAt: Timestamp.now()
     };
     
@@ -326,6 +535,27 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
   }
 };
 
+// Find user by phone number
+export const findUserByPhoneNumber = async (phoneNumber: string): Promise<UserProfile | null> => {
+  try {
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('phone', '==', phoneNumber));
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      return null;
+    }
+
+    const userDoc = querySnapshot.docs[0];
+    const userData = userDoc.data() as UserProfile;
+
+    return userData;
+  } catch (error) {
+    console.error('Error finding user by phone:', error);
+    return null;
+  }
+};
+
 // New function to check if phone user exists and has password
 export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exists: boolean; hasPassword: boolean; uid?: string }> => {
   try {
@@ -334,11 +564,14 @@ export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exist
     const querySnapshot = await getDocs(q);
     
     if (querySnapshot.empty) {
+      console.log(`📞 No user found with phone: ${phoneNumber}`);
       return { exists: false, hasPassword: false };
     }
     
     const userDoc = querySnapshot.docs[0];
     const userData = userDoc.data();
+    
+    console.log(`📞 User found - Phone: ${phoneNumber}, hasPassword: ${userData.hasPassword || false}, UID: ${userDoc.id}`);
     
     return {
       exists: true,
@@ -351,46 +584,92 @@ export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exist
   }
 };
 
-// New function to login with phone + password (no SMS)
-export const loginWithPhoneAndPassword = async (phoneNumber: string, password: string) => {
+// New function to set password for existing SMS users
+export const setPasswordForSMSUser = async (phoneNumber: string, password: string) => {
   try {
-    // First check if user exists with this phone
     const userCheck = await checkPhoneUserExists(phoneNumber);
-    if (!userCheck.exists || !userCheck.hasPassword) {
-      throw new Error('משתמש לא נמצא או לא הוגדרה סיסמה');
+    if (!userCheck.exists) {
+      throw new Error('משתמש לא נמצא');
     }
 
-    // Get user profile
-    const userProfile = await getUserProfile(userCheck.uid!);
-    if (!userProfile) {
-      throw new Error('פרופיל משתמש לא נמצא');
-    }
-
-    // If user has email, use email+password login
-    if (userProfile.email) {
-      const userCredential = await signInWithEmailAndPassword(auth, userProfile.email, password);
+    // Create email from phone number for Firebase Auth
+    const tempEmail = `${phoneNumber.replace(/[^0-9]/g, '')}@temp.turgi.com`;
+    
+    try {
+      // Try to create user with temp email and password
+      const userCredential = await createUserWithEmailAndPassword(auth, tempEmail, password);
+      
+      // Update user profile to link to existing user data
+      const userDocRef = doc(db, 'users', userCheck.uid!);
+      await updateDoc(userDocRef, {
+        hasPassword: true,
+        email: tempEmail,
+        authUid: userCredential.user.uid
+      });
+      
+      console.log(`✅ Password set for SMS user: ${phoneNumber}`);
       return userCredential.user;
-    } else {
-      // For phone-only users, create a temporary email and login
-      const tempEmail = `${phoneNumber.replace(/[^0-9]/g, '')}@temp.turgi.com`;
-      try {
-        // First try to login with temp email
-        const userCredential = await signInWithEmailAndPassword(auth, tempEmail, password);
-        return userCredential.user;
-      } catch (error) {
-        // If temp email doesn't exist, create user with temp email
-        const userCredential = await createUserWithEmailAndPassword(auth, tempEmail, password);
-        
-        // Update the user profile with the new auth UID
-        await updateDoc(doc(db, 'users', userCredential.user.uid), {
-          email: tempEmail,
+    } catch (error: any) {
+      if (error.code === 'auth/email-already-in-use') {
+        // Email already exists, just update the user profile
+        await updateDoc(doc(db, 'users', userCheck.uid!), {
+          hasPassword: true
         });
         
+        // Try to sign in with existing credentials
+        const userCredential = await signInWithEmailAndPassword(auth, tempEmail, password);
         return userCredential.user;
       }
+      throw error;
     }
   } catch (error) {
+    console.error('Error setting password for SMS user:', error);
+    throw error;
+  }
+};
+
+// Simple function to login with phone + password
+export const loginWithPhoneAndPassword = async (phoneNumber: string, password: string) => {
+  try {
+    console.log(`🔐 Attempting login with phone: ${phoneNumber}`);
+    
+    // Skip phone check due to permissions - try direct login with email formats
+    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+    const possibleEmails = [
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@ronbarber.app`, // Most common format
+      `${cleanPhone}@ronbarber.app`,
+      `${cleanPhone}@sms.barbershop.local`, // New SMS format
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@sms.barbershop.local`
+    ];
+    
+    console.log(`🔍 Trying email formats for login:`, possibleEmails);
+    
+    // Try each possible email format
+    for (const email of possibleEmails) {
+      try {
+        console.log(`🔐 Trying email format: ${email}`);
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        console.log(`✅ Login successful with email: ${email}`);
+        return userCredential.user;
+      } catch (error: any) {
+        console.log(`❌ Failed with email: ${email}`, error.code);
+        continue;
+      }
+    }
+    
+    throw new Error('פרטי הכניסה שגויים או המשתמש לא נמצא');
+    
+  } catch (error: any) {
     console.error('Error login with phone and password:', error);
+    
+    if (error.code === 'auth/user-not-found') {
+      throw new Error('משתמש לא נמצא במערכת ההזדהות');
+    } else if (error.code === 'auth/wrong-password') {
+      throw new Error('סיסמה שגויה');
+    } else if (error.code === 'auth/invalid-credential') {
+      throw new Error('פרטי הכניסה שגויים');
+    }
+    
     throw error;
   }
 };
@@ -605,23 +884,20 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
     
     // Send notification to user about new appointment
     try {
-      await sendNotificationToUser(
-        appointmentData.userId,
-        'תור חדש נוצר! 📅',
-        `התור שלך נוצר בהצלחה. תאריך: ${appointmentData.date.toDate().toLocaleDateString('he-IL')}`,
-        { appointmentId: docRef.id }
-      );
+      const dateVal: any = appointmentData.date as any;
+      const asDate = typeof dateVal?.toDate === 'function' ? dateVal.toDate() : new Date(dateVal);
+      const dateStr = asDate.toLocaleDateString('he-IL');
+      await sendNotificationToUser(appointmentData.userId, 'תור חדש נוצר! 📅', `התור שלך נוצר בהצלחה. תאריך: ${dateStr}`, { appointmentId: docRef.id });
     } catch (notificationError) {
       console.log('Failed to send appointment notification:', notificationError);
     }
     
     // Send notification to admin about new appointment
     try {
-      await sendNotificationToAdmin(
-        'תור חדש! 📅',
-        `תור חדש נוצר עבור ${appointmentData.date.toDate().toLocaleDateString('he-IL')}`,
-        { appointmentId: docRef.id }
-      );
+      const dateVal: any = appointmentData.date as any;
+      const asDate = typeof dateVal?.toDate === 'function' ? dateVal.toDate() : new Date(dateVal);
+      const dateStr = asDate.toLocaleDateString('he-IL');
+      await sendNotificationToAdmin('תור חדש! 📅', `תור חדש נוצר עבור ${dateStr}`, { appointmentId: docRef.id });
     } catch (adminNotificationError) {
       console.log('Failed to send admin notification:', adminNotificationError);
     }
@@ -2546,6 +2822,99 @@ export const sendAppointmentCancellationToAdmin = async (appointmentId: string) 
     return true;
   } catch (error) {
     console.error('Error sending appointment cancellation to admin:', error);
+    return false;
+  }
+};
+
+// Get user notifications
+export const getUserNotifications = async (userId: string): Promise<{
+  id: string;
+  type: 'appointment' | 'general' | 'reminder';
+  title: string;
+  message: string;
+  time: string;
+  isRead: boolean;
+}[]> => {
+  try {
+    const notificationsRef = collection(db, 'notifications');
+    const q = query(
+      notificationsRef,
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const notifications = querySnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        type: data.type || 'general',
+        title: data.title || 'הודעה',
+        message: data.message || '',
+        time: data.createdAt?.toDate?.()?.toLocaleTimeString('he-IL', { 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        }) || 'עכשיו',
+        isRead: data.isRead || false
+      };
+    });
+    
+    return notifications;
+  } catch (error) {
+    console.error('Error getting user notifications:', error);
+    return [];
+  }
+};
+
+// Mark notification as read
+export const markNotificationAsRead = async (notificationId: string): Promise<boolean> => {
+  try {
+    const notificationRef = doc(db, 'notifications', notificationId);
+    await updateDoc(notificationRef, { isRead: true });
+    return true;
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    return false;
+  }
+};
+
+// Clear all user notifications
+export const clearAllUserNotifications = async (userId: string): Promise<boolean> => {
+  try {
+    const notificationsRef = collection(db, 'notifications');
+    const q = query(notificationsRef, where('userId', '==', userId));
+    
+    const querySnapshot = await getDocs(q);
+    const batch = writeBatch(db);
+    
+    querySnapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    await batch.commit();
+    return true;
+  } catch (error) {
+    console.error('Error clearing user notifications:', error);
+    return false;
+  }
+};
+
+// Create a notification for testing
+export const createTestNotification = async (userId: string, type: 'appointment' | 'general' | 'reminder', title: string, message: string): Promise<boolean> => {
+  try {
+    const notificationsRef = collection(db, 'notifications');
+    await addDoc(notificationsRef, {
+      userId,
+      type,
+      title,
+      message,
+      isRead: false,
+      createdAt: serverTimestamp()
+    });
+    return true;
+  } catch (error) {
+    console.error('Error creating test notification:', error);
     return false;
   }
 };

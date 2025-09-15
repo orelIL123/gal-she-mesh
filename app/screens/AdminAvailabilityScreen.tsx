@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { collection, doc, getDoc, getDocs, getFirestore, query, setDoc, where, deleteDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, getFirestore, query, setDoc, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
@@ -65,7 +65,14 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
-  const [availability, setAvailability] = useState(generateNext14Days());
+  const [availability, setAvailability] = useState<Array<{
+    date: string;
+    weekday: string;
+    displayDate: string;
+    fullDate: string;
+    isAvailable: boolean;
+    timeSlots: string[];
+  }>>(generateNext14Days());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   useEffect(() => {
@@ -96,14 +103,32 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
       snap.docs.forEach(doc => {
         const data = doc.data();
         if (data.isAvailable) {
-          // Convert startTime-endTime to hourly slots
-          const startHour = parseInt(data.startTime.split(':')[0]);
-          const endHour = parseInt(data.endTime.split(':')[0]);
+          // Convert startTime-endTime to 30-minute slots
+          const startTime = data.startTime;
+          const endTime = data.endTime;
           const slots = [];
-          for (let hour = startHour; hour < endHour; hour++) {
-            slots.push(`${hour.toString().padStart(2, '0')}:00`);
-            slots.push(`${hour.toString().padStart(2, '0')}:30`);
+          
+          // Parse start and end times
+          const [startHour, startMin] = startTime.split(':').map(Number);
+          const [endHour, endMin] = endTime.split(':').map(Number);
+          
+          // Generate 30-minute slots
+          let currentHour = startHour;
+          let currentMin = startMin;
+          
+          while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
+            const timeString = `${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')}`;
+            slots.push(timeString);
+            
+            // Move to next 30-minute slot
+            if (currentMin === 0) {
+              currentMin = 30;
+            } else {
+              currentMin = 0;
+              currentHour++;
+            }
           }
+          
           weeklyAvailability[data.dayOfWeek] = slots;
         }
       });
@@ -140,7 +165,8 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
   const openEditModal = async (barber: Barber) => {
     console.log('Opening modal for barber:', barber.name);
     setSelectedBarber(barber);
-    await loadBarberAvailability(barber.id);
+    // Don't load availability here - let the user set it fresh
+    setAvailability(generateNext14Days());
     setModalVisible(true);
     console.log('Modal should be visible now');
   };
@@ -197,9 +223,18 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
         if (timeSlots.length > 0) {
           const startTime = timeSlots[0];
           const endTime = timeSlots[timeSlots.length - 1];
-          // Convert "HH:mm" to next hour for endTime
+          
+          // Convert last slot to proper end time (add 30 minutes to last slot)
           const [endHour, endMin] = endTime.split(':').map(Number);
-          const finalEndTime = endMin === 30 ? `${(endHour + 1).toString().padStart(2, '0')}:00` : `${endHour.toString().padStart(2, '0')}:30`;
+          let finalEndHour = endHour;
+          let finalEndMin = endMin + 30;
+          
+          if (finalEndMin >= 60) {
+            finalEndHour += 1;
+            finalEndMin = 0;
+          }
+          
+          const finalEndTime = `${finalEndHour.toString().padStart(2, '0')}:${finalEndMin.toString().padStart(2, '0')}`;
           
           return setDoc(doc(collection(db, 'availability')), {
             barberId,
@@ -227,6 +262,8 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
       Alert.alert('הזמינות נשמרה בהצלחה!');
       setModalVisible(false);
       setSelectedBarber(null);
+      // Reset availability to initial state instead of reloading from Firebase
+      setAvailability(generateNext14Days());
       showToast('זמינות נשמרה בהצלחה!', 'success');
     } catch (e) {
       console.error('Error saving availability:', e);

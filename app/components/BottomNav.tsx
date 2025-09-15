@@ -74,14 +74,14 @@ export default function BottomNav({ onOrderPress, onTabPress, activeTab }: {
         {/* Center FAB (Order) - properly centered */}
         <View style={styles.centerFab}>
           <LinearGradient
-            colors={['#3b82f6', '#60a5fa', '#3b82f6']}
+            colors={['rgba(255, 255, 255, 0.2)', 'rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.2)']}
             style={styles.fabGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
             <TouchableOpacity style={styles.fab} onPress={handleOrderPress} activeOpacity={0.85}>
               <Animated.Image
-                source={require("../../assets/images/TURGI.png")}
+                source={require("../../assets/images/icon_booking.png")}
                 style={[styles.fabIcon, { transform: [{ rotate: spin }] }]}
                 resizeMode="cover"
               />
@@ -170,31 +170,42 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   fabGradient: {
-    width: screenWidth < 380 ? 68 : 76,
-    height: screenWidth < 380 ? 68 : 76,
-    borderRadius: screenWidth < 380 ? 34 : 38,
+    width: screenWidth < 380 ? 78 : 86,
+    height: screenWidth < 380 ? 78 : 86,
+    borderRadius: screenWidth < 380 ? 39 : 43,
     padding: 2,
     transform: [{ translateY: -12 }],
-    shadowColor: "#3b82f6",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.6,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowColor: "#FFFFFF",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 30,
+    elevation: 30,
   },
   fab: {
     width: '100%',
     height: '100%',
-    borderRadius: screenWidth < 380 ? 32 : 36,
-    backgroundColor: "#0b0518",
+    borderRadius: screenWidth < 380 ? 37 : 41,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: "#181828",
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#FFFFFF",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
+    elevation: 20,
+    backdropFilter: "blur(10px)",
   },
   fabIcon: {
-    width: screenWidth < 380 ? 40 : 46,
-    height: screenWidth < 380 ? 40 : 46,
-    borderRadius: screenWidth < 380 ? 20 : 23,
+    width: screenWidth < 380 ? 70 : 78,
+    height: screenWidth < 380 ? 70 : 78,
+    borderRadius: screenWidth < 380 ? 35 : 39,
+    shadowColor: "#FFFFFF",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 25,
+    elevation: 25,
   },
   homeIndicatorWrapper: {
     alignItems: "center",

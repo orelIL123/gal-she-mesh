@@ -1,10 +1,10 @@
 import { Tabs, useLocalSearchParams, useRouter, useSegments } from 'expo-router';
 import React from 'react';
-import { useColorScheme } from '../../hooks/useColorScheme';
+
 import BottomNav from '../components/BottomNav';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  
   const router = useRouter();
   const segments = useSegments();
   const { guest } = useLocalSearchParams<{ guest?: string }>();
@@ -48,11 +48,11 @@ export default function TabLayout() {
           headerShown: false,
         }}
       >
-        <Tabs.Screen name="index" options={{ title: 'בית' }} />
-        <Tabs.Screen name="profile" options={{ title: 'פרופיל' }} />
-        <Tabs.Screen name="explore" options={{ title: 'חנות' }} />
-        <Tabs.Screen name="settings" options={{ title: 'הגדרות' }} />
-        <Tabs.Screen name="booking" options={{ title: 'הזמנה' }} />
+        <Tabs.Screen name="index" options={{ headerShown: false }} />
+        <Tabs.Screen name="profile" options={{ headerShown: false }} />
+        <Tabs.Screen name="explore" options={{ headerShown: false }} />
+        <Tabs.Screen name="settings" options={{ headerShown: false }} />
+        <Tabs.Screen name="booking" options={{ headerShown: false }} />
       </Tabs>
       <BottomNav
         onOrderPress={handleOrderPress}

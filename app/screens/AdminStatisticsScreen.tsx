@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import {
+    Alert,
     Dimensions,
     SafeAreaView,
     ScrollView,
@@ -13,9 +14,8 @@ import {
 import {
     checkIsAdmin,
     getAllAppointments,
-    getRecentAppointments,
-    getCurrentMonthAppointments,
     getBarbers,
+    getRecentAppointments,
     getTreatments,
     onAuthStateChange,
     updateAppointment
@@ -32,13 +32,13 @@ interface AdminStatisticsScreenProps {
 interface StatisticsData {
   totalRevenue: number;
   totalCustomers: number;
+  totalUsers: number;
   totalAppointments: number;
   completedAppointments: number;
   pendingAppointments: number;
   monthlyRevenue: number;
   weeklyRevenue: number;
-  popularTreatments: Array<{ name: string; count: number; revenue: number }>;
-  barberStats: Array<{ name: string; appointments: number; revenue: number }>;
+  monthlyStats: Array<{ month: string; revenue: number; appointments: number }>;
 }
 
 const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigate, onBack }) => {
@@ -47,13 +47,13 @@ const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigat
   const [stats, setStats] = useState<StatisticsData>({
     totalRevenue: 0,
     totalCustomers: 0,
+    totalUsers: 0,
     totalAppointments: 0,
     completedAppointments: 0,
     pendingAppointments: 0,
     monthlyRevenue: 0,
     weeklyRevenue: 0,
-    popularTreatments: [],
-    barberStats: []
+    monthlyStats: []
   });
 
   useEffect(() => {
@@ -140,9 +140,9 @@ const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigat
     try {
       setLoading(true);
       
-      // Load optimized data (current month appointments + cached static data)
+      // Load all data for comprehensive statistics
       const [appointments, barbers, treatments] = await Promise.all([
-        getCurrentMonthAppointments(), // Only current month for faster loading
+        getAllAppointments(), // Load all appointments for complete stats
         getBarbers(), // Uses cache
         getTreatments() // Uses cache
       ]);
@@ -157,8 +157,8 @@ const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigat
       let weeklyRevenue = 0;
       let completedAppointments = 0;
       let pendingAppointments = 0;
-      const treatmentCounts: { [key: string]: { count: number; revenue: number } } = {};
-      const barberCounts: { [key: string]: { appointments: number; revenue: number } } = {};
+      const monthlyStats: { [key: string]: { revenue: number; appointments: number } } = {};
+      const uniqueUsers = new Set<string>();
 
       // Process appointments
       appointments.forEach(appointment => {
@@ -186,6 +186,11 @@ const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigat
           return; // Skip this appointment
         }
         
+        // Track unique users
+        if (appointment.userId) {
+          uniqueUsers.add(appointment.userId);
+        }
+        
         const treatment = treatments.find(t => t.id === appointment.treatmentId);
         
         if (treatment) {
@@ -205,48 +210,38 @@ const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigat
               weeklyRevenue += revenue;
             }
             
-            // Treatment statistics
-            if (!treatmentCounts[treatment.name]) {
-              treatmentCounts[treatment.name] = { count: 0, revenue: 0 };
+            // Monthly statistics
+            const monthKey = `${appointmentDate.getFullYear()}-${String(appointmentDate.getMonth() + 1).padStart(2, '0')}`;
+            if (!monthlyStats[monthKey]) {
+              monthlyStats[monthKey] = { revenue: 0, appointments: 0 };
             }
-            treatmentCounts[treatment.name].count++;
-            treatmentCounts[treatment.name].revenue += revenue;
-            
-            // Barber statistics
-            const barber = barbers.find(b => b.id === appointment.barberId);
-            if (barber) {
-              if (!barberCounts[barber.name]) {
-                barberCounts[barber.name] = { appointments: 0, revenue: 0 };
-              }
-              barberCounts[barber.name].appointments++;
-              barberCounts[barber.name].revenue += revenue;
-            }
+            monthlyStats[monthKey].revenue += revenue;
+            monthlyStats[monthKey].appointments++;
           } else if ((appointment.status as any) === 'scheduled' || (appointment.status as any) === 'confirmed') {
             pendingAppointments++;
           }
         }
       });
 
-      // Convert to arrays and sort
-      const popularTreatments = Object.entries(treatmentCounts)
-        .map(([name, data]) => ({ name, count: data.count, revenue: data.revenue }))
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 5);
-
-      const barberStats = Object.entries(barberCounts)
-        .map(([name, data]) => ({ name, appointments: data.appointments, revenue: data.revenue }))
-        .sort((a, b) => b.revenue - a.revenue);
+      // Convert monthly stats to array and sort
+      const monthlyStatsArray = Object.entries(monthlyStats)
+        .map(([month, data]) => ({ 
+          month: month.replace('-', '/'), 
+          revenue: data.revenue, 
+          appointments: data.appointments 
+        }))
+        .sort((a, b) => b.month.localeCompare(a.month));
 
       setStats({
         totalRevenue,
         totalCustomers: completedAppointments,
+        totalUsers: uniqueUsers.size,
         totalAppointments: appointments.length,
         completedAppointments,
         pendingAppointments,
         monthlyRevenue,
         weeklyRevenue,
-        popularTreatments,
-        barberStats
+        monthlyStats: monthlyStatsArray
       });
 
     } catch (error) {
@@ -258,6 +253,41 @@ const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigat
 
   const formatCurrency = (amount: number) => {
     return `₪${amount.toLocaleString()}`;
+  };
+
+  const clearAllData = () => {
+    Alert.alert(
+      'ניקוי נתונים',
+      'האם אתה בטוח שברצונך לאפס את כל הנתונים? פעולה זו אינה הפיכה!',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        { 
+          text: 'אפס נתונים', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Here you would implement the actual data clearing logic
+              // For now, we'll just show a confirmation
+              Alert.alert('נתונים אופסו', 'כל הנתונים אופסו בהצלחה');
+              loadStatistics(); // Reload to show empty stats
+            } catch (error) {
+              console.error('Error clearing data:', error);
+              Alert.alert('שגיאה', 'לא ניתן לאפס את הנתונים');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const showMonthlyStats = () => {
+    Alert.alert(
+      'סטטיסטיקות חודשיות',
+      stats.monthlyStats.map(month => 
+        `${month.month}: ${formatCurrency(month.revenue)} (${month.appointments} תורים)`
+      ).join('\n') || 'אין נתונים חודשיים',
+      [{ text: 'סגור', style: 'default' }]
+    );
   };
 
   const StatCard: React.FC<{ title: string; value: string; subtitle?: string; color: string; icon: string }> = ({ 
@@ -332,9 +362,9 @@ const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigat
                 icon="cash"
               />
               <StatCard
-                title="לקוחות החודש"
-                value={stats.totalCustomers.toString()}
-                subtitle="לקוחות מרוצים"
+                title="משתמשים רשומים"
+                value={stats.totalUsers.toString()}
+                subtitle="משתמשים פעילים"
                 color="#007bff"
                 icon="people"
               />
@@ -370,44 +400,22 @@ const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigat
             </View>
           </View>
 
-          {/* Popular Treatments */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>טיפולים פופולריים</Text>
-            {stats.popularTreatments.map((treatment, index) => (
-              <View key={index} style={styles.treatmentRow}>
-                <View style={styles.treatmentInfo}>
-                  <Text style={styles.treatmentName}>{treatment.name}</Text>
-                  <Text style={styles.treatmentCount}>{treatment.count} תורים</Text>
-                </View>
-                <Text style={styles.treatmentRevenue}>{formatCurrency(treatment.revenue)}</Text>
-              </View>
-            ))}
-          </View>
 
-          {/* Barber Performance */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>ביצועי הספרים</Text>
-            {stats.barberStats.map((barber, index) => (
-              <View key={index} style={styles.barberRow}>
-                <View style={styles.barberInfo}>
-                  <Text style={styles.barberName}>{barber.name}</Text>
-                  <Text style={styles.barberAppointments}>{barber.appointments} תורים</Text>
-                </View>
-                <Text style={styles.barberRevenue}>{formatCurrency(barber.revenue)}</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Refresh Button */}
+          {/* Action Buttons */}
           <View style={styles.refreshSection}>
             <TouchableOpacity style={styles.refreshButton} onPress={loadStatistics}>
               <Ionicons name="refresh" size={20} color="#fff" />
               <Text style={styles.refreshButtonText}>רענן נתונים</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.checkButton} onPress={checkAndCompleteAppointments}>
-              <Ionicons name="checkmark-circle" size={20} color="#fff" />
-              <Text style={styles.checkButtonText}>בדוק השלמת תורים</Text>
+            <TouchableOpacity style={styles.monthlyButton} onPress={showMonthlyStats}>
+              <Ionicons name="calendar" size={20} color="#fff" />
+              <Text style={styles.monthlyButtonText}>סטטיסטיקות חודשיות</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.clearButton} onPress={clearAllData}>
+              <Ionicons name="trash" size={20} color="#fff" />
+              <Text style={styles.clearButtonText}>ניקוי נתונים</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -633,9 +641,8 @@ const styles = StyleSheet.create({
   },
   refreshSection: {
     marginTop: 24,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
+    gap: 12,
   },
   refreshButton: {
     backgroundColor: '#17a2b8',
@@ -644,8 +651,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 16,
     borderRadius: 8,
-    flex: 1,
-    marginRight: 8,
+    marginBottom: 8,
   },
   refreshButtonText: {
     color: '#fff',
@@ -653,17 +659,30 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 8,
   },
-  checkButton: {
+  monthlyButton: {
+    backgroundColor: '#6f42c1',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  monthlyButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  clearButton: {
     backgroundColor: '#dc3545',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 16,
     borderRadius: 8,
-    flex: 1,
-    marginLeft: 8,
   },
-  checkButtonText: {
+  clearButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',

@@ -4,6 +4,7 @@ import AdminAppointmentsScreen from '../screens/AdminAppointmentsScreen';
 import AdminAvailabilityScreen from '../screens/AdminAvailabilityScreen';
 import AdminGalleryScreen from '../screens/AdminGalleryScreen';
 import AdminHomeScreen from '../screens/AdminHomeScreen';
+import AdminNotificationSettingsScreen from '../screens/AdminNotificationSettingsScreen';
 import AdminSettingsScreen from '../screens/AdminSettingsScreen';
 import AdminTeamScreen from '../screens/AdminTeamScreen';
 import AdminTreatmentsScreen from '../screens/AdminTreatmentsScreen';
@@ -13,14 +14,16 @@ import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import TeamScreen from '../screens/TeamScreen';
 
-export type Screen = 'home' | 'profile' | 'team' | 'booking' | 'settings' | 'admin-home' | 'admin-appointments' | 'admin-treatments' | 'admin-team' | 'admin-gallery' | 'admin-availability' | 'admin-settings';
+export type Screen = 'home' | 'profile' | 'team' | 'booking' | 'settings' | 'admin-home' | 'admin-appointments' | 'admin-treatments' | 'admin-team' | 'admin-gallery' | 'admin-availability' | 'admin-settings' | 'admin-notification-settings';
 
 export const AppNavigator: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
+  const [previousScreen, setPreviousScreen] = useState<Screen>('home');
   const [navigationParams, setNavigationParams] = useState<any>({});
 
-  const handleNavigate = (screen: Screen, params?: any) => {
-    setCurrentScreen(screen);
+  const handleNavigate = (screen: string, params?: any) => {
+    setPreviousScreen(currentScreen);
+    setCurrentScreen(screen as Screen);
     setNavigationParams(params || {});
   };
 
@@ -48,7 +51,7 @@ export const AppNavigator: React.FC = () => {
       case 'settings':
         return <SettingsScreen 
           onNavigate={handleNavigate}
-          onBack={() => handleNavigate('home')}
+          onBack={() => handleNavigate(previousScreen)}
         />;
       case 'admin-home':
         return <AdminHomeScreen 
@@ -84,6 +87,11 @@ export const AppNavigator: React.FC = () => {
         return <AdminSettingsScreen 
           onNavigate={handleNavigate}
           onBack={() => handleNavigate('admin-home')}
+        />;
+      case 'admin-notification-settings':
+        return <AdminNotificationSettingsScreen 
+          onNavigate={handleNavigate}
+          onBack={() => handleNavigate('admin-settings')}
         />;
       default:
         return <HomeScreen onNavigate={handleNavigate} />;

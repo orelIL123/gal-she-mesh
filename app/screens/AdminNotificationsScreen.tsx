@@ -92,7 +92,7 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
       // TODO: Implement actual notification sending when packages are installed
       Alert.alert(
         'התראה נשלחה',
-        `ההודעה "${notificationTitle}" נשלחה בהצלחה!`,
+        'ההודעה "' + notificationTitle + '" נשלחה בהצלחה!',
         [
           {
             text: 'אישור',

@@ -1,15 +1,15 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-    Dimensions,
-    Image,
-    Modal,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Dimensions,
+  Image,
+  Modal,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { CONTACT_INFO } from '../constants/contactInfo';
 
@@ -43,7 +43,7 @@ export default function AuthChoiceScreen() {
         {/* Logo Section */}
         <View style={styles.logoSection}>
           <Image
-            source={require('../../assets/images/TURGI.png')}
+            source={require('../../assets/images/icon.png')}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '90%',
     maxHeight: '80%',
-    alignItems: 'center',
+    alignItems: 'stretch',
   },
   modalTitle: {
     fontSize: 24,

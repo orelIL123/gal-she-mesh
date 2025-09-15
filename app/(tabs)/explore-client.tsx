@@ -1,25 +1,25 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  Image,
-  Linking,
-  Modal,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Dimensions,
+    Image,
+    Linking,
+    Modal,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
-import { addShopItem, deleteShopItem, getAllStorageImages, getActiveShopItems, ShopItem, updateShopItem, uploadImageToStorage } from '../../services/firebase';
+import { addShopItem, deleteShopItem, getActiveShopItems, getAllStorageImages, ShopItem, updateShopItem, uploadImageToStorage } from '../../services/firebase';
 import TopNav from '../components/TopNav';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 interface ShopScreenProps {
   onNavigate?: (screen: string) => void;
@@ -28,7 +28,7 @@ interface ShopScreenProps {
 }
 
 const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack, isAdmin = false }) => {
-  const router = useRouter();
+  
   const [shopItems, setShopItems] = useState<ShopItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<ShopItem | null>(null);
@@ -117,7 +117,7 @@ const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack, isAdmin = f
       if (!result.canceled && result.assets[0]) {
         return result.assets[0].uri;
       }
-    } catch (error) {
+    } catch {
       Alert.alert('שגיאה', 'שגיאה בבחירת התמונה');
     }
     return null;
@@ -132,7 +132,7 @@ const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack, isAdmin = f
       const downloadURL = await uploadImageToStorage(imageUri, 'shop', fileName);
       setProductForm(prev => ({ ...prev, imageUrl: downloadURL }));
       Alert.alert('הצלחה', 'התמונה הועלתה בהצלחה');
-    } catch (error) {
+    } catch {
       Alert.alert('שגיאה', 'שגיאה בהעלאת התמונה');
     }
   };
@@ -183,7 +183,7 @@ const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack, isAdmin = f
       setEditingProduct(null);
       setAddProductModal(false);
       loadShopItems(); // Refresh items list
-    } catch (error) {
+    } catch {
       Alert.alert('שגיאה', editingProduct ? 'שגיאה בעדכון המוצר' : 'שגיאה בהוספת המוצר');
     }
   };
@@ -215,7 +215,7 @@ const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack, isAdmin = f
               await deleteShopItem(productId);
               loadShopItems(); // Refresh items list
               Alert.alert('הצלחה', 'המוצר נמחק בהצלחה');
-            } catch (error) {
+            } catch {
               Alert.alert('שגיאה', 'שגיאה במחיקת המוצר');
             }
           }
@@ -659,16 +659,17 @@ const styles = StyleSheet.create({
   },
   categoriesContainer: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 4,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+    maxHeight: 50,
   },
   categoryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 6,
     backgroundColor: '#fff',
-    borderRadius: 20,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#ddd',
   },
@@ -678,7 +679,7 @@ const styles = StyleSheet.create({
   },
   categoryText: {
     color: '#666',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '500',
   },
   activeCategoryText: {

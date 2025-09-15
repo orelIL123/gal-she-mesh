@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { loginUser, loginWithPhoneAndPassword } from '../../services/firebase';
 import { colors } from '../constants/colors';
+import { CONTACT_INFO } from '../constants/contactInfo';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -32,7 +33,7 @@ export default function LoginScreen() {
       Alert.alert('שגיאה', 'אנא הזן אימייל או מספר טלפון');
       return;
     }
-    
+
     if (!password.trim()) {
       Alert.alert('שגיאה', 'אנא הזן סיסמה');
       return;
@@ -42,7 +43,7 @@ export default function LoginScreen() {
     try {
       // Check if it's email or phone format
       const isEmail = emailOrPhone.includes('@');
-      
+
       if (isEmail) {
         await loginUser(emailOrPhone, password);
       } else {
@@ -54,7 +55,20 @@ export default function LoginScreen() {
       ]);
     } catch (error: any) {
       console.error('Login error:', error);
-      Alert.alert('שגיאה', 'פרטי הכניסה שגויים');
+      
+      let errorMessage = 'פרטי הכניסה שגויים';
+      
+      if (error.message.includes('משתמש לא נמצא')) {
+        errorMessage = 'משתמש לא נמצא. אנא הירשם תחילה.';
+      } else if (error.message.includes('סיסמה שגויה')) {
+        errorMessage = 'הסיסמה שגויה. אנא נסה שוב.';
+      } else if (error.message.includes('פרטי הכניסה שגויים')) {
+        errorMessage = 'פרטי הכניסה שגויים. בדוק את הטלפון והסיסמה.';
+      } else if (error.message.includes('לא הגדיר סיסמה')) {
+        errorMessage = 'לא הוגדרה סיסמה לחשבון זה. אנא הירשם מחדש או השתמש בהתחברות עם SMS.';
+      }
+      
+      Alert.alert('שגיאה', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -111,8 +125,8 @@ export default function LoginScreen() {
             secureTextEntry
           />
 
-          <TouchableOpacity 
-            style={[styles.loginButton, loading && styles.buttonDisabled]} 
+          <TouchableOpacity
+            style={[styles.loginButton, loading && styles.buttonDisabled]}
             onPress={handleLogin}
             disabled={loading}
           >
@@ -126,6 +140,7 @@ export default function LoginScreen() {
           <TouchableOpacity onPress={() => router.push('/register')}>
             <Text style={styles.linkText}>אין לך חשבון? הירשם</Text>
           </TouchableOpacity>
+        </View>
 
           <Text style={styles.termsText}>
             בהמשך השימוש באפליקציה, אתה מסכים ל{' '}
@@ -134,7 +149,7 @@ export default function LoginScreen() {
             <Text style={styles.termsLink} onPress={() => setShowTerms(true)}>מדיניות הפרטיות</Text>
           </Text>
         </View>
-      </View>
+      {/* Removed extra closing View */}
 
       {/* Terms Modal */}
       <Modal visible={showTerms} transparent={true} animationType="fade" onRequestClose={() => setShowTerms(false)}>
@@ -154,16 +169,46 @@ export default function LoginScreen() {
                 • ביטול מאוחר יותר מ-2 שעות עלול לחייב תשלום{'\n'}
                 • במקרה של איחור של יותר מ-15 דקות, התור עלול להתבטל{'\n\n'}
                 
+                <Text style={styles.subsectionTitle}>3. תשלומים{'\n'}</Text>
+                • התשלום מתבצע במספרה לאחר קבלת השירות{'\n'}
+                • המחירים כפי שמופיעים באפליקציה{'\n'}
+                • המספרה שומרת לעצמה את הזכות לשנות מחירים{'\n\n'}
+                
+                <Text style={styles.subsectionTitle}>4. אחריות{'\n'}</Text>
+                • המספרה מתחייבת לאיכות השירות{'\n'}
+                • במקרה של אי שביעות רצון, יש לפנות למנהל המספרה{'\n'}
+                • המספרה לא אחראית לנזקים עקיפים{'\n\n'}
+                
                 <Text style={styles.sectionTitle}>מדיניות פרטיות{'\n\n'}</Text>
+                
                 <Text style={styles.subsectionTitle}>1. איסוף מידע{'\n'}</Text>
                 • אנו אוספים: שם מלא, מספר טלפון, פרטי תורים{'\n'}
                 • המידע נאסף לצורך מתן השירות בלבד{'\n'}
                 • לא נאסוף מידע מיותר{'\n\n'}
                 
+                <Text style={styles.subsectionTitle}>2. שימוש במידע{'\n'}</Text>
+                • המידע משמש לקביעת תורים ותקשורת{'\n'}
+                • לא נשתף את המידע עם צדדים שלישיים{'\n'}
+                • לא נשלח הודעות פרסומיות ללא אישור{'\n\n'}
+                
+                <Text style={styles.subsectionTitle}>3. אבטחה{'\n'}</Text>
+                • המידע מאוחסן באופן מאובטח{'\n'}
+                • גישה למידע מוגבלת לעובדי המספרה בלבד{'\n'}
+                • נעדכן את האבטחה לפי הצורך{'\n\n'}
+                
+                <Text style={styles.subsectionTitle}>4. זכויות המשתמש{'\n'}</Text>
+                • הזכות לבקש עותק מהמידע שלך{'\n'}
+                • הזכות לבקש מחיקה של המידע{'\n'}
+                • הזכות לעדכן את המידע{'\n\n'}
+                
+                <Text style={styles.subsectionTitle}>5. עדכונים{'\n'}</Text>
+                • מדיניות זו עשויה להתעדכן{'\n'}
+                • עדכונים יפורסמו באפליקציה{'\n'}
+                • המשך השימוש מהווה הסכמה לתנאים המעודכנים{'\n\n'}
+                
                 <Text style={styles.contactInfo}>
-                  ליצירת קשר:{'\n'}
-                  רון תורגמן - מספרה מקצועית{'\n'}
-                  מייל: info@ronturgeman.co.il
+                  {CONTACT_INFO.contactText}{'\n'}
+                  מייל: {CONTACT_INFO.email}
                 </Text>
               </Text>
             </ScrollView>
@@ -302,7 +347,7 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '90%',
     maxHeight: '80%',
-    alignItems: 'center',
+    alignItems: 'stretch',
   },
   modalTitle: {
     fontSize: 24,

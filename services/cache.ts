@@ -156,6 +156,23 @@ export const CacheUtils = {
     return cache.set(CACHE_KEYS.SETTINGS_IMAGES, settings, ttlMinutes);
   },
 
+  // Clear specific caches
+  async clearTreatments() {
+    return cache.clear(CACHE_KEYS.TREATMENTS);
+  },
+
+  async clearBarbers() {
+    return cache.clear(CACHE_KEYS.BARBERS);
+  },
+
+  async clearGalleryImages() {
+    return cache.clear(CACHE_KEYS.GALLERY_IMAGES);
+  },
+
+  async clearSettingsImages() {
+    return cache.clear(CACHE_KEYS.SETTINGS_IMAGES);
+  },
+
   // Clear data caches when admin makes changes
   async invalidateDataCaches() {
     await Promise.all([

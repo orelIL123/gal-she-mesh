@@ -1,0 +1,17 @@
+Ron turgeman
+Please login to book an appointment
+Are you sure you want to delete your account?
+Privacy Policy
+Terms of Use
+Book Appointment
+My Profile
+Home
+Profile
+Login
+Register
+Auth
+Booking
+Shop
+Settings
+Navigate to auth choice
+Professional barber services
