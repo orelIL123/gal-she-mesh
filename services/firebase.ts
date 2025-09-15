@@ -842,7 +842,7 @@ export const getTreatments = async (useCache: boolean = true): Promise<Treatment
     // Try cache first if enabled
     if (useCache) {
       const cached = await CacheUtils.getTreatments();
-      if (cached) {
+      if (cached && Array.isArray(cached) && cached.length > 0) {
         console.log('📦 Treatments loaded from cache');
         return cached;
       }
@@ -996,6 +996,42 @@ export const updateAppointment = async (appointmentId: string, updates: Partial<
       console.log('Failed to send appointment update notification:', notificationError);
     }
   } catch (error) {
+    throw error;
+  }
+};
+
+// Cancel appointment for user (changes status to cancelled)
+export const cancelAppointment = async (appointmentId: string) => {
+  try {
+    // Get appointment data before updating
+    const appointmentDoc = await getDoc(doc(db, 'appointments', appointmentId));
+    if (!appointmentDoc.exists()) {
+      throw new Error('התור לא נמצא');
+    }
+    
+    const appointmentData = appointmentDoc.data() as Appointment;
+    
+    // Update appointment status to cancelled
+    await updateDoc(doc(db, 'appointments', appointmentId), {
+      status: 'cancelled',
+      cancelledAt: Timestamp.now()
+    });
+    
+    // Send notification to admins about cancellation
+    try {
+      await sendNotificationToAdmins(
+        'תור בוטל 🚫',
+        `לקוח ביטל תור לתאריך ${appointmentData.date.toDate().toLocaleDateString('he-IL')}`,
+        { appointmentId: appointmentId }
+      );
+    } catch (notificationError) {
+      console.log('Failed to send cancellation notification to admins:', notificationError);
+    }
+    
+    console.log('Appointment cancelled successfully');
+    return true;
+  } catch (error) {
+    console.error('Error cancelling appointment:', error);
     throw error;
   }
 };

@@ -441,6 +441,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
         return;
       }
 
+      console.log('📅 Creating appointment with userId:', user.uid);
+      
       await createAppointment({
         userId: user.uid,
         barberId: selectedBarber.id,

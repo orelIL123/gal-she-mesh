@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import {
   Appointment,
+  cancelAppointment,
   createUserProfileFromAuth,
   getUserAppointments,
   getUserProfile,
@@ -73,7 +74,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
           profile = await getUserProfile(currentUser.uid);
         }
         setUserProfile(profile);
+        console.log('👤 Looking for appointments for userId:', currentUser.uid);
         const userAppointments = await getUserAppointments(currentUser.uid);
+        console.log('📅 Found appointments:', userAppointments.length);
         setAppointments(userAppointments);
         setDisplayName(profile?.displayName || '');
         setPhone(profile?.phone || '');
@@ -207,6 +210,49 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
       case 'cancelled': return 'בוטל';
       default: return status;
     }
+  };
+
+  const handleCancelAppointment = (appointmentId: string, appointmentDate: any) => {
+    const date = appointmentDate.toDate();
+    const now = new Date();
+    
+    // Check if appointment is at least 2 hours away
+    const hoursUntilAppointment = (date.getTime() - now.getTime()) / (1000 * 60 * 60);
+    
+    if (hoursUntilAppointment < 2) {
+      Alert.alert(
+        'לא ניתן לבטל',
+        'ניתן לבטל תור עד שעתיים לפני המועד הקבוע',
+        [{ text: 'הבנתי', style: 'default' }]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'ביטול תור',
+      `האם אתה בטוח שברצונך לבטל את התור ב-${formatDate(appointmentDate)}?`,
+      [
+        { text: 'לא', style: 'cancel' },
+        {
+          text: 'כן, בטל',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await cancelAppointment(appointmentId);
+              // Refresh appointments list
+              if (user) {
+                const userAppointments = await getUserAppointments(user.uid);
+                setAppointments(userAppointments);
+              }
+              showToast('התור בוטל בהצלחה');
+            } catch (error) {
+              console.error('Error cancelling appointment:', error);
+              showToast('שגיאה בביטול התור', 'error');
+            }
+          }
+        }
+      ]
+    );
   };
 
   if (loading) {
@@ -650,10 +696,34 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.appointmentSummary}>
-              <Text style={styles.appointmentSummaryText}>
-                יש לך {appointments.length} תורים במערכת
-              </Text>
+            <View>
+              {appointments
+                .filter(apt => apt.status !== 'cancelled') // Don't show cancelled appointments
+                .slice(0, 3) // Show only next 3 appointments
+                .map((appointment, index) => (
+                <View key={appointment.id} style={styles.appointmentCard}>
+                  <View style={styles.appointmentHeader}>
+                    <View>
+                      <Text style={styles.appointmentDate}>
+                        {formatDate(appointment.date)}
+                      </Text>
+                      <View style={[styles.statusBadge, { backgroundColor: getStatusColor(appointment.status) }]}>
+                        <Text style={styles.statusText}>{getStatusText(appointment.status)}</Text>
+                      </View>
+                    </View>
+                    
+                    {(appointment.status === 'confirmed' || appointment.status === 'pending') && (
+                      <TouchableOpacity
+                        style={styles.cancelButton}
+                        onPress={() => handleCancelAppointment(appointment.id, appointment.date)}
+                      >
+                        <Text style={styles.cancelButtonText}>בטל</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              ))}
+              
               <TouchableOpacity
                 style={styles.bookButton}
                 onPress={() => onNavigate('booking')}
@@ -943,6 +1013,47 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 16,
     textAlign: 'center',
+  },
+  appointmentCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#007bff',
+  },
+  appointmentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  appointmentDate: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  statusText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cancelButton: {
+    backgroundColor: '#dc3545',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  cancelButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   emptyState: {
     alignItems: 'center',
