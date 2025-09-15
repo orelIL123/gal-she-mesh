@@ -1,26 +1,26 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  Alert,
-  ScrollView,
-  ActivityIndicator,
-  Dimensions,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  getAppImages,
-  updateAtmosphereImage,
-  updateAboutUsImage,
-  addAppGalleryImage,
-  removeAppGalleryImage,
-  replaceAppGalleryImage,
-  AppImages
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Image,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import {
+    addAppGalleryImage,
+    AppImages,
+    getAppImages,
+    removeAppGalleryImage,
+    replaceAppGalleryImage,
+    updateAboutUsImage,
+    updateAtmosphereImage
 } from '../../services/firebase';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -47,7 +47,7 @@ const AdminImageManager: React.FC<AdminImageManagerProps> = ({ onClose }) => {
 
   useEffect(() => {
     loadImages();
-  }, [loadImages]);
+  }, []);
 
   const loadImages = useCallback(async () => {
     try {
@@ -62,17 +62,51 @@ const AdminImageManager: React.FC<AdminImageManagerProps> = ({ onClose }) => {
   }, [t]);
 
   const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [16, 9],
-      quality: 0.8,
-    });
+    try {
+      console.log('📱 Requesting media library permissions...');
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert(t('common.error'), 'נדרשת הרשאה לגישה לגלריה');
+        return null;
+      }
 
-    if (!result.canceled && result.assets[0]) {
-      return result.assets[0].uri;
+      // Double check permission status
+      if (permissionResult.status !== 'granted') {
+        Alert.alert(t('common.error'), 'הרשאת גישה נדחתה');
+        return null;
+      }
+
+      console.log('📱 Permissions granted, launching image picker...');
+      
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      console.log('📱 Image picker result:', result);
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const imageUri = result.assets[0].uri;
+        console.log('📤 Selected image URI:', imageUri);
+        
+        if (!imageUri) {
+          Alert.alert(t('common.error'), 'שגיאה בבחירת התמונה');
+          return null;
+        }
+        
+        return imageUri;
+      } else {
+        console.log('📱 Image selection canceled or no assets');
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ Error picking image:', error);
+      Alert.alert(t('common.error'), `שגיאה בבחירת התמונה: ${(error as Error).message || 'Unknown error'}`);
+      return null;
     }
-    return null;
   };
 
   const handleUpdateAtmosphere = async () => {
@@ -81,13 +115,15 @@ const AdminImageManager: React.FC<AdminImageManagerProps> = ({ onClose }) => {
       if (!imageUri) return;
 
       setUploading(true);
+      console.log('📤 Uploading atmosphere image...');
       await updateAtmosphereImage(imageUri);
       await loadImages();
       setSuccessMessage(t('admin.atmosphere_updated'));
       setShowSuccessModal(true);
+      console.log('✅ Atmosphere image updated successfully');
     } catch (error) {
-      console.error('Error updating atmosphere image:', error);
-      Alert.alert(t('common.error'), 'Failed to update atmosphere image');
+      console.error('❌ Error updating atmosphere image:', error);
+      Alert.alert(t('common.error'), `שגיאה בעדכון תמונת האווירה: ${(error as Error).message || 'Unknown error'}`);
     } finally {
       setUploading(false);
     }
@@ -99,13 +135,15 @@ const AdminImageManager: React.FC<AdminImageManagerProps> = ({ onClose }) => {
       if (!imageUri) return;
 
       setUploading(true);
+      console.log('📤 Uploading about us image...');
       await updateAboutUsImage(imageUri);
       await loadImages();
       setSuccessMessage(t('admin.about_us_updated'));
       setShowSuccessModal(true);
+      console.log('✅ About us image updated successfully');
     } catch (error) {
-      console.error('Error updating about us image:', error);
-      Alert.alert(t('common.error'), 'Failed to update about us image');
+      console.error('❌ Error updating about us image:', error);
+      Alert.alert(t('common.error'), `שגיאה בעדכון תמונת אודותינו: ${(error as Error).message || 'Unknown error'}`);
     } finally {
       setUploading(false);
     }
@@ -117,13 +155,15 @@ const AdminImageManager: React.FC<AdminImageManagerProps> = ({ onClose }) => {
       if (!imageUri) return;
 
       setUploading(true);
+      console.log('📤 Adding gallery image...');
       await addAppGalleryImage(imageUri);
       await loadImages();
       setSuccessMessage(t('admin.gallery_image_added'));
       setShowSuccessModal(true);
+      console.log('✅ Gallery image added successfully');
     } catch (error) {
-      console.error('Error adding gallery image:', error);
-      Alert.alert(t('common.error'), 'Failed to add gallery image');
+      console.error('❌ Error adding gallery image:', error);
+      Alert.alert(t('common.error'), `שגיאה בהוספת תמונה לגלריה: ${(error as Error).message || 'Unknown error'}`);
     } finally {
       setUploading(false);
     }
@@ -154,13 +194,15 @@ const AdminImageManager: React.FC<AdminImageManagerProps> = ({ onClose }) => {
       if (!imageUri) return;
 
       setUploading(true);
+      console.log('📤 Replacing gallery image...');
       await replaceAppGalleryImage(oldImageUrl, imageUri);
       await loadImages();
       setSuccessMessage(t('admin.gallery_image_replaced'));
       setShowSuccessModal(true);
+      console.log('✅ Gallery image replaced successfully');
     } catch (error) {
-      console.error('Error replacing gallery image:', error);
-      Alert.alert(t('common.error'), 'Failed to replace gallery image');
+      console.error('❌ Error replacing gallery image:', error);
+      Alert.alert(t('common.error'), `שגיאה בהחלפת תמונה בגלריה: ${(error as Error).message || 'Unknown error'}`);
     } finally {
       setUploading(false);
     }

@@ -64,6 +64,36 @@ export const createAdminUser = async (email: string, password: string, displayNa
 };
 
 // Make current logged-in user an admin (for development)
+// Check if current user is admin and has push token
+export const checkCurrentUserAdminStatus = async () => {
+  try {
+    const currentUser = getCurrentUser();
+    if (!currentUser) {
+      console.log('❌ No current user');
+      return false;
+    }
+    
+    const profile = await getUserProfile(currentUser.uid);
+    if (!profile) {
+      console.log('❌ No user profile found');
+      return false;
+    }
+    
+    console.log(`👤 Current user: ${profile.displayName}`);
+    console.log(`👨‍💼 Is admin: ${profile.isAdmin || false}`);
+    console.log(`📱 Has push token: ${!!profile.pushToken}`);
+    
+    return {
+      isAdmin: profile.isAdmin || false,
+      hasPushToken: !!profile.pushToken,
+      profile: profile
+    };
+  } catch (error) {
+    console.error('Error checking admin status:', error);
+    return false;
+  }
+};
+
 export const makeCurrentUserAdmin = async (): Promise<boolean> => {
   try {
     const currentUser = getCurrentUser();
@@ -2549,6 +2579,57 @@ export const sendAppointmentReminder = async (appointmentId: string) => {
   }
 };
 
+// Send notification to admin about events
+export const sendNotificationToAdmin = async (title: string, body: string, data?: any) => {
+  try {
+    console.log(`🔔 sendNotificationToAdmin called with title: "${title}"`);
+    
+    // Try to get current user's profile directly if they're admin
+    const currentUser = getCurrentUser();
+    let adminUsers: UserProfile[] = [];
+    
+    if (currentUser) {
+      const currentUserProfile = await getUserProfile(currentUser.uid);
+      if (currentUserProfile?.isAdmin && currentUserProfile?.pushToken) {
+        adminUsers.push(currentUserProfile);
+        console.log(`👨‍💼 Current user is admin with push token: ${currentUserProfile.displayName}`);
+      }
+    }
+    
+    // Also try to get all users (fallback)
+    try {
+      const users = await getAllUsers();
+      console.log(`👥 Total users found: ${users.length}`);
+      const allAdminUsers = users.filter(user => user.isAdmin && user.pushToken);
+      // Merge without duplicates
+      allAdminUsers.forEach(user => {
+        if (!adminUsers.find(existing => existing.uid === user.uid)) {
+          adminUsers.push(user);
+        }
+      });
+    } catch (getAllUsersError: any) {
+      console.log('⚠️ Could not get all users, using current user only:', getAllUsersError.message);
+    }
+    
+    console.log(`👨‍💼 Admin users with push tokens: ${adminUsers.length}`);
+    console.log(`📱 Sending notification to ${adminUsers.length} admin users`);
+    
+    const results = await Promise.allSettled(
+      adminUsers.map(user => 
+        sendPushNotification(user.pushToken!, title, body, data)
+      )
+    );
+    
+    const successful = results.filter(result => result.status === 'fulfilled').length;
+    console.log(`✅ Successfully sent to ${successful}/${adminUsers.length} admin users`);
+    
+    return successful;
+  } catch (error) {
+    console.error('Error sending notification to admin:', error);
+    return 0;
+  }
+};
+
 // Send reminder to all users with upcoming appointments
 export const sendRemindersToAllUsers = async () => {
   try {
@@ -2579,32 +2660,6 @@ export const sendRemindersToAllUsers = async () => {
   }
 };
 
-// Send notification to admin about new appointment
-export const sendNotificationToAdmin = async (title: string, body: string, data?: any) => {
-  try {
-    console.log(`🔔 sendNotificationToAdmin called with title: "${title}"`);
-    const users = await getAllUsers();
-    console.log(`👥 Total users found: ${users.length}`);
-    const adminUsers = users.filter(user => user.isAdmin && user.pushToken);
-    console.log(`👨‍💼 Admin users with push tokens: ${adminUsers.length}`);
-    
-    console.log(`📱 Sending notification to ${adminUsers.length} admin users`);
-    
-    const results = await Promise.allSettled(
-      adminUsers.map(user => 
-        sendPushNotification(user.pushToken!, title, body, data)
-      )
-    );
-    
-    const successful = results.filter(result => result.status === 'fulfilled').length;
-    console.log(`✅ Successfully sent to ${successful}/${adminUsers.length} admin users`);
-    
-    return successful;
-  } catch (error) {
-    console.error('Error sending notification to admin:', error);
-    return 0;
-  }
-};
 
 // Send welcome notification to new user
 export const sendWelcomeNotification = async (userId: string) => {

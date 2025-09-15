@@ -1075,33 +1075,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  appointmentCard: {
-    backgroundColor: '#f8f9fa',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  appointmentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  appointmentDate: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#222',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
   appointmentBarber: {
     fontSize: 14,
     color: '#666',
@@ -1197,19 +1170,11 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 4,
   },
-  cancelButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
   modalButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
-  },
-  cancelButtonText: {
-    color: '#666',
   },
   authMethodContainer: {
     flexDirection: 'row',

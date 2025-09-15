@@ -6,7 +6,9 @@ import {
     Alert,
     Dimensions,
     Image,
+    KeyboardAvoidingView,
     Modal,
+    Platform,
     SafeAreaView,
     ScrollView,
     StyleSheet,
@@ -49,15 +51,15 @@ export default function LoginScreen() {
       } else {
         await loginWithPhoneAndPassword(emailOrPhone, password);
       }
-      
+
       Alert.alert('הצלחה', 'התחברת בהצלחה', [
         { text: 'אישור', onPress: () => router.replace('/(tabs)') }
       ]);
     } catch (error: any) {
       console.error('Login error:', error);
-      
+
       let errorMessage = 'פרטי הכניסה שגויים';
-      
+
       if (error.message.includes('משתמש לא נמצא')) {
         errorMessage = 'משתמש לא נמצא. אנא הירשם תחילה.';
       } else if (error.message.includes('סיסמה שגויה')) {
@@ -67,7 +69,7 @@ export default function LoginScreen() {
       } else if (error.message.includes('לא הגדיר סיסמה')) {
         errorMessage = 'לא הוגדרה סיסמה לחשבון זה. אנא הירשם מחדש או השתמש בהתחברות עם SMS.';
       }
-      
+
       Alert.alert('שגיאה', errorMessage);
     } finally {
       setLoading(false);
@@ -80,76 +82,82 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>התחברות</Text>
-        <View style={styles.placeholder} />
-      </View>
-
-      <View style={styles.content}>
-        {/* Logo */}
-        <View style={styles.logoSection}>
-          <Image 
-            source={require('../../assets/images/icon.png')} 
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </View>
-
-        {/* Title */}
-        <Text style={styles.title}>התחברות עם אימייל או טלפון</Text>
-
-        {/* Form */}
-        <View style={styles.formSection}>
-          <Text style={styles.label}>אימייל או מספר טלפון</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="הזן אימייל או מספר טלפון"
-            placeholderTextColor={colors.textSecondary}
-            value={emailOrPhone}
-            onChangeText={setEmailOrPhone}
-            keyboardType="default"
-            autoCapitalize="none"
-          />
-
-          <Text style={styles.label}>סיסמא</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="הזן סיסמא"
-            placeholderTextColor={colors.textSecondary}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-
-          <TouchableOpacity
-            style={[styles.loginButton, loading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text style={styles.loginButtonText}>התחבר</Text>
-            )}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidingView}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => router.push('/register')}>
-            <Text style={styles.linkText}>אין לך חשבון? הירשם</Text>
-          </TouchableOpacity>
+          <Text style={styles.headerTitle}>התחברות</Text>
+          <View style={styles.placeholder} />
         </View>
 
-          <Text style={styles.termsText}>
-            בהמשך השימוש באפליקציה, אתה מסכים ל{' '}
-            <Text style={styles.termsLink} onPress={() => setShowTerms(true)}>תנאי השימוש</Text>
-            {' '}ול{' '}
-            <Text style={styles.termsLink} onPress={() => setShowTerms(true)}>מדיניות הפרטיות</Text>
-          </Text>
-        </View>
-      {/* Removed extra closing View */}
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.content}>
+            {/* Logo */}
+            <View style={styles.logoSection}>
+              <Image
+                source={require('../../assets/images/icon.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
+            </View>
+
+            {/* Title */}
+            <Text style={styles.title}>התחברות עם אימייל או טלפון</Text>
+
+            {/* Form */}
+            <View style={styles.formSection}>
+              <Text style={styles.label}>אימייל או מספר טלפון</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="הזן אימייל או מספר טלפון"
+                placeholderTextColor={colors.textSecondary}
+                value={emailOrPhone}
+                onChangeText={setEmailOrPhone}
+                keyboardType="default"
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.label}>סיסמא</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="הזן סיסמא"
+                placeholderTextColor={colors.textSecondary}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+
+              <TouchableOpacity
+                style={[styles.loginButton, loading && styles.buttonDisabled]}
+                onPress={handleLogin}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.loginButtonText}>התחבר</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => router.push('/register')}>
+                <Text style={styles.linkText}>אין לך חשבון? הירשם</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.termsText}>
+                בהמשך השימוש באפליקציה, אתה מסכים ל{' '}
+                <Text style={styles.termsLink} onPress={() => setShowTerms(true)}>תנאי השימוש</Text>
+                {' '}ול{' '}
+                <Text style={styles.termsLink} onPress={() => setShowTerms(true)}>מדיניות הפרטיות</Text>
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Terms Modal */}
       <Modal visible={showTerms} transparent={true} animationType="fade" onRequestClose={() => setShowTerms(false)}>
@@ -159,53 +167,54 @@ export default function LoginScreen() {
             <ScrollView style={styles.modalScrollView}>
               <Text style={styles.modalText}>
                 <Text style={styles.sectionTitle}>תנאי שימוש - רון תורגמן מספרה{'\n\n'}</Text>
+
                 <Text style={styles.subsectionTitle}>1. קבלת השירות{'\n'}</Text>
-                • השירות מיועד לקביעת תורים במספרה רון תורגמן{'\n'}
+                • השירות מיועד לקביעת תורים במספרה של רון תורגמן{'\n'}
                 • יש לספק מידע מדויק ומלא בעת קביעת התור{'\n'}
                 • המספרה שומרת לעצמה את הזכות לסרב לתת שירות במקרים חריגים{'\n\n'}
-                
+
                 <Text style={styles.subsectionTitle}>2. ביטול תורים{'\n'}</Text>
                 • ביטול תור יש לבצע לפחות 2 שעות לפני מועד התור{'\n'}
                 • ביטול מאוחר יותר מ-2 שעות עלול לחייב תשלום{'\n'}
                 • במקרה של איחור של יותר מ-15 דקות, התור עלול להתבטל{'\n\n'}
-                
+
                 <Text style={styles.subsectionTitle}>3. תשלומים{'\n'}</Text>
                 • התשלום מתבצע במספרה לאחר קבלת השירות{'\n'}
                 • המחירים כפי שמופיעים באפליקציה{'\n'}
                 • המספרה שומרת לעצמה את הזכות לשנות מחירים{'\n\n'}
-                
+
                 <Text style={styles.subsectionTitle}>4. אחריות{'\n'}</Text>
                 • המספרה מתחייבת לאיכות השירות{'\n'}
                 • במקרה של אי שביעות רצון, יש לפנות למנהל המספרה{'\n'}
                 • המספרה לא אחראית לנזקים עקיפים{'\n\n'}
-                
+
                 <Text style={styles.sectionTitle}>מדיניות פרטיות{'\n\n'}</Text>
-                
+
                 <Text style={styles.subsectionTitle}>1. איסוף מידע{'\n'}</Text>
                 • אנו אוספים: שם מלא, מספר טלפון, פרטי תורים{'\n'}
                 • המידע נאסף לצורך מתן השירות בלבד{'\n'}
                 • לא נאסוף מידע מיותר{'\n\n'}
-                
+
                 <Text style={styles.subsectionTitle}>2. שימוש במידע{'\n'}</Text>
                 • המידע משמש לקביעת תורים ותקשורת{'\n'}
                 • לא נשתף את המידע עם צדדים שלישיים{'\n'}
                 • לא נשלח הודעות פרסומיות ללא אישור{'\n\n'}
-                
+
                 <Text style={styles.subsectionTitle}>3. אבטחה{'\n'}</Text>
                 • המידע מאוחסן באופן מאובטח{'\n'}
                 • גישה למידע מוגבלת לעובדי המספרה בלבד{'\n'}
                 • נעדכן את האבטחה לפי הצורך{'\n\n'}
-                
+
                 <Text style={styles.subsectionTitle}>4. זכויות המשתמש{'\n'}</Text>
                 • הזכות לבקש עותק מהמידע שלך{'\n'}
                 • הזכות לבקש מחיקה של המידע{'\n'}
                 • הזכות לעדכן את המידע{'\n\n'}
-                
+
                 <Text style={styles.subsectionTitle}>5. עדכונים{'\n'}</Text>
                 • מדיניות זו עשויה להתעדכן{'\n'}
                 • עדכונים יפורסמו באפליקציה{'\n'}
                 • המשך השימוש מהווה הסכמה לתנאים המעודכנים{'\n\n'}
-                
+
                 <Text style={styles.contactInfo}>
                   {CONTACT_INFO.contactText}{'\n'}
                   מייל: {CONTACT_INFO.email}
@@ -226,6 +235,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   header: {
     flexDirection: 'row',
@@ -262,8 +277,8 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   logo: {
-    width: screenWidth * 0.18,
-    height: screenWidth * 0.18,
+    width: screenWidth * 0.25,
+    height: screenWidth * 0.25,
   },
   title: {
     fontSize: 24,
@@ -323,13 +338,13 @@ const styles = StyleSheet.create({
     color: colors.primary,
     textAlign: 'center',
     textDecorationLine: 'underline',
+    marginBottom: 20,
   },
   termsText: {
     fontSize: 14,
     color: '#666666',
     textAlign: 'center',
     lineHeight: 20,
-    marginTop: 20,
   },
   termsLink: {
     color: colors.primary,
@@ -339,7 +354,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
   },
   modalContent: {
     backgroundColor: '#ffffff',
@@ -365,10 +380,11 @@ const styles = StyleSheet.create({
     color: '#333333',
     lineHeight: 24,
     marginBottom: 20,
+    textAlign: 'right',
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1a1a1a',
     marginBottom: 10,
   },

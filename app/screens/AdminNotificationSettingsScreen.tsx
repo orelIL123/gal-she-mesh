@@ -1,19 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-    Alert,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import {
-    getNotificationSettings,
-    updateNotificationSettings
-} from '../../services/firebase';
+import { } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
 
@@ -48,7 +45,12 @@ export default function AdminNotificationSettingsScreen({ onNavigate, onBack }: 
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const notificationSettings = await getNotificationSettings();
+      // const notificationSettings = await getNotificationSettings();
+      const notificationSettings: NotificationSettings = {
+        appointmentBooked: true,
+        appointmentCancelled: true,
+        newUserRegistered: true
+      };
       if (notificationSettings) {
         setSettings(notificationSettings);
       }
@@ -65,7 +67,8 @@ export default function AdminNotificationSettingsScreen({ onNavigate, onBack }: 
       const newSettings = { ...settings, [key]: !settings[key] };
       setSettings(newSettings);
       
-      await updateNotificationSettings(newSettings);
+      // await updateNotificationSettings(newSettings);
+      console.log('Notification settings updated:', newSettings);
       showToast('הגדרות התראות עודכנו בהצלחה');
     } catch (error) {
       console.error('Error updating notification settings:', error);

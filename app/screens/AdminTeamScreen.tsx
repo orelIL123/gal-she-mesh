@@ -426,13 +426,13 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
                           <View style={styles.phoneActions}>
                             <TouchableOpacity
                               style={styles.phoneButton}
-                              onPress={() => handlePhoneCall(barber.phone)}
+                              onPress={() => barber.phone && handlePhoneCall(barber.phone)}
                             >
                               <Ionicons name="call" size={16} color="#007bff" />
                             </TouchableOpacity>
                             <TouchableOpacity
                               style={styles.whatsappButton}
-                              onPress={() => handleWhatsApp(barber.phone)}
+                              onPress={() => barber.phone && handleWhatsApp(barber.phone)}
                             >
                               <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
                             </TouchableOpacity>

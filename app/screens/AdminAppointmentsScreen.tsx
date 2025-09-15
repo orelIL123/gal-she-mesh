@@ -303,13 +303,13 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
     .filter(apt => {
       // Filter by selected specific date if any
       if (selectedDayFilter === null) return true;
-      const aptDate = apt.date.toMillis ? new Date(apt.date.toMillis()) : new Date(apt.date);
+      const aptDate = apt.date.toMillis ? new Date(apt.date.toMillis()) : apt.date.toDate();
       return aptDate.toDateString() === selectedDayFilter;
     })
     .sort((a, b) => {
       // Sort by date - nearest first
-      const aTime = a.date.toMillis ? a.date.toMillis() : new Date(a.date).getTime();
-      const bTime = b.date.toMillis ? b.date.toMillis() : new Date(b.date).getTime();
+      const aTime = a.date.toMillis ? a.date.toMillis() : a.date.toDate().getTime();
+      const bTime = b.date.toMillis ? b.date.toMillis() : b.date.toDate().getTime();
       return aTime - bTime;
     });
 
@@ -318,12 +318,12 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
     const upcomingAppointments = appointments
       .filter(apt => apt.status === 'confirmed')
       .filter(apt => {
-        const aptTime = apt.date.toMillis ? apt.date.toMillis() : new Date(apt.date).getTime();
+        const aptTime = apt.date.toMillis ? apt.date.toMillis() : apt.date.toDate().getTime();
         return aptTime > now.getTime();
       })
       .sort((a, b) => {
-        const aTime = a.date.toMillis ? a.date.toMillis() : new Date(a.date).getTime();
-        const bTime = b.date.toMillis ? b.date.toMillis() : new Date(b.date).getTime();
+        const aTime = a.date.toMillis ? a.date.toMillis() : a.date.toDate().getTime();
+        const bTime = b.date.toMillis ? b.date.toMillis() : b.date.toDate().getTime();
         return aTime - bTime;
       });
     
@@ -356,7 +356,7 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
           day: 'numeric'
         }) + (i === 0 ? ' (היום)' : ''),
         count: appointments.filter(apt => {
-          const aptDate = apt.date.toMillis ? new Date(apt.date.toMillis()) : new Date(apt.date);
+          const aptDate = apt.date.toMillis ? new Date(apt.date.toMillis()) : apt.date.toDate();
           return aptDate.toDateString() === date.toDateString();
         }).length
       });

@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     Dimensions,
     Image,
+    KeyboardAvoidingView,
     Modal,
+    Platform,
     SafeAreaView,
     ScrollView,
     StyleSheet,
@@ -102,16 +104,21 @@ export default function RegisterScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>הרשמה</Text>
-        <View style={styles.placeholder} />
-      </View>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        style={styles.keyboardAvoidingView}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>הרשמה</Text>
+          <View style={styles.placeholder} />
+        </View>
 
-      <View style={styles.content}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.content}>
         {/* Logo */}
         <View style={styles.logoSection}>
           <Image 
@@ -145,6 +152,10 @@ export default function RegisterScreen() {
                 value={phone}
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
+                returnKeyType="next"
+                onSubmitEditing={() => {
+                  // Focus to password field
+                }}
               />
 
               <Text style={styles.label}>סיסמא</Text>
@@ -155,6 +166,8 @@ export default function RegisterScreen() {
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
+                returnKeyType="go"
+                onSubmitEditing={handleSendVerification}
               />
 
               <TouchableOpacity 
@@ -199,6 +212,8 @@ export default function RegisterScreen() {
                 onChangeText={setVerificationCode}
                 keyboardType="number-pad"
                 maxLength={6}
+                returnKeyType="go"
+                onSubmitEditing={handleVerifyAndRegister}
               />
 
               <TouchableOpacity 
@@ -215,7 +230,9 @@ export default function RegisterScreen() {
             </View>
           </>
         )}
-      </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Terms Modal */}
       <Modal visible={showTerms} transparent={true} animationType="fade" onRequestClose={() => setShowTerms(false)}>
@@ -292,6 +309,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   header: {
     flexDirection: 'row',

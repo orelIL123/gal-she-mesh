@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, View, StyleSheet, ViewStyle } from 'react-native';
+import { Animated, StyleSheet, View, ViewStyle } from 'react-native';
 
 interface SkeletonLoaderProps {
   width?: number | string;
@@ -47,8 +47,8 @@ export const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       style={[
         styles.skeleton,
         {
-          width,
-          height,
+          width: typeof width === 'string' ? parseInt(width) : width,
+          height: typeof height === 'string' ? parseInt(height) : height,
           borderRadius,
           opacity,
         },

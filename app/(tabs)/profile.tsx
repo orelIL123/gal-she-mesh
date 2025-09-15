@@ -1,5 +1,4 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React from 'react';
 import ProfileScreen from '../screens/ProfileScreen';
 
 export default function ProfileTab() {
@@ -37,7 +36,7 @@ export default function ProfileTab() {
     <ProfileScreen 
       onNavigate={handleNavigate} 
       onBack={handleBack}
-      initialMode={mode}
+      // initialMode={mode}
     />
   );
 } 

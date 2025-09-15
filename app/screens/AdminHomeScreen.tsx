@@ -12,7 +12,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { checkIsAdmin, initializeCollections, initializeGalleryImages, listAllStorageImages, makeCurrentUserAdmin, onAuthStateChange, replaceGalleryPlaceholders, resetGalleryWithRealImages, restoreGalleryFromStorage } from '../../services/firebase';
+import { checkCurrentUserAdminStatus, checkIsAdmin, createAdminUser, db, initializeCollections, initializeGalleryImages, listAllStorageImages, makeCurrentUserAdmin, onAuthStateChange, replaceGalleryPlaceholders, resetGalleryWithRealImages, restoreGalleryFromStorage } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
 
@@ -199,13 +199,6 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
       icon: 'notifications',
       screen: 'admin-notifications',
       color: '#6c757d'
-    },
-    {
-      title: 'הגדרות התראות',
-      subtitle: 'נהל איזה התראות לקבל',
-      icon: 'settings-outline',
-      screen: 'admin-notification-settings',
-      color: '#28a745'
     },
     {
       title: 'הגדרות מנהל',

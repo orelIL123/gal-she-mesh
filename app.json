@@ -14,6 +14,10 @@
       "googleServicesFile": "./app/GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "האפליקציה זקוקה לגישה לתמונות כדי להעלות תמונות לגלריה",
+        "NSCameraUsageDescription": "האפליקציה זקוקה לגישה למצלמה כדי לצלם תמונות"
       }
     },
     "android": {
@@ -23,7 +27,12 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.orelaharon.rontugemanbarber",
-      "googleServicesFile": "./app/google-services.json"
+      "googleServicesFile": "./app/google-services.json",
+      "permissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -36,15 +45,21 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
+          "resizeMode": "cover",
           "backgroundColor": "#000000"
         }
       ],
       "expo-notifications",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "האפליקציה זקוקה לגישה לתמונות כדי להעלות תמונות לגלריה",
+          "cameraPermission": "האפליקציה זקוקה לגישה למצלמה כדי לצלם תמונות"
+        }
+      ]
     ],
-    "runtimeVersion": "1.2.0",
+    "runtimeVersion": "1.1.6",
     "updates": {
       "url": "https://u.expo.dev/229bec8c-f551-41b7-8e6b-e8e26fb31945"
     },

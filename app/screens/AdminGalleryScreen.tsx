@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
@@ -17,16 +17,16 @@ import {
 } from 'react-native';
 import {
     addGalleryImage,
+    addShopItem,
     deleteGalleryImage,
+    deleteShopItem,
     GalleryImage,
     getAllStorageImages,
     getGalleryImages,
-    uploadImageToStorage,
-    addShopItem,
     getShopItems,
+    ShopItem,
     updateShopItem,
-    deleteShopItem,
-    ShopItem
+    uploadImageToStorage
 } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
@@ -172,28 +172,51 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
 
   const pickImageFromDevice = async () => {
     try {
+      console.log('📱 Requesting media library permissions...');
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
       if (permissionResult.granted === false) {
         showToast('נדרשת הרשאה לגישה לגלריה', 'error');
-        return;
+        return null;
       }
 
+      // Double check permission status
+      if (permissionResult.status !== 'granted') {
+        showToast('הרשאת גישה נדחתה', 'error');
+        return null;
+      }
+
+      console.log('📱 Permissions granted, launching image picker...');
+      
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
+        allowsMultipleSelection: false,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        return result.assets[0].uri;
+      console.log('📱 Image picker result:', result);
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const imageUri = result.assets[0].uri;
+        console.log('📤 Selected image URI:', imageUri);
+        
+        if (!imageUri) {
+          showToast('שגיאה בבחירת התמונה', 'error');
+          return null;
+        }
+        
+        return imageUri;
+      } else {
+        console.log('📱 Image selection canceled or no assets');
+        return null;
       }
     } catch (error) {
-      console.error('Error picking image:', error);
-      showToast('שגיאה בבחירת התמונה', 'error');
+      console.error('❌ Error picking image:', error);
+      showToast(`שגיאה בבחירת התמונה: ${(error as Error).message || 'Unknown error'}`, 'error');
+      return null;
     }
-    return null;
   };
 
   const uploadImageFromDevice = async () => {
@@ -595,7 +618,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
         onBellPress={() => {}}
         onMenuPress={() => {}}
         showBackButton={true}
-        onBackPress={onBack || (() => onNavigate('admin-home'))}
+        onBackPress={onBack || (() => onNavigate?.('admin-home'))}
       />
       
       <View style={styles.content}>
@@ -676,7 +699,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
                           onPress={() => {
                             setFormData({
                               imageUrl: imageUrl,
-                              type: selectedTab,
+                              type: selectedTab === 'shop' ? 'gallery' : selectedTab,
                               order: '0'
                             });
                             setModalVisible(true);
@@ -777,7 +800,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
                 <Text style={styles.emptyStateText}>אין תמונות ב{getTabTitle(selectedTab)}</Text>
                 <TouchableOpacity 
                   style={styles.emptyAddButton} 
-                  onPress={() => openAddModal(selectedTab)}
+                  onPress={() => openAddModal(selectedTab === 'shop' ? 'gallery' : selectedTab)}
                 >
                   <Text style={styles.emptyAddButtonText}>הוסף תמונה ראשונה</Text>
                 </TouchableOpacity>

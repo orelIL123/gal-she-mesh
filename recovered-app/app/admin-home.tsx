@@ -1,5 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
@@ -12,9 +10,10 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { checkIsAdmin, createAdminUser, db, initializeCollections, initializeGalleryImages, listAllStorageImages, makeCurrentUserAdmin, onAuthStateChange, replaceGalleryPlaceholders, resetGalleryWithRealImages, restoreGalleryFromStorage } from '../services/firebase';
-import ToastMessage from '../../components/ToastMessage';
-import TopNav from '../../components/TopNav';
+import { IconWrapper as Ionicons, GradientWrapper as LinearGradient } from '../../../app/components/IconWrapper';
+import ToastMessage from '../../../app/components/ToastMessage';
+import TopNav from '../../../app/components/TopNav';
+import { checkIsAdmin, initializeCollections, initializeGalleryImages, listAllStorageImages, makeCurrentUserAdmin, onAuthStateChange, replaceGalleryPlaceholders, resetGalleryWithRealImages, restoreGalleryFromStorage } from '../services/firebase';
 
 const { width } = Dimensions.get('window');
 

@@ -102,13 +102,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   imageContainer: {
-    width: width * 0.8,
-    height: height * 0.6,
+    width: width,
+    height: height,
     justifyContent: 'center',
     alignItems: 'center',
   },
   image: {
-    width: '100%',
-    height: '100%',
+    width: width,
+    height: height,
+    resizeMode: 'cover',
   },
 });

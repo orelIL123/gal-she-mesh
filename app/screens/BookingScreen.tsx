@@ -332,7 +332,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
             for (const timeSlot of timeSlots) {
               // Check if this time slot is available
               const slotDateTime = new Date(date);
-              const [slotHour, slotMin] = timeSlot.split(':').map(Number);
+              const [slotHour, slotMin] = timeSlot?.split(':').map(Number) || [0, 0];
               slotDateTime.setHours(slotHour, slotMin, 0, 0);
               
               if (isSlotAvailable(slotDateTime, selectedTreatment.duration, existingAppointments)) {
@@ -342,7 +342,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
           }
           
           console.log('Filtered fallback times:', fallbackTimes);
-          setAvailableTimes(fallbackTimes);
+          setAvailableTimes(fallbackTimes.filter(t => t !== null) as string[]);
         } else {
           setAvailableTimes(timeStrings);
         }
@@ -364,7 +364,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
             for (const timeSlot of timeSlots) {
               // Check if this time slot is available
               const slotDateTime = new Date(date);
-              const [slotHour, slotMin] = timeSlot.split(':').map(Number);
+              const [slotHour, slotMin] = timeSlot?.split(':').map(Number) || [0, 0];
               slotDateTime.setHours(slotHour, slotMin, 0, 0);
               
               if (isSlotAvailable(slotDateTime, selectedTreatment.duration, existingAppointments)) {
@@ -385,7 +385,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
           }
         }
         
-        setAvailableTimes(fallbackTimes);
+        setAvailableTimes(fallbackTimes.filter(t => t !== null) as string[]);
       }
     }
   };

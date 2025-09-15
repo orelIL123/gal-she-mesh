@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
-  Animated,
-  Dimensions,
-  StyleSheet,
-  Text,
+    Animated,
+    Dimensions,
+    StyleSheet,
+    Text,
 } from 'react-native';
 
 const {} = Dimensions.get('window');
@@ -49,7 +49,7 @@ const ToastMessage: React.FC<ToastMessageProps> = ({
 
       return () => clearTimeout(timer);
     }
-  }, [visible, duration, hideToast, opacityAnim, slideAnim]);
+  }, [visible, duration, opacityAnim, slideAnim]);
 
   const hideToast = useCallback(() => {
     Animated.parallel([
