@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import { Timestamp } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Alert,
@@ -41,6 +41,39 @@ interface BookingScreenProps {
     };
   };
 }
+
+// Optimized Image Component with lazy loading
+const OptimizedImage = memo(({ source, style, resizeMode = 'cover' }: {
+  source: any;
+  style: any;
+  resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
+}) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  return (
+    <View style={[style, { backgroundColor: '#f0f0f0' }]}>
+      {!isLoaded && !hasError && (
+        <View style={[style, { 
+          position: 'absolute', 
+          backgroundColor: '#f0f0f0', 
+          justifyContent: 'center', 
+          alignItems: 'center' 
+        }]}>
+          <Text style={{ color: '#999', fontSize: 12 }}>טוען...</Text>
+        </View>
+      )}
+      <Image
+        source={source}
+        style={[style, { opacity: isLoaded ? 1 : 0 }]}
+        resizeMode={resizeMode}
+        onLoad={() => setIsLoaded(true)}
+        onError={() => setHasError(true)}
+        fadeDuration={200}
+      />
+    </View>
+  );
+});
 
 const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClose, route }) => {
   const { t } = useTranslation();

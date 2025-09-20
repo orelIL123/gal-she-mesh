@@ -1,28 +1,28 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, memo, useMemo } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  Image,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Image,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import {
-  Appointment,
-  cancelAppointment,
-  createUserProfileFromAuth,
-  getUserAppointments,
-  getUserProfile,
-  logoutUser,
-  onAuthStateChange,
-  updateUserProfile,
-  UserProfile
+    Appointment,
+    cancelAppointment,
+    createUserProfileFromAuth,
+    getUserAppointments,
+    getUserProfile,
+    logoutUser,
+    onAuthStateChange,
+    updateUserProfile,
+    UserProfile
 } from '../../services/firebase';
 import { NeonButton } from '../components/NeonButton';
 import ToastMessage from '../components/ToastMessage';
@@ -34,6 +34,39 @@ interface ProfileScreenProps {
   onNavigate: (screen: string) => void;
   onBack?: () => void;
 }
+
+// Optimized Image Component with lazy loading
+const OptimizedImage = memo(({ source, style, resizeMode = 'cover' }: {
+  source: any;
+  style: any;
+  resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
+}) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  return (
+    <View style={[style, { backgroundColor: '#f0f0f0' }]}>
+      {!isLoaded && !hasError && (
+        <View style={[style, { 
+          position: 'absolute', 
+          backgroundColor: '#f0f0f0', 
+          justifyContent: 'center', 
+          alignItems: 'center' 
+        }]}>
+          <Text style={{ color: '#999', fontSize: 12 }}>טוען...</Text>
+        </View>
+      )}
+      <Image
+        source={source}
+        style={[style, { opacity: isLoaded ? 1 : 0 }]}
+        resizeMode={resizeMode}
+        onLoad={() => setIsLoaded(true)}
+        onError={() => setHasError(true)}
+        fadeDuration={200}
+      />
+    </View>
+  );
+});
 
 const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => {
   const [user, setUser] = useState<any>(null);
@@ -272,8 +305,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
           title="התחברות" 
           onBellPress={() => {}} 
           onMenuPress={() => {}}
-          showBackButton={true}
-          onBackPress={onBack || (() => onNavigate('home'))}
+          showBackButton={false}
         />
         <View style={styles.flexGrow}>
           {/* Top Tabs */}
@@ -567,7 +599,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
         onBellPress={() => {}} 
         onMenuPress={() => {}}
         showBackButton={true}
-        onBackPress={onBack || (() => onNavigate('home'))}
+        onBackPress={onBack || (() => {})}
       />
       
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -699,6 +731,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
             <View>
               {appointments
                 .filter(apt => apt.status !== 'cancelled') // Don't show cancelled appointments
+                .filter(apt => {
+                  // Only show future appointments
+                  const now = new Date();
+                  const aptTime = apt.date.toMillis ? new Date(apt.date.toMillis()) : apt.date.toDate();
+                  return aptTime > now;
+                })
                 .slice(0, 3) // Show only next 3 appointments
                 .map((appointment, index) => (
                 <View key={appointment.id} style={styles.appointmentCard}>

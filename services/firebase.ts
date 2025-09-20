@@ -1,38 +1,38 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import {
-  createUserWithEmailAndPassword,
-  EmailAuthProvider,
-  linkWithCredential,
-  onAuthStateChanged,
-  PhoneAuthProvider,
-  signInWithCredential,
-  signInWithEmailAndPassword,
-  signOut,
-  updateProfile,
-  User
+    createUserWithEmailAndPassword,
+    EmailAuthProvider,
+    linkWithCredential,
+    onAuthStateChanged,
+    PhoneAuthProvider,
+    signInWithCredential,
+    signInWithEmailAndPassword,
+    signOut,
+    updateProfile,
+    User
 } from 'firebase/auth';
 import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  updateDoc,
-  where,
-  writeBatch
+    addDoc,
+    collection,
+    deleteDoc,
+    doc,
+    getDoc,
+    getDocs,
+    limit,
+    orderBy,
+    query,
+    serverTimestamp,
+    setDoc,
+    Timestamp,
+    updateDoc,
+    where,
+    writeBatch
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, listAll, ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '../config/firebase';
 import { CacheUtils } from './cache';
-import { ImageOptimizer } from './imageOptimization';
+// Removed ImageOptimizer import - using simple upload only
 
 // Export db for use in other components
 export { db };
@@ -506,6 +506,18 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
       await AsyncStorage.removeItem(`verification_${verificationId}`);
       console.log('🧹 Verification data cleaned up after successful registration');
 
+      // Send notification to admins about new user registration
+      try {
+        await sendNotificationToAdmins(
+          'משתמש חדש נרשם! 🎉',
+          `${displayName} נרשם לאפליקציה עם מספר ${phoneNumber}`
+        );
+        console.log('✅ Admin notification sent for new user registration');
+      } catch (error) {
+        console.error('❌ Error sending admin notification:', error);
+        // Don't fail registration if notification fails
+      }
+
       // Return the Firebase Auth user object
       return user;
     }
@@ -528,6 +540,18 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
 
       await setDoc(doc(db, 'users', mockUserId), userProfile);
       console.log('✅ Mock user registered successfully');
+
+      // Send notification to admins about new user registration
+      try {
+        await sendNotificationToAdmins(
+          'משתמש חדש נרשם! 🎉',
+          `${displayName} נרשם לאפליקציה עם מספר ${phoneNumber}`
+        );
+        console.log('✅ Admin notification sent for new mock user registration');
+      } catch (error) {
+        console.error('❌ Error sending admin notification:', error);
+        // Don't fail registration if notification fails
+      }
 
       return {
         uid: mockUserId,
@@ -558,6 +582,19 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
     };
     
     await setDoc(doc(db, 'users', user.uid), userProfile);
+    
+    // Send notification to admins about new user registration
+    try {
+      await sendNotificationToAdmins(
+        'משתמש חדש נרשם! 🎉',
+        `${displayName} נרשם לאפליקציה עם מספר ${phoneNumber}`
+      );
+      console.log('✅ Admin notification sent for new Firebase user registration');
+    } catch (error) {
+      console.error('❌ Error sending admin notification:', error);
+      // Don't fail registration if notification fails
+    }
+    
     return user;
   } catch (error) {
     console.error('Error registering user with phone:', error);
@@ -1434,34 +1471,28 @@ export const getAllStorageImages = async () => {
   }
 };
 
-// Upload image to Firebase Storage
+// Simple image upload - no compression, no complex logic
 export const uploadImageToStorage = async (
   imageUri: string, 
   folderPath: string, 
-  fileName: string,
-  compress: boolean = true
+  fileName: string
 ): Promise<string> => {
   try {
-    let finalImageUri = imageUri;
-    
-    // Compress image before upload if requested
-    if (compress) {
-      console.log('🗜️ Compressing image before upload...');
-      const preset = folderPath === 'profiles' ? 'PROFILE' : 
-                    folderPath === 'gallery' ? 'GALLERY' : 
-                    folderPath === 'atmosphere' ? 'ATMOSPHERE' : 'GALLERY';
-      finalImageUri = await ImageOptimizer.compressImage(imageUri, ImageOptimizer.PRESETS[preset]);
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error('User must be authenticated to upload images');
+    }
+
+    const response = await fetch(imageUri);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
     }
     
-    const response = await fetch(finalImageUri);
     const blob = await response.blob();
-    
-    console.log(`📤 Uploading ${compress ? 'compressed' : 'original'} image to ${folderPath}/${fileName}`);
     const imageRef = ref(storage, `${folderPath}/${fileName}`);
     await uploadBytes(imageRef, blob);
-    
     const downloadURL = await getDownloadURL(imageRef);
-    console.log('✅ Image uploaded successfully:', downloadURL);
+    
     return downloadURL;
   } catch (error) {
     console.error('Error uploading image:', error);
@@ -1469,35 +1500,7 @@ export const uploadImageToStorage = async (
   }
 };
 
-// Optimized image upload with automatic compression
-export const uploadOptimizedImage = async (
-  imageUri: string,
-  folderPath: string,
-  fileName: string,
-  preset: keyof typeof ImageOptimizer.PRESETS = 'GALLERY'
-): Promise<string> => {
-  try {
-    console.log('🚀 Starting optimized image upload...');
-    
-    // Compress image with specific preset
-    const compressedUri = await ImageOptimizer.compressImage(imageUri, ImageOptimizer.PRESETS[preset]);
-    
-    // Upload compressed image
-    const response = await fetch(compressedUri);
-    const blob = await response.blob();
-    
-    console.log(`📤 Uploading optimized image (${preset}) to ${folderPath}/${fileName}`);
-    const imageRef = ref(storage, `${folderPath}/${fileName}`);
-    await uploadBytes(imageRef, blob);
-    
-    const downloadURL = await getDownloadURL(imageRef);
-    console.log('✅ Optimized image uploaded successfully:', downloadURL);
-    return downloadURL;
-  } catch (error) {
-    console.error('Error uploading optimized image:', error);
-    throw error;
-  }
-};
+// Removed uploadOptimizedImage - using simple upload only
 
 // Get available time slots for a barber on a specific date
 export const getBarberAvailableSlots = async (barberId: string, date: string): Promise<string[]> => {

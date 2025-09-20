@@ -82,18 +82,10 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
 
   const pickImageFromDevice = async () => {
     try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (permissionResult.granted === false) {
-        showToast('נדרשת הרשאה לגישה לגלריה', 'error');
-        return;
-      }
-
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
+        allowsEditing: false,
+        quality: 1,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -108,22 +100,15 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
 
   const uploadTreatmentImage = async () => {
     try {
-      console.log('📱 Starting treatment image upload...');
       const imageUri = await pickImageFromDevice();
-      if (!imageUri) {
-        console.log('❌ No image selected');
-        return;
-      }
+      if (!imageUri) return;
 
-      console.log('📤 Uploading treatment image:', imageUri);
       showToast('מעלה תמונה...', 'success');
       
-      const fileName = `treatment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+      const fileName = `treatment_${Date.now()}.jpg`;
       const folderPath = 'treatments';
       
-      console.log('📁 Upload path:', `${folderPath}/${fileName}`);
       const downloadURL = await uploadImageToStorage(imageUri, folderPath, fileName);
-      console.log('✅ Upload successful. Download URL:', downloadURL);
       
       setFormData({
         ...formData,
@@ -132,7 +117,7 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
       
       showToast('התמונה הועלתה בהצלחה', 'success');
     } catch (error) {
-      console.error('❌ Error uploading treatment image:', error);
+      console.error('Error uploading treatment image:', error);
       showToast('שגיאה בהעלאת התמונה', 'error');
     }
   };

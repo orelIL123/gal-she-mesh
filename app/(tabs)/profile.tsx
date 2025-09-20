@@ -25,11 +25,9 @@ export default function ProfileTab() {
   };
 
   const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/');
-    }
+    // Always navigate to home tabs instead of using router.back()
+    // This ensures consistent navigation behavior
+    router.replace('/(tabs)');
   };
 
   return (

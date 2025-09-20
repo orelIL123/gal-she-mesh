@@ -1,0 +1,6 @@
+module Pods_RonTurgeman {
+  umbrella header "Pods-RonTurgeman-umbrella.h"
+
+  export *
+  module * { export * }
+}

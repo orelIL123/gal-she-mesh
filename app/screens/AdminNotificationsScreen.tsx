@@ -89,23 +89,38 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
     }
 
     try {
-      // TODO: Implement actual notification sending when packages are installed
-      Alert.alert(
-        'התראה נשלחה',
-        'ההודעה "' + notificationTitle + '" נשלחה בהצלחה!',
-        [
-          {
-            text: 'אישור',
-            onPress: () => {
-              setModalVisible(false);
-              setNotificationTitle('');
-              setNotificationBody('');
-              setSelectedUser('all');
+      // Import notification functions
+      const { sendNotificationToAllUsers, sendNotificationToUser } = await import('../../services/firebase');
+      
+      let success = false;
+      
+      if (selectedUser === 'all') {
+        success = await sendNotificationToAllUsers(notificationTitle, notificationBody);
+      } else {
+        success = await sendNotificationToUser(selectedUser, notificationTitle, notificationBody);
+      }
+      
+      if (success) {
+        Alert.alert(
+          'התראה נשלחה',
+          'ההודעה "' + notificationTitle + '" נשלחה בהצלחה!',
+          [
+            {
+              text: 'אישור',
+              onPress: () => {
+                setModalVisible(false);
+                setNotificationTitle('');
+                setNotificationBody('');
+                setSelectedUser('all');
+              }
             }
-          }
-        ]
-      );
+          ]
+        );
+      } else {
+        Alert.alert('שגיאה', 'לא ניתן לשלוח את ההודעה - בדוק שהמשתמשים רשומים להתראות');
+      }
     } catch (error) {
+      console.error('Error sending notification:', error);
       Alert.alert('שגיאה', 'לא ניתן לשלוח את ההודעה');
     }
   };

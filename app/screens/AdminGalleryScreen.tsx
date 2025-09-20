@@ -1,32 +1,32 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    Image,
-    Modal,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Dimensions,
+  Image,
+  Modal,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import {
-    addGalleryImage,
-    addShopItem,
-    deleteGalleryImage,
-    deleteShopItem,
-    GalleryImage,
-    getAllStorageImages,
-    getGalleryImages,
-    getShopItems,
-    ShopItem,
-    updateShopItem,
-    uploadImageToStorage
+  addGalleryImage,
+  addShopItem,
+  deleteGalleryImage,
+  deleteShopItem,
+  GalleryImage,
+  getAllStorageImages,
+  getGalleryImages,
+  getShopItems,
+  ShopItem,
+  updateShopItem,
+  uploadImageToStorage
 } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
@@ -38,6 +38,39 @@ interface AdminGalleryScreenProps {
   onBack?: () => void;
   initialTab?: 'gallery' | 'background' | 'splash' | 'aboutus' | 'shop';
 }
+
+// Optimized Image Component with lazy loading
+const OptimizedImage = memo(({ source, style, resizeMode = 'cover' }: {
+  source: any;
+  style: any;
+  resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
+}) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  return (
+    <View style={[style, { backgroundColor: '#f0f0f0' }]}>
+      {!isLoaded && !hasError && (
+        <View style={[style, { 
+          position: 'absolute', 
+          backgroundColor: '#f0f0f0', 
+          justifyContent: 'center', 
+          alignItems: 'center' 
+        }]}>
+          <Text style={{ color: '#999', fontSize: 12 }}>טוען...</Text>
+        </View>
+      )}
+      <Image
+        source={source}
+        style={[style, { opacity: isLoaded ? 1 : 0 }]}
+        resizeMode={resizeMode}
+        onLoad={() => setIsLoaded(true)}
+        onError={() => setHasError(true)}
+        fadeDuration={200}
+      />
+    </View>
+  );
+});
 
 const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onBack, initialTab }) => {
   const [images, setImages] = useState<GalleryImage[]>([]);
@@ -172,71 +205,33 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
 
   const pickImageFromDevice = async () => {
     try {
-      console.log('📱 Requesting media library permissions...');
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (permissionResult.granted === false) {
-        showToast('נדרשת הרשאה לגישה לגלריה', 'error');
-        return null;
-      }
-
-      // Double check permission status
-      if (permissionResult.status !== 'granted') {
-        showToast('הרשאת גישה נדחתה', 'error');
-        return null;
-      }
-
-      console.log('📱 Permissions granted, launching image picker...');
-      
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-        allowsMultipleSelection: false,
+        allowsEditing: false,
+        quality: 1,
       });
 
-      console.log('📱 Image picker result:', result);
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const imageUri = result.assets[0].uri;
-        console.log('📤 Selected image URI:', imageUri);
-        
-        if (!imageUri) {
-          showToast('שגיאה בבחירת התמונה', 'error');
-          return null;
-        }
-        
-        return imageUri;
-      } else {
-        console.log('📱 Image selection canceled or no assets');
-        return null;
+      if (!result.canceled && result.assets[0]) {
+        return result.assets[0].uri;
       }
     } catch (error) {
-      console.error('❌ Error picking image:', error);
-      showToast(`שגיאה בבחירת התמונה: ${(error as Error).message || 'Unknown error'}`, 'error');
-      return null;
+      console.error('Error picking image:', error);
+      showToast('שגיאה בבחירת התמונה', 'error');
     }
+    return null;
   };
 
   const uploadImageFromDevice = async () => {
     try {
-      console.log('📱 Starting image upload from device...');
       const imageUri = await pickImageFromDevice();
-      if (!imageUri) {
-        console.log('❌ No image selected');
-        return;
-      }
+      if (!imageUri) return;
 
-      console.log('📤 Uploading image:', imageUri);
       showToast('מעלה תמונה...', 'success');
       
-      const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+      const fileName = `img_${Date.now()}.jpg`;
       const folderPath = formData.type === 'background' ? 'backgrounds' : formData.type;
       
-      console.log('📁 Upload path:', `${folderPath}/${fileName}`);
       const downloadURL = await uploadImageToStorage(imageUri, folderPath, fileName);
-      console.log('✅ Upload successful. Download URL:', downloadURL);
       
       setFormData({
         ...formData,
@@ -245,7 +240,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
       
       showToast('התמונה הועלתה בהצלחה', 'success');
     } catch (error) {
-      console.error('❌ Error uploading image:', error);
+      console.error('Error uploading image:', error);
       showToast('שגיאה בהעלאת התמונה', 'error');
     }
   };

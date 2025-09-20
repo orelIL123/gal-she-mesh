@@ -17,7 +17,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { registerUserWithPhone, sendSMSVerification } from '../../services/firebase';
+import { registerForPushNotifications, registerUserWithPhone, sendSMSVerification } from '../../services/firebase';
 import { colors } from '../constants/colors';
 import { CONTACT_INFO } from '../constants/contactInfo';
 
@@ -82,6 +82,19 @@ export default function RegisterScreen() {
       // Only call registerUserWithPhone - it will handle verification internally
       await registerUserWithPhone(phone, fullName, verificationId, verificationCode, password);
 
+      // Register for push notifications after successful registration
+      try {
+        const { getCurrentUser } = await import('../../services/firebase');
+        const user = getCurrentUser();
+        if (user) {
+          await registerForPushNotifications(user.uid);
+          console.log('✅ Push notifications registered for new user:', user.uid);
+        }
+      } catch (error) {
+        console.error('❌ Error registering for push notifications:', error);
+        // Don't fail registration if push registration fails
+      }
+
       Alert.alert('הצלחה', 'נרשמת בהצלחה!', [
         { text: 'אישור', onPress: () => router.replace('/(tabs)') }
       ]);
@@ -98,7 +111,9 @@ export default function RegisterScreen() {
       setStep('input');
       setVerificationCode('');
     } else {
-      router.back();
+      // Navigate to auth choice screen instead of using router.back()
+      // This ensures consistent navigation behavior
+      router.replace('/auth-choice');
     }
   };
 

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { collection, doc, getDoc, getDocs, getFirestore, query, where } from 'firebase/firestore';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Alert,
@@ -31,6 +31,39 @@ interface HomeScreenProps {
   onNavigate: (screen: string) => void;
   isGuestMode?: boolean;
 }
+
+// Optimized Image Component with lazy loading
+const OptimizedImage = memo(({ source, style, resizeMode = 'cover' }: {
+  source: any;
+  style: any;
+  resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
+}) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  return (
+    <View style={[style, { backgroundColor: '#f0f0f0' }]}>
+      {!isLoaded && !hasError && (
+        <View style={[style, { 
+          position: 'absolute', 
+          backgroundColor: '#f0f0f0', 
+          justifyContent: 'center', 
+          alignItems: 'center' 
+        }]}>
+          <Text style={{ color: '#999', fontSize: 12 }}>טוען...</Text>
+        </View>
+      )}
+      <Image
+        source={source}
+        style={[style, { opacity: isLoaded ? 1 : 0 }]}
+        resizeMode={resizeMode}
+        onLoad={() => setIsLoaded(true)}
+        onError={() => setHasError(true)}
+        fadeDuration={200}
+      />
+    </View>
+  );
+});
 
 // Simple NeonButton component
 const NeonButton: React.FC<{
@@ -518,6 +551,16 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
           resizeMode="cover"
         >
           <View style={styles.overlay} />
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.8)']}
+            style={styles.bottomGradient}
+          />
+          <LinearGradient
+            colors={['rgba(0,0,0,0.1)', 'transparent', 'transparent', 'rgba(0,0,0,0.1)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.sideGradient}
+          />
           <View style={styles.designElements}>
             <View style={styles.circle1} />
             <View style={styles.circle2} />
@@ -857,7 +900,21 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  bottomGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 180,
+  },
+  sideGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   designElements: {
     position: 'absolute',

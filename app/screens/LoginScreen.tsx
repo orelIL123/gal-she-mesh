@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -17,7 +17,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { loginUser, loginWithPhoneAndPassword } from '../../services/firebase';
+import { loginUser, loginWithPhoneAndPassword, registerForPushNotifications } from '../../services/firebase';
 import { colors } from '../constants/colors';
 import { CONTACT_INFO } from '../constants/contactInfo';
 
@@ -52,6 +52,19 @@ export default function LoginScreen() {
         await loginWithPhoneAndPassword(emailOrPhone, password);
       }
 
+      // Register for push notifications after successful login
+      try {
+        const { getCurrentUser } = await import('../../services/firebase');
+        const user = getCurrentUser();
+        if (user) {
+          await registerForPushNotifications(user.uid);
+          console.log('✅ Push notifications registered for user:', user.uid);
+        }
+      } catch (error) {
+        console.error('❌ Error registering for push notifications:', error);
+        // Don't fail login if push registration fails
+      }
+
       Alert.alert('הצלחה', 'התחברת בהצלחה', [
         { text: 'אישור', onPress: () => router.replace('/(tabs)') }
       ]);
@@ -77,7 +90,9 @@ export default function LoginScreen() {
   };
 
   const handleBack = () => {
-    router.back();
+    // Navigate to auth choice screen instead of using router.back()
+    // This ensures consistent navigation behavior
+    router.replace('/auth-choice');
   };
 
   return (

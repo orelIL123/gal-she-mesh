@@ -1,5 +1,4 @@
 import { useRouter } from 'expo-router';
-import React from 'react';
 import AdminHomeScreen from './screens/AdminHomeScreen';
 
 export default function AdminHomeTab() {
@@ -47,6 +46,8 @@ export default function AdminHomeTab() {
   };
 
   const handleBack = () => {
+    // Navigate to home tabs instead of using router.back()
+    // This ensures consistent navigation behavior
     router.replace('/(tabs)');
   };
 

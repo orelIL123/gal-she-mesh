@@ -12,7 +12,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { checkCurrentUserAdminStatus, checkIsAdmin, createAdminUser, db, initializeCollections, initializeGalleryImages, listAllStorageImages, makeCurrentUserAdmin, onAuthStateChange, replaceGalleryPlaceholders, resetGalleryWithRealImages, restoreGalleryFromStorage } from '../../services/firebase';
+import { checkIsAdmin, initializeCollections, initializeGalleryImages, listAllStorageImages, makeCurrentUserAdmin, onAuthStateChange, replaceGalleryPlaceholders, resetGalleryWithRealImages, restoreGalleryFromStorage } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
 
@@ -201,6 +201,13 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
       color: '#6c757d'
     },
     {
+      title: 'הגדרות התראות',
+      subtitle: 'הגדר איזה התראות לקבל כמנהל',
+      icon: 'settings-outline',
+      screen: 'admin-notification-settings',
+      color: '#9c27b0'
+    },
+    {
       title: 'הגדרות מנהל',
       subtitle: 'עריכת הודעות ברכה, טקסטים ושליחת הודעות',
       icon: 'settings',
@@ -265,7 +272,7 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
         onBellPress={() => {}}
         onMenuPress={() => {}}
         showBackButton={true}
-        onBackPress={onBack || (() => onNavigate('home'))}
+        onBackPress={onBack || (() => {})}
       />
       
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -330,6 +337,14 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
             >
               <Ionicons name="download" size={20} color="#fff" />
               <Text style={styles.initButtonText}>שחזר התמונות שלי מ-Storage</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.initButton, { backgroundColor: '#9c27b0', marginTop: 12 }]}
+              onPress={() => onNavigate('admin-notification-settings')}
+            >
+              <Ionicons name="settings-outline" size={20} color="#fff" />
+              <Text style={styles.initButtonText}>הגדרות התראות מנהל</Text>
             </TouchableOpacity>
           </View>
 

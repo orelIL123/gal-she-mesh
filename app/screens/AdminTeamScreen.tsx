@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, memo, useMemo } from 'react';
 import {
     Alert,
     Image,
@@ -34,6 +34,39 @@ interface AdminTeamScreenProps {
   onNavigate: (screen: string) => void;
   onBack?: () => void;
 }
+
+// Optimized Image Component with lazy loading
+const OptimizedImage = memo(({ source, style, resizeMode = 'cover' }: {
+  source: any;
+  style: any;
+  resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
+}) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  return (
+    <View style={[style, { backgroundColor: '#f0f0f0' }]}>
+      {!isLoaded && !hasError && (
+        <View style={[style, { 
+          position: 'absolute', 
+          backgroundColor: '#f0f0f0', 
+          justifyContent: 'center', 
+          alignItems: 'center' 
+        }]}>
+          <Text style={{ color: '#999', fontSize: 12 }}>טוען...</Text>
+        </View>
+      )}
+      <Image
+        source={source}
+        style={[style, { opacity: isLoaded ? 1 : 0 }]}
+        resizeMode={resizeMode}
+        onLoad={() => setIsLoaded(true)}
+        onError={() => setHasError(true)}
+        fadeDuration={200}
+      />
+    </View>
+  );
+});
 
 const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack }) => {
   const [barbers, setBarbers] = useState<Barber[]>([]);
@@ -289,18 +322,10 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
 
   const pickImageFromDevice = async () => {
     try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (permissionResult.granted === false) {
-        showToast('נדרשת הרשאה לגישה לגלריה', 'error');
-        return;
-      }
-
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
+        allowsEditing: false,
+        quality: 1,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -320,7 +345,7 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
 
       showToast('מעלה תמונה...', 'success');
       
-      const fileName = `${formData.name.trim()}_${Date.now()}.jpg`;
+      const fileName = `worker_${Date.now()}.jpg`;
       
       const downloadURL = await uploadImageToStorage(imageUri, 'workers', fileName);
       

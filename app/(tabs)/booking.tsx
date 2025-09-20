@@ -1,6 +1,5 @@
-import React from 'react';
-import BookingScreen from '../screens/BookingScreen';
 import { useRouter } from 'expo-router';
+import BookingScreen from '../screens/BookingScreen';
 
 export default function BookingTab() {
   const router = useRouter();
@@ -25,11 +24,9 @@ export default function BookingTab() {
   };
 
   const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/');
-    }
+    // Always navigate to home tabs instead of using router.back()
+    // This ensures consistent navigation behavior
+    router.replace('/(tabs)');
   };
 
   const handleClose = () => {

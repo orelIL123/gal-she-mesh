@@ -1,26 +1,31 @@
 import { useRouter } from 'expo-router';
-import React from 'react';
 import AdminNotificationSettingsScreen from './screens/AdminNotificationSettingsScreen';
 
-export default function AdminNotificationSettingsPage() {
+export default function AdminNotificationSettingsTab() {
   const router = useRouter();
 
   const handleNavigate = (screen: string) => {
-    console.log('AdminNotificationSettingsPage handleNavigate called with:', screen);
+    console.log('Admin Notification Settings navigating to:', screen);
     switch (screen) {
-      case 'admin-settings':
-        router.replace('/admin-settings');
-        break;
       case 'admin-home':
         router.replace('/admin-home');
         break;
+      case 'admin-notifications':
+        router.replace('/admin-notifications');
+        break;
+      case 'home':
+        router.replace('/(tabs)');
+        break;
       default:
-        console.log('Unknown screen:', screen);
+        console.log('Unknown navigation target:', screen);
     }
   };
 
   const handleBack = () => {
-    router.back();
+    console.log('Admin Notification Settings back pressed');
+    // Navigate to admin settings instead of using router.back()
+    // This ensures consistent navigation behavior
+    router.replace('/admin-settings');
   };
 
   return (
@@ -30,4 +35,3 @@ export default function AdminNotificationSettingsPage() {
     />
   );
 }
-

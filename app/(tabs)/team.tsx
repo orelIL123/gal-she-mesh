@@ -1,6 +1,5 @@
-import React from 'react';
-import TeamScreenComponent from '../screens/TeamScreen';
 import { useRouter } from 'expo-router';
+import TeamScreenComponent from '../screens/TeamScreen';
 
 export default function TeamTab() {
   const router = useRouter();
@@ -32,11 +31,9 @@ export default function TeamTab() {
   };
 
   const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/');
-    }
+    // Always navigate to home tabs instead of using router.back()
+    // This ensures consistent navigation behavior
+    router.replace('/(tabs)');
   };
 
   return (
