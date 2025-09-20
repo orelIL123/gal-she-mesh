@@ -552,7 +552,7 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
         >
           <View style={styles.overlay} />
           <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.8)']}
+            colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.9)']}
             style={styles.bottomGradient}
           />
           <LinearGradient
@@ -900,14 +900,14 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   bottomGradient: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 180,
+    height: 250,
   },
   sideGradient: {
     position: 'absolute',
