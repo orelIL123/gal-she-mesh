@@ -1,33 +1,33 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import {
-    createUserWithEmailAndPassword,
-    EmailAuthProvider,
-    linkWithCredential,
-    onAuthStateChanged,
-    PhoneAuthProvider,
-    signInWithCredential,
-    signInWithEmailAndPassword,
-    signOut,
-    updateProfile,
-    User
+  createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  linkWithCredential,
+  onAuthStateChanged,
+  PhoneAuthProvider,
+  signInWithCredential,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+  User
 } from 'firebase/auth';
 import {
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    getDoc,
-    getDocs,
-    limit,
-    orderBy,
-    query,
-    serverTimestamp,
-    setDoc,
-    Timestamp,
-    updateDoc,
-    where,
-    writeBatch
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+  writeBatch
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, listAll, ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '../config/firebase';
@@ -508,7 +508,7 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
 
       // Send notification to admins about new user registration
       try {
-        await sendNotificationToAdmins(
+        await sendNotificationToAdmin(
           'משתמש חדש נרשם! 🎉',
           `${displayName} נרשם לאפליקציה עם מספר ${phoneNumber}`
         );
@@ -543,7 +543,7 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
 
       // Send notification to admins about new user registration
       try {
-        await sendNotificationToAdmins(
+        await sendNotificationToAdmin(
           'משתמש חדש נרשם! 🎉',
           `${displayName} נרשם לאפליקציה עם מספר ${phoneNumber}`
         );
@@ -585,7 +585,7 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
     
     // Send notification to admins about new user registration
     try {
-      await sendNotificationToAdmins(
+      await sendNotificationToAdmin(
         'משתמש חדש נרשם! 🎉',
         `${displayName} נרשם לאפליקציה עם מספר ${phoneNumber}`
       );
@@ -967,6 +967,13 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
       await sendNotificationToAdmin('תור חדש! 📅', `תור חדש נוצר עבור ${dateStr}`, { appointmentId: docRef.id });
     } catch (adminNotificationError) {
       console.log('Failed to send admin notification:', adminNotificationError);
+    }
+    
+    // Schedule reminder notifications for the appointment
+    try {
+      await scheduleAppointmentReminders(docRef.id, appointmentData);
+    } catch (scheduleError) {
+      console.log('Failed to schedule appointment reminders:', scheduleError);
     }
     
     return docRef.id;
@@ -2549,6 +2556,70 @@ export const sendNotificationToAllUsers = async (title: string, body: string, da
   }
 };
 
+// Schedule appointment reminder notifications
+export const scheduleAppointmentReminders = async (appointmentId: string, appointmentData: Omit<Appointment, 'id' | 'createdAt'>) => {
+  try {
+    const appointmentDate = appointmentData.date.toDate();
+    const now = new Date();
+    const timeDiff = appointmentDate.getTime() - now.getTime();
+    
+    // Only schedule if appointment is in the future
+    if (timeDiff <= 0) {
+      console.log('Appointment is in the past, not scheduling reminders');
+      return;
+    }
+    
+    const hoursUntilAppointment = timeDiff / (1000 * 60 * 60);
+    
+    // Schedule 24-hour reminder if appointment is more than 24 hours away
+    if (hoursUntilAppointment > 24) {
+      const reminder24hTime = new Date(appointmentDate.getTime() - 24 * 60 * 60 * 1000);
+      console.log(`📅 Scheduling 24h reminder for ${reminder24hTime.toLocaleString()}`);
+      
+      // Store scheduled reminder in Firestore
+      await addDoc(collection(db, 'scheduledReminders'), {
+        appointmentId: appointmentId,
+        userId: appointmentData.userId,
+        scheduledTime: Timestamp.fromDate(reminder24hTime),
+        reminderType: '24h',
+        status: 'pending'
+      });
+    }
+    
+    // Schedule 1-hour reminder if appointment is more than 1 hour away
+    if (hoursUntilAppointment > 1) {
+      const reminder1hTime = new Date(appointmentDate.getTime() - 60 * 60 * 1000);
+      console.log(`📅 Scheduling 1h reminder for ${reminder1hTime.toLocaleString()}`);
+      
+      await addDoc(collection(db, 'scheduledReminders'), {
+        appointmentId: appointmentId,
+        userId: appointmentData.userId,
+        scheduledTime: Timestamp.fromDate(reminder1hTime),
+        reminderType: '1h',
+        status: 'pending'
+      });
+    }
+    
+    // Schedule 15-minute reminder if appointment is more than 15 minutes away
+    if (timeDiff > 15 * 60 * 1000) {
+      const reminder15mTime = new Date(appointmentDate.getTime() - 15 * 60 * 1000);
+      console.log(`📅 Scheduling 15m reminder for ${reminder15mTime.toLocaleString()}`);
+      
+      await addDoc(collection(db, 'scheduledReminders'), {
+        appointmentId: appointmentId,
+        userId: appointmentData.userId,
+        scheduledTime: Timestamp.fromDate(reminder15mTime),
+        reminderType: '15m',
+        status: 'pending'
+      });
+    }
+    
+    console.log(`✅ Scheduled reminders for appointment ${appointmentId}`);
+  } catch (error) {
+    console.error('Error scheduling appointment reminders:', error);
+  }
+};
+
 // Send appointment reminder notification
 export const sendAppointmentReminder = async (appointmentId: string) => {
   try {
@@ -2563,13 +2634,31 @@ export const sendAppointmentReminder = async (appointmentId: string) => {
     const now = new Date();
     const timeDiff = appointmentDate.getTime() - now.getTime();
     const hoursUntilAppointment = timeDiff / (1000 * 60 * 60);
+    const minutesUntilAppointment = timeDiff / (1000 * 60);
     
-    // Send reminder if appointment is within 24 hours
+    // Send different reminders based on time until appointment
     if (hoursUntilAppointment > 0 && hoursUntilAppointment <= 24) {
+      let title = '';
+      let message = '';
+      
+      if (minutesUntilAppointment <= 15) {
+        // 15 minutes before
+        title = 'תזכורת לתור! ⏰';
+        message = `התור שלך בעוד 15 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+      } else if (hoursUntilAppointment <= 1) {
+        // 1 hour before
+        title = 'תזכורת לתור! ⏰';
+        message = `יש לך תור ל-${appointmentData.treatmentId} בעוד שעה!`;
+      } else {
+        // 24 hours before
+        title = 'תזכורת לתור! ⏰';
+        message = `התור שלך מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+      }
+      
       await sendNotificationToUser(
         appointmentData.userId,
-        'תזכורת לתור! ⏰',
-        `התור שלך מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`,
+        title,
+        message,
         { appointmentId: appointmentId }
       );
       return true;
@@ -2633,9 +2722,52 @@ export const sendNotificationToAdmin = async (title: string, body: string, data?
   }
 };
 
+// Process scheduled reminders (should be called periodically)
+export const processScheduledReminders = async () => {
+  try {
+    const now = new Date();
+    const remindersQuery = query(
+      collection(db, 'scheduledReminders'),
+      where('status', '==', 'pending'),
+      where('scheduledTime', '<=', Timestamp.fromDate(now))
+    );
+    
+    const remindersSnapshot = await getDocs(remindersQuery);
+    console.log(`📱 Processing ${remindersSnapshot.size} scheduled reminders`);
+    
+    const results = await Promise.allSettled(
+      remindersSnapshot.docs.map(async (reminderDoc) => {
+        const reminderData = reminderDoc.data();
+        
+        // Send the actual notification
+        await sendAppointmentReminder(reminderData.appointmentId);
+        
+        // Mark as sent
+        await updateDoc(doc(db, 'scheduledReminders', reminderDoc.id), {
+          status: 'sent',
+          sentAt: Timestamp.now()
+        });
+        
+        console.log(`✅ Processed ${reminderData.reminderType} reminder for appointment ${reminderData.appointmentId}`);
+      })
+    );
+    
+    const successful = results.filter(result => result.status === 'fulfilled').length;
+    console.log(`✅ Successfully processed ${successful} scheduled reminders`);
+    
+    return successful;
+  } catch (error) {
+    console.error('Error processing scheduled reminders:', error);
+    return 0;
+  }
+};
+
 // Send reminder to all users with upcoming appointments
 export const sendRemindersToAllUsers = async () => {
   try {
+    // First process any scheduled reminders that are due
+    await processScheduledReminders();
+    
     const appointments = await getAllAppointments();
     const now = new Date();
     const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
