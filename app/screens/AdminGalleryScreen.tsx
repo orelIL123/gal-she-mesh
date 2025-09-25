@@ -472,37 +472,20 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     }
   };
 
-  // העלאת תמונה ל-shop - פשוטה ויציבה
+  // העלאת תמונה ל-shop - משתמשת באותה לוגיקה שעובדת בגלריה
   const uploadShopImageFromDevice = async () => {
     try {
-      // Request permissions first
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permissionResult.granted) {
-        showToast('נדרשת הרשאה לגישה לגלריה', 'error');
-        return null;
-      }
+      // Use the same logic that works for gallery
+      const imageUri = await pickImageFromDevice();
+      if (!imageUri) return null;
 
-      // Launch image picker
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const imageUri = result.assets[0].uri;
-        
-        showToast('מעלה תמונה...', 'success');
-        
-        const fileName = `shop_${Date.now()}.jpg`;
-        const downloadURL = await uploadImageToStorage(imageUri, 'shop', fileName);
-        
-        showToast('התמונה הועלתה בהצלחה', 'success');
-        return downloadURL;
-      } else {
-        console.log('Image selection cancelled');
-        return null;
-      }
+      showToast('מעלה תמונה...', 'success');
+      
+      const fileName = `shop_${Date.now()}.jpg`;
+      const downloadURL = await uploadImageToStorage(imageUri, 'shop', fileName);
+      
+      showToast('התמונה הועלתה בהצלחה', 'success');
+      return downloadURL;
     } catch (error) {
       console.error('Error uploading shop image:', error);
       showToast('שגיאה בהעלאת התמונה', 'error');
