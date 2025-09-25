@@ -208,6 +208,13 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
       color: '#9c27b0'
     },
     {
+      title: 'רשימת לקוחות',
+      subtitle: 'צפה בכל הלקוחות, התקשר או שלח התראות',
+      icon: 'people',
+      screen: 'admin-customers',
+      color: '#17a2b8'
+    },
+    {
       title: 'הגדרות מנהל',
       subtitle: 'עריכת הודעות ברכה, טקסטים ושליחת הודעות',
       icon: 'settings',

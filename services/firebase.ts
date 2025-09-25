@@ -2764,18 +2764,19 @@ export const sendNotificationToUser = async (userId: string, title: string, body
 export const sendNotificationToAllUsers = async (title: string, body: string, data?: any) => {
   try {
     const users = await getAllUsers();
-    const usersWithTokens = users.filter(user => user.pushToken);
+    // Filter out admin users to avoid sending to admins
+    const nonAdminUsers = users.filter(user => !user.isAdmin && user.pushToken);
     
-    console.log(`📱 Sending notification to ${usersWithTokens.length} users`);
+    console.log(`📱 Sending notification to ${nonAdminUsers.length} non-admin users`);
     
     const results = await Promise.allSettled(
-      usersWithTokens.map(user => 
+      nonAdminUsers.map(user => 
         sendPushNotification(user.pushToken!, title, body, data)
       )
     );
     
     const successful = results.filter(result => result.status === 'fulfilled').length;
-    console.log(`✅ Successfully sent to ${successful}/${usersWithTokens.length} users`);
+    console.log(`✅ Successfully sent to ${successful}/${nonAdminUsers.length} users`);
     
     return successful;
   } catch (error) {
@@ -2899,10 +2900,104 @@ export const sendAppointmentReminder = async (appointmentId: string) => {
   }
 };
 
+// Get admin notification settings
+export const getAdminNotificationSettings = async (): Promise<{
+  newUserRegistered: boolean;
+  newAppointmentBooked: boolean;
+  appointmentCancelled: boolean;
+  appointmentReminders: boolean;
+  reminderTimings: {
+    oneHourBefore: boolean;
+    thirtyMinutesBefore: boolean;
+    tenMinutesBefore: boolean;
+    whenStarting: boolean;
+  };
+}> => {
+  try {
+    const { doc, getDoc, getFirestore } = await import('firebase/firestore');
+    const db = getFirestore();
+    
+    const settingsDoc = await getDoc(doc(db, 'adminSettings', 'notifications'));
+    
+    if (settingsDoc.exists()) {
+      return settingsDoc.data() as any;
+    }
+    
+    // Return default settings if none exist
+    return {
+      newUserRegistered: true,
+      newAppointmentBooked: true,
+      appointmentCancelled: true,
+      appointmentReminders: true,
+      reminderTimings: {
+        oneHourBefore: true,
+        thirtyMinutesBefore: true,
+        tenMinutesBefore: false,
+        whenStarting: false,
+      },
+    };
+  } catch (error) {
+    console.error('Error getting admin notification settings:', error);
+    // Return default settings on error
+    return {
+      newUserRegistered: true,
+      newAppointmentBooked: true,
+      appointmentCancelled: true,
+      appointmentReminders: true,
+      reminderTimings: {
+        oneHourBefore: true,
+        thirtyMinutesBefore: true,
+        tenMinutesBefore: false,
+        whenStarting: false,
+      },
+    };
+  }
+};
+
 // Send notification to admin about events
 export const sendNotificationToAdmin = async (title: string, body: string, data?: any) => {
   try {
     console.log(`🔔 sendNotificationToAdmin called with title: "${title}"`);
+    
+    // Check if this type of notification is enabled
+    const settings = await getAdminNotificationSettings();
+    
+    // Determine notification type based on title/content
+    let shouldSend = false;
+    if (title.includes('משתמש חדש') || title.includes('נרשם')) {
+      shouldSend = settings.newUserRegistered;
+    } else if (title.includes('תור חדש') || title.includes('תור נוצר')) {
+      shouldSend = settings.newAppointmentBooked;
+    } else if (title.includes('בוטל') || title.includes('תור בוטל')) {
+      shouldSend = settings.appointmentCancelled;
+    } else if (title.includes('תזכורת') || title.includes('תור קרוב')) {
+      // Check specific reminder timings
+      if (title.includes('שעה לפני') || title.includes('1 שעה')) {
+        shouldSend = settings.appointmentReminders && settings.reminderTimings.oneHourBefore;
+      } else if (title.includes('30 דקות') || title.includes('חצי שעה')) {
+        shouldSend = settings.appointmentReminders && settings.reminderTimings.thirtyMinutesBefore;
+      } else if (title.includes('10 דקות')) {
+        shouldSend = settings.appointmentReminders && settings.reminderTimings.tenMinutesBefore;
+      } else if (title.includes('מתחיל') || title.includes('התחיל')) {
+        shouldSend = settings.appointmentReminders && settings.reminderTimings.whenStarting;
+      } else {
+        // General reminder - check if any timing is enabled
+        shouldSend = settings.appointmentReminders && (
+          settings.reminderTimings.oneHourBefore ||
+          settings.reminderTimings.thirtyMinutesBefore ||
+          settings.reminderTimings.tenMinutesBefore ||
+          settings.reminderTimings.whenStarting
+        );
+      }
+    } else {
+      // Default to sending if we can't determine the type
+      shouldSend = true;
+    }
+    
+    if (!shouldSend) {
+      console.log(`🔕 Notification disabled for this type: "${title}"`);
+      return 0;
+    }
     
     // Try to get current user's profile directly if they're admin
     const currentUser = getCurrentUser();

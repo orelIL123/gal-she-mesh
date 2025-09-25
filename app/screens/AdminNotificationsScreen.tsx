@@ -95,6 +95,7 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
       let success = false;
       
       if (selectedUser === 'all') {
+        // Use the fixed function that filters out admins
         const sentCount = await sendNotificationToAllUsers(notificationTitle, notificationBody);
         success = sentCount > 0;
       } else {

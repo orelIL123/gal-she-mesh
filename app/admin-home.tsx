@@ -37,6 +37,9 @@ export default function AdminHomeTab() {
       case 'admin-notification-settings':
         router.replace('/admin-notification-settings');
         break;
+      case 'admin-customers':
+        router.replace('/admin-customers');
+        break;
       case 'settings':
         router.replace('/settings');
         break;
