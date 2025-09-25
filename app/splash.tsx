@@ -50,27 +50,43 @@ export default function SplashScreen() {
             toValue: 0,
             duration: 300,
             useNativeDriver: true,
-          }).start(() => {
+          }).start(async () => {
             unsubscribe(); // Clean up listener
 
-            if (user && storedAuthData && user.uid === storedAuthData.uid) {
+            if (user) {
+              // Firebase user exists = user is authenticated
               console.log('✅ User authenticated, navigating to home');
-              router.replace('/(tabs)');
-            } else if (user && !storedAuthData) {
-              console.log('✅ Firebase user found but no stored data, navigating to home');
+
+              // Make sure we save/update auth data for this session
+              try {
+                const { getUserProfile } = await import('../services/firebase');
+                const userProfile = await getUserProfile(user.uid);
+                if (userProfile) {
+                  await AuthStorageService.saveAuthData({
+                    uid: user.uid,
+                    email: user.email || undefined,
+                    phoneNumber: user.phoneNumber || userProfile.phone,
+                    displayName: userProfile.displayName,
+                    isAdmin: userProfile.isAdmin || false,
+                    lastLoginAt: new Date().toISOString()
+                  });
+                }
+              } catch (error) {
+                console.log('⚠️ Could not save auth data, but continuing with login');
+              }
+
               router.replace('/(tabs)');
             } else {
-              console.log('❌ No valid authentication, navigating to auth choice');
-              if (storedAuthData) {
-                AuthStorageService.clearAuthData(); // Clear invalid stored data
-              }
+              console.log('❌ No authenticated user, navigating to auth choice');
+              // Clear any stale auth data
+              await AuthStorageService.clearAuthData();
               router.replace('/auth-choice');
             }
           });
         });
 
         // Fallback: if no auth state change after 3 seconds, proceed anyway
-        setTimeout(() => {
+        setTimeout(async () => {
           if (!authStateChecked) {
             console.log('⏰ Auth state check timeout, proceeding...');
             authStateChecked = true;
@@ -80,7 +96,9 @@ export default function SplashScreen() {
               toValue: 0,
               duration: 300,
               useNativeDriver: true,
-            }).start(() => {
+            }).start(async () => {
+              // Clear any stale auth data on timeout
+              await AuthStorageService.clearAuthData();
               router.replace('/auth-choice');
             });
           }
@@ -92,7 +110,9 @@ export default function SplashScreen() {
           toValue: 0,
           duration: 300,
           useNativeDriver: true,
-        }).start(() => {
+        }).start(async () => {
+          // Clear any stale auth data on error
+          await AuthStorageService.clearAuthData();
           router.replace('/auth-choice');
         });
       }

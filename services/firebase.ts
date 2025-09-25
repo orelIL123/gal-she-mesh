@@ -3046,6 +3046,88 @@ export const sendNotificationToAdmin = async (title: string, body: string, data?
 };
 
 // Process scheduled reminders (should be called periodically)
+// Clean up old appointments to reduce Firebase load
+export const cleanupOldAppointments = async (daysToKeep: number = 10): Promise<{
+  deletedCount: number;
+  errorCount: number;
+  errors: string[];
+}> => {
+  try {
+    console.log(`🧹 Starting cleanup of appointments older than ${daysToKeep} days`);
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+    
+    // Get all appointments
+    const appointmentsRef = collection(db, 'appointments');
+    const snapshot = await getDocs(appointmentsRef);
+    
+    const appointmentsToDelete: string[] = [];
+    const errors: string[] = [];
+    let errorCount = 0;
+    
+    snapshot.docs.forEach(doc => {
+      const appointmentData = doc.data();
+      const appointmentDate = appointmentData.date?.toDate();
+      
+      if (appointmentDate && appointmentDate < cutoffDate) {
+        // Only delete if appointment is older than cutoff date
+        // AND if it's not a future appointment (safety check)
+        const now = new Date();
+        if (appointmentDate < now) {
+          appointmentsToDelete.push(doc.id);
+        }
+      }
+    });
+    
+    console.log(`📋 Found ${appointmentsToDelete.length} old appointments to delete`);
+    
+    // Delete appointments in batches to avoid overwhelming Firebase
+    const batchSize = 10;
+    let deletedCount = 0;
+    
+    for (let i = 0; i < appointmentsToDelete.length; i += batchSize) {
+      const batch = appointmentsToDelete.slice(i, i + batchSize);
+      
+      try {
+        await Promise.all(
+          batch.map(appointmentId => 
+            deleteDoc(doc(db, 'appointments', appointmentId))
+          )
+        );
+        
+        deletedCount += batch.length;
+        console.log(`✅ Deleted batch ${Math.floor(i / batchSize) + 1}: ${batch.length} appointments`);
+        
+        // Small delay between batches to be gentle on Firebase
+        if (i + batchSize < appointmentsToDelete.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch (error) {
+        console.error(`❌ Error deleting batch ${Math.floor(i / batchSize) + 1}:`, error);
+        errorCount += batch.length;
+        errors.push(`Batch ${Math.floor(i / batchSize) + 1}: ${error}`);
+      }
+    }
+    
+    console.log(`🧹 Cleanup completed: ${deletedCount} deleted, ${errorCount} errors`);
+    
+    return {
+      deletedCount,
+      errorCount,
+      errors
+    };
+    
+  } catch (error) {
+    console.error('Error during appointment cleanup:', error);
+    return {
+      deletedCount: 0,
+      errorCount: 1,
+      errors: [`General error: ${error}`]
+    };
+  }
+};
+
 export const processScheduledReminders = async () => {
   try {
     const now = new Date();

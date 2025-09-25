@@ -11,7 +11,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { db } from '../../services/firebase';
+import { db, cleanupOldAppointments } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
 
@@ -23,6 +23,7 @@ interface AdminSettingsScreenProps {
 const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, onBack }) => {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
+  const [cleanupLoading, setCleanupLoading] = useState(false);
   
   // Settings states
   const [welcomeMessage, setWelcomeMessage] = useState('שלום, ברוכים הבאים');
@@ -36,6 +37,40 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ visible: true, message, type });
+  };
+
+  const handleCleanupAppointments = async () => {
+    Alert.alert(
+      'ניקוי תורים ישנים',
+      'פעולה זו תמחק תורים ישנים מ-10 ימים ומעלה מהפיירבייס כדי להפחית עומס. התורים יופיעו עדיין בדשבורד. האם להמשיך?',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        { 
+          text: 'מחק', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setCleanupLoading(true);
+              console.log('🧹 Starting appointment cleanup...');
+              
+              const result = await cleanupOldAppointments(10);
+              
+              if (result.errorCount === 0) {
+                showToast(`ניקוי הושלם בהצלחה! נמחקו ${result.deletedCount} תורים ישנים`, 'success');
+              } else {
+                showToast(`ניקוי הושלם עם שגיאות. נמחקו ${result.deletedCount} תורים, ${result.errorCount} שגיאות`, 'error');
+                console.error('Cleanup errors:', result.errors);
+              }
+            } catch (error) {
+              console.error('Error during cleanup:', error);
+              showToast('שגיאה במהלך הניקוי', 'error');
+            } finally {
+              setCleanupLoading(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const hideToast = () => {
@@ -295,6 +330,20 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
             <Ionicons name="chevron-forward" size={20} color="#666" />
           </TouchableOpacity>
         </View>
+
+        {/* Cleanup Section - Small */}
+        <View style={styles.cleanupSection}>
+          <TouchableOpacity 
+            style={[styles.cleanupButton, cleanupLoading && styles.cleanupButtonDisabled]} 
+            onPress={handleCleanupAppointments}
+            disabled={cleanupLoading}
+          >
+            <Ionicons name="trash" size={16} color="#fff" />
+            <Text style={styles.cleanupButtonText}>
+              {cleanupLoading ? 'מנקה...' : 'נקה תורים ישנים'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
       <ToastMessage
@@ -427,6 +476,29 @@ const styles = StyleSheet.create({
     color: '#333',
     marginLeft: 12,
     textAlign: 'right',
+  },
+  // Cleanup styles
+  cleanupSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  cleanupButton: {
+    backgroundColor: '#dc3545',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 6,
+  },
+  cleanupButtonDisabled: {
+    backgroundColor: '#6c757d',
+  },
+  cleanupButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });
 
