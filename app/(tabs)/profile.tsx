@@ -19,6 +19,9 @@ export default function ProfileTab() {
       case 'explore':
         router.replace('/explore');
         break;
+      case 'auth-choice':
+        router.replace('/auth-choice');
+        break;
       default:
         router.replace('/');
     }

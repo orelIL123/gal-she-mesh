@@ -158,6 +158,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
     try {
       await logoutUser();
       setEditMode(false);
+      // Navigate to auth choice screen after logout
+      onNavigate('auth-choice');
     } catch (error: any) {
       Alert.alert('שגיאה', 'לא ניתן להתנתק');
     }
