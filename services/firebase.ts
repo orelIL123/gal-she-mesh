@@ -20,6 +20,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -31,6 +32,7 @@ import {
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, listAll, ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '../config/firebase';
+import { AuthStorageService } from './authStorage';
 import { CacheUtils } from './cache';
 // Removed ImageOptimizer import - using simple upload only
 
@@ -55,6 +57,10 @@ export const createAdminUser = async (email: string, password: string, displayNa
     };
 
     await setDoc(doc(db, 'users', user.uid), userProfile);
+
+    // Save auth data for persistence
+    await saveAuthDataAfterLogin(user);
+
     console.log('Admin user created successfully:', email);
     return true;
   } catch (error) {
@@ -223,10 +229,13 @@ export interface AppSettings {
 export const loginUser = async (email: string, password: string) => {
   try {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    
+
+    // Save auth data for persistence
+    await saveAuthDataAfterLogin(userCredential.user);
+
     // Register for push notifications after successful login
     await registerForPushNotifications(userCredential.user.uid);
-    
+
     return userCredential.user;
   } catch (error) {
     throw error;
@@ -255,7 +264,10 @@ export const registerUser = async (email: string, password: string, displayName:
     };
     
     await setDoc(doc(db, 'users', user.uid), userProfile);
-    
+
+    // Save auth data for persistence
+    await saveAuthDataAfterLogin(user);
+
     // Register for push notifications after successful registration
     await registerForPushNotifications(user.uid);
     
@@ -277,14 +289,52 @@ export const registerUser = async (email: string, password: string, displayName:
 
 export const logoutUser = async () => {
   try {
+    // Clear stored auth data - מסונן לפי prefix
+    await AuthStorageService.clearAuthData(); // מסונן לפי prefix
     await signOut(auth);
+    console.log('✅ User logged out successfully');
   } catch (error) {
+    console.error('❌ Error during logout:', error);
     throw error;
+  }
+};
+
+// Helper function to save auth data after successful login
+const saveAuthDataAfterLogin = async (user: User) => {
+  try {
+    const userProfile = await getUserProfile(user.uid);
+    if (userProfile) {
+      await AuthStorageService.saveAuthData({
+        uid: user.uid,
+        email: user.email || undefined,
+        phoneNumber: user.phoneNumber || userProfile.phone,
+        displayName: user.displayName || userProfile.displayName,
+        isAdmin: userProfile.isAdmin || false,
+        lastLoginAt: new Date().toISOString(),
+        savedCredentials: {
+          email: user.email || undefined,
+          phoneNumber: user.phoneNumber || userProfile.phone,
+          hasPassword: true
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error saving auth data:', error);
   }
 };
 
 export const getCurrentUser = (): User | null => {
   return auth.currentUser;
+};
+
+// Get saved login credentials
+export const getSavedLoginCredentials = async () => {
+  try {
+    return await AuthStorageService.getSavedCredentials();
+  } catch (error) {
+    console.error('Error getting saved credentials:', error);
+    return null;
+  }
 };
 
 export const onAuthStateChange = (callback: (user: User | null) => void) => {
@@ -448,6 +498,10 @@ export const verifySMSCode = async (verificationId: string, verificationCode: st
     // Real Firebase verification (for when you set up proper Firebase phone auth)
     const credential = PhoneAuthProvider.credential(verificationId, verificationCode);
     const result = await signInWithCredential(auth, credential);
+
+    // Save auth data for persistence
+    await saveAuthDataAfterLogin(result.user);
+
     return result.user;
   } catch (error) {
     console.error('Error verifying SMS code:', error);
@@ -499,6 +553,10 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
       };
 
       await setDoc(doc(db, 'users', user.uid), userProfile);
+
+      // Save auth data for persistence
+      await saveAuthDataAfterLogin(user);
+
       console.log('✅ SMS4Free user registered successfully with temp email auth');
 
       // Clean up verification data after successful registration
@@ -582,7 +640,10 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
     };
     
     await setDoc(doc(db, 'users', user.uid), userProfile);
-    
+
+    // Save auth data for persistence
+    await saveAuthDataAfterLogin(user);
+
     // Send notification to admins about new user registration
     try {
       await sendNotificationToAdmin(
@@ -674,6 +735,9 @@ export const setPasswordForSMSUser = async (phoneNumber: string, password: strin
         authUid: userCredential.user.uid
       });
       
+      // Save auth data for persistence
+      await saveAuthDataAfterLogin(userCredential.user);
+
       console.log(`✅ Password set for SMS user: ${phoneNumber}`);
       return userCredential.user;
     } catch (error: any) {
@@ -685,6 +749,10 @@ export const setPasswordForSMSUser = async (phoneNumber: string, password: strin
         
         // Try to sign in with existing credentials
         const userCredential = await signInWithEmailAndPassword(auth, tempEmail, password);
+
+        // Save auth data for persistence
+        await saveAuthDataAfterLogin(userCredential.user);
+
         return userCredential.user;
       }
       throw error;
@@ -717,6 +785,10 @@ export const loginWithPhoneAndPassword = async (phoneNumber: string, password: s
         console.log(`🔐 Trying email format: ${email}`);
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         console.log(`✅ Login successful with email: ${email}`);
+
+        // Save auth data for persistence
+        await saveAuthDataAfterLogin(userCredential.user);
+
         return userCredential.user;
       } catch (error: any) {
         console.log(`❌ Failed with email: ${email}`, error.code);
@@ -782,6 +854,10 @@ export const loginWithPhone = async (phoneNumber: string, verificationId: string
   try {
     const credential = PhoneAuthProvider.credential(verificationId, verificationCode);
     const userCredential = await signInWithCredential(auth, credential);
+
+    // Save auth data for persistence
+    await saveAuthDataAfterLogin(userCredential.user);
+
     return userCredential.user;
   } catch (error) {
     console.error('Error logging in with phone:', error);
@@ -1478,7 +1554,7 @@ export const getAllStorageImages = async () => {
   }
 };
 
-// Simple image upload - no compression, no complex logic
+// Simple image upload - React Native compatible
 export const uploadImageToStorage = async (
   imageUri: string, 
   folderPath: string, 
@@ -1490,20 +1566,33 @@ export const uploadImageToStorage = async (
       throw new Error('User must be authenticated to upload images');
     }
 
+    console.log('📤 Starting image upload:', imageUri);
+    
+    // Create reference
+    const imageRef = ref(storage, `${folderPath}/${fileName}`);
+    
+    // Simple approach - just try to upload the URI directly
+    // This should work for most React Native setups
+    console.log('📤 Uploading image to storage...');
+    
+    // For React Native, we need to convert the URI to a blob
     const response = await fetch(imageUri);
     if (!response.ok) {
       throw new Error(`Failed to fetch image: ${response.status}`);
     }
     
     const blob = await response.blob();
-    const imageRef = ref(storage, `${folderPath}/${fileName}`);
     await uploadBytes(imageRef, blob);
+    
+    // Get download URL
     const downloadURL = await getDownloadURL(imageRef);
+    console.log('✅ Image uploaded successfully:', downloadURL);
     
     return downloadURL;
   } catch (error) {
-    console.error('Error uploading image:', error);
-    throw error;
+    console.error('❌ Error uploading image:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`Failed to upload image: ${errorMessage}`);
   }
 };
 
@@ -1512,25 +1601,164 @@ export const uploadImageToStorage = async (
 // Get available time slots for a barber on a specific date
 export const getBarberAvailableSlots = async (barberId: string, date: string): Promise<string[]> => {
   try {
-    const docRef = doc(db, 'barberAvailability', barberId);
-    const snap = await getDoc(docRef);
+    console.log('🔍 Getting available slots for barber:', barberId, 'date:', date);
     
-    if (!snap.exists()) {
-      return []; // No availability set
+    // Get the day of week (0 = Sunday, 1 = Monday, etc.)
+    const dateObj = new Date(date);
+    const dayOfWeek = dateObj.getDay();
+    
+    console.log('📅 Day of week:', dayOfWeek);
+    
+    // Query the new availability collection
+    const q = query(
+      collection(db, 'availability'), 
+      where('barberId', '==', barberId),
+      where('dayOfWeek', '==', dayOfWeek),
+      where('isAvailable', '==', true)
+    );
+    
+    const snap = await getDocs(q);
+    console.log('📊 Found availability documents:', snap.docs.length);
+    
+    if (snap.empty) {
+      console.log('❌ No availability found for this day');
+      return [];
     }
     
-    const availability = snap.data().availability;
-    const dayData = availability.find((day: any) => day.date === date);
+    // Get all time slots for this day
+    const allSlots: string[] = [];
     
-    if (!dayData || !dayData.isAvailable) {
-      return []; // Day not available
-    }
+    snap.docs.forEach(doc => {
+      const data = doc.data();
+      console.log('📄 Availability doc:', doc.id, data);
+      
+      if (data.isAvailable && data.startTime && data.endTime) {
+        // Convert startTime-endTime to 30-minute slots
+        const startTime = data.startTime;
+        const endTime = data.endTime;
+        
+        // Parse start and end times
+        const [startHour, startMin] = startTime.split(':').map(Number);
+        const [endHour, endMin] = endTime.split(':').map(Number);
+        
+        // Generate 30-minute slots
+        let currentHour = startHour;
+        let currentMin = startMin;
+        
+        while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
+          const timeString = `${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')}`;
+          allSlots.push(timeString);
+          
+          // Move to next 30-minute slot
+          if (currentMin === 0) {
+            currentMin = 30;
+          } else {
+            currentMin = 0;
+            currentHour++;
+          }
+        }
+      }
+    });
     
-    return dayData.timeSlots || [];
+    // Remove duplicates and sort
+    const uniqueSlots = [...new Set(allSlots)].sort();
+    console.log('✅ Available slots:', uniqueSlots);
+    
+    return uniqueSlots;
   } catch (error) {
     console.error('Error getting barber available slots:', error);
     return [];
   }
+};
+
+// Real-time listener for availability changes
+export const subscribeToAvailabilityChanges = (barberId: string, callback: (weeklySlots: {[key: number]: string[]}) => void) => {
+  console.log('🔔 Subscribing to availability changes for barber:', barberId);
+  
+  const q = query(
+    collection(db, 'availability'), 
+    where('barberId', '==', barberId),
+    where('isAvailable', '==', true)
+  );
+  
+  return onSnapshot(q, (snapshot) => {
+    console.log('📡 Availability changed, updating slots...');
+    
+    // Group slots by day of week
+    const weeklySlots: {[key: number]: string[]} = {};
+    
+    snapshot.docs.forEach(doc => {
+      const data = doc.data();
+      const dayOfWeek = data.dayOfWeek;
+      
+      if (data.isAvailable && data.startTime && data.endTime) {
+        // Convert startTime-endTime to 30-minute slots
+        const startTime = data.startTime;
+        const endTime = data.endTime;
+        
+        // Parse start and end times
+        const [startHour, startMin] = startTime.split(':').map(Number);
+        const [endHour, endMin] = endTime.split(':').map(Number);
+        
+        // Generate 30-minute slots
+        let currentHour = startHour;
+        let currentMin = startMin;
+        const slots: string[] = [];
+        
+        while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
+          const timeString = `${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')}`;
+          slots.push(timeString);
+          
+          // Move to next 30-minute slot
+          if (currentMin === 0) {
+            currentMin = 30;
+          } else {
+            currentMin = 0;
+            currentHour++;
+          }
+        }
+        
+        if (!weeklySlots[dayOfWeek]) {
+          weeklySlots[dayOfWeek] = [];
+        }
+        weeklySlots[dayOfWeek].push(...slots);
+      }
+    });
+    
+    // Remove duplicates and sort for each day
+    Object.keys(weeklySlots).forEach(day => {
+      weeklySlots[parseInt(day)] = [...new Set(weeklySlots[parseInt(day)])].sort();
+    });
+    
+    console.log('✅ Updated weekly availability:', weeklySlots);
+    callback(weeklySlots);
+  }, (error) => {
+    console.error('❌ Error listening to availability changes:', error);
+  });
+};
+
+// Real-time listener for treatments changes
+export const subscribeToTreatmentsChanges = (callback: (treatments: Treatment[]) => void) => {
+  console.log('🔔 Subscribing to treatments changes');
+  
+  const q = query(collection(db, 'treatments'), orderBy('name'));
+  
+  return onSnapshot(q, (snapshot) => {
+    console.log('📡 Treatments changed, updating list...');
+    
+    const treatments: Treatment[] = [];
+    snapshot.docs.forEach(doc => {
+      treatments.push({
+        id: doc.id,
+        ...doc.data()
+      } as Treatment);
+    });
+    
+    console.log('✅ Updated treatments list:', treatments.length, 'treatments');
+    callback(treatments);
+  }, (error) => {
+    console.error('❌ Error listening to treatments changes:', error);
+  });
 };
 
 // Check if a specific time slot is available for booking

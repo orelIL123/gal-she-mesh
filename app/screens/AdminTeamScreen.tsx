@@ -67,6 +67,7 @@ const OptimizedImage = memo(({ source, style, resizeMode = 'cover' }: {
     </View>
   );
 });
+OptimizedImage.displayName = 'OptimizedImage';
 
 const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack }) => {
   const [barbers, setBarbers] = useState<Barber[]>([]);

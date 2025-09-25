@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { collection, deleteDoc, doc, getDocs, getFirestore, query, setDoc, where } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import { collection, deleteDoc, doc, getDocs, getFirestore, onSnapshot, query, setDoc, where } from 'firebase/firestore';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     Alert,
     Modal,
@@ -65,21 +65,16 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
-  const [availability, setAvailability] = useState<Array<{
+  const [availability, setAvailability] = useState<{
     date: string;
     weekday: string;
     displayDate: string;
     fullDate: string;
     isAvailable: boolean;
     timeSlots: string[];
-  }>>(generateNext14Days());
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  }[]>(generateNext14Days());
 
-  useEffect(() => {
-    loadBarbers();
-  }, []);
-
-  const loadBarbers = async () => {
+  const loadBarbers = useCallback(async () => {
     try {
       setLoading(true);
       const barbersData = await getBarbers();
@@ -90,18 +85,26 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadBarbers();
+  }, [loadBarbers]);
 
   const loadBarberAvailability = async (barberId: string) => {
     try {
+      console.log('🔍 Loading availability for barber:', barberId);
       const db = getFirestore();
       // Load from the 'availability' collection that booking system uses
       const q = query(collection(db, 'availability'), where('barberId', '==', barberId));
       const snap = await getDocs(q);
-      
+
+      console.log('📊 Found availability documents:', snap.docs.length);
+
       const weeklyAvailability: {[key: number]: string[]} = {};
       snap.docs.forEach(doc => {
         const data = doc.data();
+        console.log('📄 Availability doc:', doc.id, data);
         if (data.isAvailable) {
           // Convert startTime-endTime to 30-minute slots
           const startTime = data.startTime;
@@ -165,21 +168,167 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
   const openEditModal = async (barber: Barber) => {
     console.log('Opening modal for barber:', barber.name);
     setSelectedBarber(barber);
-    // Don't load availability here - let the user set it fresh
-    setAvailability(generateNext14Days());
+
+    // Load existing availability from Firebase
+    await loadBarberAvailability(barber.id);
+
     setModalVisible(true);
     console.log('Modal should be visible now');
   };
 
-  const toggleDayAvailability = (date: string) => {
+  // Real-time listener for availability changes
+  useEffect(() => {
+    if (selectedBarber && modalVisible) {
+      console.log('🔔 Setting up real-time listener for barber:', selectedBarber.id);
+      
+      const db = getFirestore();
+      const q = query(collection(db, 'availability'), where('barberId', '==', selectedBarber.id));
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        console.log('📡 Real-time update received:', snapshot.docs.length, 'docs');
+        
+        const weeklyAvailability: {[key: number]: string[]} = {};
+        snapshot.docs.forEach(doc => {
+          const data = doc.data();
+          if (data.isAvailable) {
+            // Convert startTime-endTime to 30-minute slots
+            const startTime = data.startTime;
+            const endTime = data.endTime;
+            const slots = [];
+            
+            // Parse start and end times
+            const [startHour, startMin] = startTime.split(':').map(Number);
+            const [endHour, endMin] = endTime.split(':').map(Number);
+            
+            // Generate 30-minute slots
+            let currentHour = startHour;
+            let currentMin = startMin;
+            
+            while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
+              const timeString = `${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')}`;
+              slots.push(timeString);
+              
+              // Move to next 30-minute slot
+              if (currentMin === 0) {
+                currentMin = 30;
+              } else {
+                currentMin = 0;
+                currentHour++;
+              }
+            }
+            
+            weeklyAvailability[data.dayOfWeek] = slots;
+          }
+        });
+        
+        // Convert weekly pattern to 14-day format
+        const next14Days = generateNext14Days();
+        const updatedDays = next14Days.map(day => {
+          const date = new Date(day.date);
+          const dayOfWeek = date.getDay();
+          const hasAvailability = weeklyAvailability[dayOfWeek];
+          
+          return {
+            ...day,
+            isAvailable: !!hasAvailability,
+            timeSlots: hasAvailability || []
+          };
+        });
+        
+        console.log('🔄 Updating availability from real-time listener');
+        setAvailability(updatedDays);
+      });
+      
+      return () => {
+        console.log('🔕 Cleaning up real-time listener');
+        unsubscribe();
+      };
+    }
+  }, [selectedBarber, modalVisible]);
+
+  const toggleDayAvailability = async (date: string) => {
+    const dayToToggle = availability.find(day => day.date === date);
+    if (!dayToToggle || !selectedBarber) return;
+
+    const newAvailability = !dayToToggle.isAvailable;
+    
+    // Update local state immediately
     setAvailability(prev => prev.map(day => 
       day.date === date 
-        ? { ...day, isAvailable: !day.isAvailable, timeSlots: day.isAvailable ? [] : ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'] }
+        ? { ...day, isAvailable: newAvailability, timeSlots: [] }
         : day
     ));
+
+    // Save to Firebase immediately
+    try {
+      const db = getFirestore();
+      const barberId = selectedBarber.id;
+      const dateObj = new Date(date);
+      const dayOfWeek = dateObj.getDay();
+
+      if (newAvailability) {
+        // If making available, we need to set some default hours
+        // For now, let's set a default 9:00-17:00 schedule
+        const defaultSlots = [
+          '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+          '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
+          '15:00', '15:30', '16:00', '16:30', '17:00'
+        ];
+        
+        const docData = {
+          barberId,
+          dayOfWeek,
+          startTime: '09:00',
+          endTime: '17:30',
+          isAvailable: true,
+          createdAt: new Date()
+        };
+
+        // Delete existing record for this day first
+        const existingQuery = query(collection(db, 'availability'), 
+          where('barberId', '==', barberId), 
+          where('dayOfWeek', '==', dayOfWeek));
+        const existingDocs = await getDocs(existingQuery);
+        await Promise.all(existingDocs.docs.map(doc => deleteDoc(doc.ref)));
+
+        // Add new record
+        await setDoc(doc(collection(db, 'availability')), docData);
+        
+        // Update local state with default slots
+        setAvailability(prev => prev.map(day => 
+          day.date === date 
+            ? { ...day, isAvailable: true, timeSlots: defaultSlots }
+            : day
+        ));
+        
+        showToast('יום הופעל עם שעות ברירת מחדל', 'success');
+      } else {
+        // If making unavailable, delete the record
+        const existingQuery = query(collection(db, 'availability'), 
+          where('barberId', '==', barberId), 
+          where('dayOfWeek', '==', dayOfWeek));
+        const existingDocs = await getDocs(existingQuery);
+        await Promise.all(existingDocs.docs.map(doc => deleteDoc(doc.ref)));
+        
+        showToast('יום בוטל בהצלחה', 'success');
+      }
+    } catch (error) {
+      console.error('Error updating day availability:', error);
+      showToast('שגיאה בעדכון זמינות', 'error');
+      
+      // Revert local state on error
+      setAvailability(prev => prev.map(day => 
+        day.date === date 
+          ? { ...day, isAvailable: !newAvailability, timeSlots: dayToToggle.timeSlots }
+          : day
+      ));
+    }
   };
 
-  const toggleTimeSlot = (date: string, time: string) => {
+  const toggleTimeSlot = async (date: string, time: string) => {
+    if (!selectedBarber) return;
+
+    // Update local state immediately
     setAvailability(prev => prev.map(day => {
       if (day.date === date) {
         const currentSlots = day.timeSlots || [];
@@ -191,33 +340,118 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
       }
       return day;
     }));
+
+    // Save to Firebase immediately
+    try {
+      const db = getFirestore();
+      const barberId = selectedBarber.id;
+      const dateObj = new Date(date);
+      const dayOfWeek = dateObj.getDay();
+
+      // Get updated slots for this day
+      const updatedDay = availability.find(day => day.date === date);
+      if (!updatedDay) return;
+
+      const currentSlots = updatedDay.timeSlots || [];
+      const isSelected = currentSlots.includes(time);
+      const newSlots = isSelected 
+        ? currentSlots.filter(slot => slot !== time)
+        : [...currentSlots, time].sort();
+
+      if (newSlots.length === 0) {
+        // No slots selected, delete the availability record
+        const existingQuery = query(collection(db, 'availability'), 
+          where('barberId', '==', barberId), 
+          where('dayOfWeek', '==', dayOfWeek));
+        const existingDocs = await getDocs(existingQuery);
+        await Promise.all(existingDocs.docs.map(doc => deleteDoc(doc.ref)));
+        
+        // Update local state to mark day as unavailable
+        setAvailability(prev => prev.map(day => 
+          day.date === date 
+            ? { ...day, isAvailable: false, timeSlots: [] }
+            : day
+        ));
+      } else {
+        // Update the availability record with new slots
+        const startTime = newSlots[0];
+        const endTime = newSlots[newSlots.length - 1];
+        
+        // Convert last slot to proper end time (add 30 minutes to last slot)
+        const [endHour, endMin] = endTime.split(':').map(Number);
+        let finalEndHour = endHour;
+        let finalEndMin = endMin + 30;
+        
+        if (finalEndMin >= 60) {
+          finalEndHour += 1;
+          finalEndMin = 0;
+        }
+        
+        const finalEndTime = `${finalEndHour.toString().padStart(2, '0')}:${finalEndMin.toString().padStart(2, '0')}`;
+
+        const docData = {
+          barberId,
+          dayOfWeek,
+          startTime,
+          endTime: finalEndTime,
+          isAvailable: true,
+          createdAt: new Date()
+        };
+
+        // Delete existing record first
+        const existingQuery = query(collection(db, 'availability'), 
+          where('barberId', '==', barberId), 
+          where('dayOfWeek', '==', dayOfWeek));
+        const existingDocs = await getDocs(existingQuery);
+        await Promise.all(existingDocs.docs.map(doc => deleteDoc(doc.ref)));
+
+        // Add updated record
+        await setDoc(doc(collection(db, 'availability')), docData);
+      }
+    } catch (error) {
+      console.error('Error updating time slot:', error);
+      showToast('שגיאה בעדכון שעות', 'error');
+    }
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
+      console.log('💾 Starting save for barber:', selectedBarber?.name);
+      console.log('📅 Current availability state:', availability);
+
       const db = getFirestore();
       const barberId = selectedBarber?.id || '';
-      
+
       // Delete existing availability records for this barber
+      console.log('🗑️ Deleting existing availability records...');
       const existingQuery = query(collection(db, 'availability'), where('barberId', '==', barberId));
       const existingDocs = await getDocs(existingQuery);
+      console.log('🗑️ Found', existingDocs.docs.length, 'existing records to delete');
       await Promise.all(existingDocs.docs.map(doc => deleteDoc(doc.ref)));
       
       // Convert 14-day format to weekly dayOfWeek format
+      console.log('🔄 Converting 14-day format to weekly pattern...');
       const weeklyPattern: {[key: number]: string[]} = {};
-      
+
       availability.forEach(day => {
         if (day.isAvailable && day.timeSlots && day.timeSlots.length > 0) {
           const date = new Date(day.date);
           const dayOfWeek = date.getDay();
-          
+          console.log(`📅 Day ${day.fullDate} (dayOfWeek: ${dayOfWeek}) - Available: ${day.isAvailable}, Slots: ${day.timeSlots.length}`);
+
           if (!weeklyPattern[dayOfWeek]) {
             weeklyPattern[dayOfWeek] = day.timeSlots;
           }
         }
       });
-      
+
+      console.log('📊 Weekly pattern to save:', weeklyPattern);
+
+      if (Object.keys(weeklyPattern).length === 0) {
+        console.log('⚠️ No availability data to save');
+      }
+
       // Save new availability records
       const savePromises = Object.entries(weeklyPattern).map(([dayOfWeek, timeSlots]) => {
         if (timeSlots.length > 0) {
@@ -235,22 +469,28 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
           }
           
           const finalEndTime = `${finalEndHour.toString().padStart(2, '0')}:${finalEndMin.toString().padStart(2, '0')}`;
-          
-          return setDoc(doc(collection(db, 'availability')), {
+
+          const docData = {
             barberId,
             dayOfWeek: parseInt(dayOfWeek),
             startTime,
             endTime: finalEndTime,
             isAvailable: true,
             createdAt: new Date()
-          });
+          };
+
+          console.log(`💾 Saving availability for dayOfWeek ${dayOfWeek}:`, docData);
+
+          return setDoc(doc(collection(db, 'availability')), docData);
         }
       });
       
       await Promise.all(savePromises.filter(Boolean));
-      
+      console.log('✅ All availability records saved successfully');
+
       // Update barber's available status in barbers collection
       const hasAnyAvailability = Object.keys(weeklyPattern).length > 0;
+      console.log('📊 Barber has availability:', hasAnyAvailability);
       if (selectedBarber) {
         await updateBarberProfile(selectedBarber.id, { available: hasAnyAvailability });
         // Update local state
@@ -262,8 +502,7 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
       Alert.alert('הזמינות נשמרה בהצלחה!');
       setModalVisible(false);
       setSelectedBarber(null);
-      // Reset availability to initial state instead of reloading from Firebase
-      setAvailability(generateNext14Days());
+      // Keep the current availability state (don't reset)
       showToast('זמינות נשמרה בהצלחה!', 'success');
     } catch (e) {
       console.error('Error saving availability:', e);

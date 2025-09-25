@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -17,11 +17,11 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { loginUser, loginWithPhoneAndPassword, registerForPushNotifications } from '../../services/firebase';
+import { getSavedLoginCredentials, loginUser, loginWithPhoneAndPassword, registerForPushNotifications } from '../../services/firebase';
 import { colors } from '../constants/colors';
 import { CONTACT_INFO } from '../constants/contactInfo';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const { width: screenWidth } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -29,6 +29,27 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
+
+  // Load saved credentials on component mount
+  useEffect(() => {
+    const loadSavedCredentials = async () => {
+      try {
+        const savedCredentials = await getSavedLoginCredentials();
+        if (savedCredentials) {
+          if (savedCredentials.email) {
+            setEmailOrPhone(savedCredentials.email);
+          } else if (savedCredentials.phoneNumber) {
+            setEmailOrPhone(savedCredentials.phoneNumber);
+          }
+          console.log('✅ Loaded saved credentials');
+        }
+      } catch (error) {
+        console.error('❌ Error loading saved credentials:', error);
+      }
+    };
+
+    loadSavedCredentials();
+  }, []);
 
   const handleLogin = async () => {
     if (!emailOrPhone.trim()) {

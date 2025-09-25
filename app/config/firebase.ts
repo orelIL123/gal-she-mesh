@@ -1,5 +1,10 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import {
+    Auth,
+    browserLocalPersistence,
+    getAuth,
+    setPersistence
+} from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
@@ -24,8 +29,13 @@ Object.entries(firebaseConfig).forEach(([key, value]) => {
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Firebase services
-export const auth = getAuth(app);
+// Initialize Firebase Auth
+export const auth: Auth = getAuth(app);
+
+// Set persistence for React Native
+setPersistence(auth, browserLocalPersistence).catch((error) => {
+  console.error('Error setting auth persistence:', error);
+});
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 

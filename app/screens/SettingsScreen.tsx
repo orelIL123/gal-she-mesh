@@ -73,9 +73,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, onBack }) =
     );
   };
 
-  const handleTermsOfService = () => {
-    setShowTerms(true);
-  };
 
   const handleSupport = () => {
     Linking.openURL('mailto:support@turgibarber.com?subject=תמיכה באפליקציה').catch(() => {

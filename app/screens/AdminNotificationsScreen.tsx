@@ -95,7 +95,8 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
       let success = false;
       
       if (selectedUser === 'all') {
-        success = await sendNotificationToAllUsers(notificationTitle, notificationBody);
+        const sentCount = await sendNotificationToAllUsers(notificationTitle, notificationBody);
+        success = sentCount > 0;
       } else {
         success = await sendNotificationToUser(selectedUser, notificationTitle, notificationBody);
       }

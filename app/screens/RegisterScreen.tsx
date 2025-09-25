@@ -21,7 +21,7 @@ import { registerForPushNotifications, registerUserWithPhone, sendSMSVerificatio
 import { colors } from '../constants/colors';
 import { CONTACT_INFO } from '../constants/contactInfo';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const { width: screenWidth } = Dimensions.get('window');
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -31,7 +31,6 @@ export default function RegisterScreen() {
   const [verificationCode, setVerificationCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<'input' | 'verification'>('input');
-  const [confirmationResult, setConfirmationResult] = useState<any>(null);
   const [verificationId, setVerificationId] = useState('');
   const [showTerms, setShowTerms] = useState(false);
 
@@ -59,7 +58,6 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       const result = await sendSMSVerification(phone);
-      setConfirmationResult(result);
       setVerificationId(result.verificationId);
       setStep('verification');
       Alert.alert('הצלחה', 'קוד אימות נשלח לטלפון שלך');

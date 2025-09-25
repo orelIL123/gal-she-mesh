@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
-import { Timestamp } from 'firebase/firestore';
-import React, { useEffect, useState, memo, useMemo } from 'react';
+import { collection, getDocs, getFirestore, query, Timestamp, where } from 'firebase/firestore';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Alert,
@@ -19,17 +19,18 @@ import {
     Barber,
     createAppointment,
     getBarberAppointmentsForDay,
-    getBarberAvailability,
+    getBarberAvailableSlots,
     getBarbers,
     getCurrentUser,
     getTreatments,
-    initializeBarberAvailability,
+    subscribeToAvailabilityChanges,
+    subscribeToTreatmentsChanges,
     Treatment
 } from '../../services/firebase';
 import ConfirmationModal from '../components/ConfirmationModal';
 import TopNav from '../components/TopNav';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 interface BookingScreenProps {
   onNavigate: (screen: string) => void;
@@ -74,6 +75,7 @@ const OptimizedImage = memo(({ source, style, resizeMode = 'cover' }: {
     </View>
   );
 });
+OptimizedImage.displayName = 'OptimizedImage';
 
 const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClose, route }) => {
   const { t } = useTranslation();
@@ -86,7 +88,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [availableTimes, setAvailableTimes] = useState<string[]>([]);
+  const [weeklyAvailability, setWeeklyAvailability] = useState<{[key: number]: string[]}>({});
+  const [availableDates, setAvailableDates] = useState<{date: Date, isAvailable: boolean, dayOfWeek: number}[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [booking, setBooking] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [detailsBarber, setDetailsBarber] = useState<Barber | null>(null);
@@ -95,11 +100,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
 
   const preSelectedBarberId = route?.params?.barberId;
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [barbersData, treatmentsData] = await Promise.all([
         getBarbers(),
@@ -123,7 +124,145 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
     } finally {
       setLoading(false);
     }
+  }, [preSelectedBarberId]);
+
+  const refreshAvailability = async () => {
+    if (!selectedBarber) return;
+    
+    setRefreshing(true);
+    try {
+      console.log('🔄 Refreshing availability for barber:', selectedBarber.id);
+      
+      // Force reload availability from Firebase
+      const db = getFirestore();
+      const q = query(
+        collection(db, 'availability'), 
+        where('barberId', '==', selectedBarber.id),
+        where('isAvailable', '==', true)
+      );
+      
+      const snapshot = await getDocs(q);
+      const weeklySlots: {[key: number]: string[]} = {};
+      
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const dayOfWeek = data.dayOfWeek;
+        
+        if (data.isAvailable && data.startTime && data.endTime) {
+          // Convert startTime-endTime to 30-minute slots
+          const startTime = data.startTime;
+          const endTime = data.endTime;
+          
+          // Parse start and end times
+          const [startHour, startMin] = startTime.split(':').map(Number);
+          const [endHour, endMin] = endTime.split(':').map(Number);
+          
+          // Generate 30-minute slots
+          let currentHour = startHour;
+          let currentMin = startMin;
+          const slots: string[] = [];
+          
+          while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
+            const timeString = `${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')}`;
+            slots.push(timeString);
+            
+            // Move to next 30-minute slot
+            if (currentMin === 0) {
+              currentMin = 30;
+            } else {
+              currentMin = 0;
+              currentHour++;
+            }
+          }
+          
+          if (!weeklySlots[dayOfWeek]) {
+            weeklySlots[dayOfWeek] = [];
+          }
+          weeklySlots[dayOfWeek].push(...slots);
+        }
+      });
+      
+      // Remove duplicates and sort for each day
+      Object.keys(weeklySlots).forEach(day => {
+        weeklySlots[parseInt(day)] = [...new Set(weeklySlots[parseInt(day)])].sort();
+      });
+      
+      console.log('✅ Refreshed availability:', weeklySlots);
+      setWeeklyAvailability(weeklySlots);
+      
+      // Update available dates
+      const dates = generateAvailableDates();
+      setAvailableDates(dates);
+      
+      // If we have a selected date and treatment, update available times
+      if (selectedDate && selectedTreatment) {
+        const slots = await generateAvailableSlots(selectedBarber.id, selectedDate, selectedTreatment.duration);
+        const timeStrings = slots.map(slot => slot.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        setAvailableTimes(timeStrings);
+      }
+      
+      Alert.alert('עודכן', 'הזמינות עודכנה בהצלחה!');
+    } catch (error) {
+      console.error('Error refreshing availability:', error);
+      Alert.alert('שגיאה', 'שגיאה בעדכון הזמינות');
+    } finally {
+      setRefreshing(false);
+    }
   };
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Listen to availability changes in real-time
+  useEffect(() => {
+    if (selectedBarber) {
+      console.log('🔔 Setting up availability listener for barber:', selectedBarber.id);
+      
+      const unsubscribe = subscribeToAvailabilityChanges(selectedBarber.id, (weeklySlots) => {
+        console.log('📡 Availability updated:', weeklySlots);
+        setWeeklyAvailability(weeklySlots);
+        
+        // Update available dates
+        const dates = generateAvailableDates();
+        setAvailableDates(dates);
+        
+        // If we have a selected date, update available times
+        if (selectedDate && selectedTreatment) {
+          const dayOfWeek = selectedDate.getDay();
+          const slotsForDay = weeklySlots[dayOfWeek] || [];
+          console.log('🔄 Updating available times for selected date:', selectedDate.toDateString(), 'slots:', slotsForDay);
+          
+          // Regenerate available slots with the new availability
+          generateAvailableSlots(selectedBarber.id, selectedDate, selectedTreatment.duration).then(slots => {
+            const timeStrings = slots.map(slot => slot.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+            console.log('🔄 Updated available times:', timeStrings);
+            setAvailableTimes(timeStrings);
+          });
+        }
+      });
+      
+      return () => {
+        console.log('🔕 Unsubscribing from availability changes');
+        unsubscribe();
+      };
+    }
+  }, [selectedBarber, selectedDate, selectedTreatment]);
+
+  // Listen to treatments changes in real-time
+  useEffect(() => {
+    console.log('🔔 Setting up treatments listener');
+    
+    const unsubscribe = subscribeToTreatmentsChanges((treatments) => {
+      console.log('📡 Treatments updated:', treatments.length, 'treatments');
+      setTreatments(treatments);
+    });
+    
+    return () => {
+      console.log('🔕 Unsubscribing from treatments changes');
+      unsubscribe();
+    };
+  }, []);
 
   // Check if a slot is available (no overlap with existing appointments)
   function isSlotAvailable(slotStart: Date, slotDuration: number, appointments: any[]) {
@@ -190,102 +329,73 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       // Get barber's availability for the selected day
       const dayOfWeek = date.getDay();
       
-      // Initialize availability if it doesn't exist
-      await initializeBarberAvailability(barberId);
+      // Use real-time availability data if available
+      let availableTimeSlots: string[] = [];
       
-      const barberAvailability = await getBarberAvailability(barberId);
-      const dayAvailability = barberAvailability.find(a => a.dayOfWeek === dayOfWeek);
-      
-      if (!dayAvailability || !dayAvailability.isAvailable) {
-        console.log('❌ Barber not available on this day, using default hours');
-        // Use default working hours if no availability is set
-        const defaultStartHour = 9;
-        const defaultEndHour = 18;
-        
-        // Skip if it's Friday (5) or Saturday (6)
-        if (dayOfWeek === 5 || dayOfWeek === 6) {
-          console.log('❌ Weekend day, no default hours');
-          return [];
-        }
-        
-        // Use default hours for weekdays
-        const appointments = await getBarberAppointmentsForDay(barberId, date);
-        console.log('Found', appointments.length, 'appointments for this day');
-        
-        const slots = [];
-        
-        // Generate time slots with default hours
-        const startTime = new Date(date);
-        startTime.setHours(defaultStartHour, 0, 0, 0);
-        
-        const endTime = new Date(date);
-        endTime.setHours(defaultEndHour, 0, 0, 0);
-        
-        const currentSlot = new Date(startTime);
-        
-        while (currentSlot < endTime) {
-          const slotEnd = new Date(currentSlot.getTime() + treatmentDuration * 60000);
-          if (slotEnd > endTime) {
-            break;
-          }
-          
-          // Skip past times if it's today
-          const now = new Date();
-          if (date.toDateString() === now.toDateString() && currentSlot <= now) {
-            currentSlot.setMinutes(currentSlot.getMinutes() + treatmentDuration);
-            continue;
-          }
-          
-          if (isSlotAvailable(currentSlot, treatmentDuration, appointments)) {
-            slots.push(new Date(currentSlot));
-          }
-          
-          currentSlot.setMinutes(currentSlot.getMinutes() + treatmentDuration);
-        }
-        
-        console.log('Generated default slots:', slots.length);
-        return slots;
+      if (weeklyAvailability[dayOfWeek]) {
+        console.log('📅 Using real-time availability data');
+        availableTimeSlots = weeklyAvailability[dayOfWeek];
+      } else {
+        console.log('📅 Loading availability from database');
+        // Fallback to database query
+        const dateString = date.toISOString().split('T')[0];
+        availableTimeSlots = await getBarberAvailableSlots(barberId, dateString);
       }
       
-      console.log('📅 Barber availability:', dayAvailability.startTime, 'to', dayAvailability.endTime);
+      if (availableTimeSlots.length === 0) {
+        console.log('❌ Barber not available on this day - NO SLOTS AVAILABLE');
+        return [];
+      }
+      
+      console.log('📅 Available time slots:', availableTimeSlots);
       
       const appointments = await getBarberAppointmentsForDay(barberId, date);
       console.log('Found', appointments.length, 'appointments for this day');
       
       const slots = [];
       
-      // Parse barber's working hours
-      const [startHour, startMin] = dayAvailability.startTime.split(':').map(Number);
-      const [endHour, endMin] = dayAvailability.endTime.split(':').map(Number);
-      
-      // Generate time slots every [treatmentDuration] minutes within working hours
-      const startTime = new Date(date);
-      startTime.setHours(startHour, startMin, 0, 0);
-      
-      const endTime = new Date(date);
-      endTime.setHours(endHour, endMin, 0, 0);
-      
-      const currentSlot = new Date(startTime);
-      
-      while (currentSlot < endTime) {
-        // Check if slot + treatment duration fits within working hours
-        const slotEnd = new Date(currentSlot.getTime() + treatmentDuration * 60000);
-        if (slotEnd > endTime) {
-          break;
-        }
+      // Convert time strings to Date objects and check availability
+      for (const timeString of availableTimeSlots) {
+        const [hour, minute] = timeString.split(':').map(Number);
+        const slotStart = new Date(date);
+        slotStart.setHours(hour, minute, 0, 0);
         
         // Skip past times if it's today
         const now = new Date();
-        if (date.toDateString() === now.toDateString() && currentSlot <= now) {
-          currentSlot.setMinutes(currentSlot.getMinutes() + treatmentDuration);
+        if (date.toDateString() === now.toDateString() && slotStart <= now) {
           continue;
         }
         
-        if (isSlotAvailable(currentSlot, treatmentDuration, appointments)) {
-          slots.push(new Date(currentSlot));
-        }
+        // Check if slot + treatment duration fits within the time slot
+        const slotEnd = new Date(slotStart.getTime() + treatmentDuration * 60000);
+        const nextSlotStart = new Date(slotStart.getTime() + 30 * 60000); // Next 30-min slot
         
-        currentSlot.setMinutes(currentSlot.getMinutes() + treatmentDuration);
+        // For treatments longer than 30 minutes, we need to check if there are enough consecutive slots
+        if (treatmentDuration > 30) {
+          // Check if we have enough consecutive 30-minute slots for the treatment
+          const requiredSlots = Math.ceil(treatmentDuration / 30);
+          let hasEnoughSlots = true;
+          
+          for (let i = 0; i < requiredSlots; i++) {
+            const checkSlotStart = new Date(slotStart.getTime() + (i * 30 * 60000));
+            const checkSlotEnd = new Date(checkSlotStart.getTime() + 30 * 60000);
+            
+            // Check if this 30-minute slot is available
+            if (!isSlotAvailable(checkSlotStart, 30, appointments)) {
+              hasEnoughSlots = false;
+              break;
+            }
+          }
+          
+          if (hasEnoughSlots && isSlotAvailable(slotStart, treatmentDuration, appointments)) {
+            slots.push(slotStart);
+          }
+        } else {
+          // For treatments 30 minutes or less, use the original logic
+          if (slotEnd <= nextSlotStart && isSlotAvailable(slotStart, treatmentDuration, appointments)) {
+            slots.push(slotStart);
+          }
+        }
       }
       
       console.log('Generated', slots.length, 'available time slots');
@@ -298,26 +408,26 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
     }
   }
 
-  const generateAvailableTimes = async () => {
-    if (!selectedBarber || !selectedDate || !selectedTreatment) return;
-    
-    const slots = await generateAvailableSlots(selectedBarber.id, selectedDate, selectedTreatment.duration);
-    const timeStrings = slots.map(slot => slot.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-    setAvailableTimes(timeStrings);
-  };
 
   const generateAvailableDates = () => {
     const dates = [];
     const today = new Date();
     
-    for (let i = 1; i <= 14; i++) {
+    // Start from today (i = 0) and go up to 14 days
+    for (let i = 0; i <= 14; i++) {
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       
-      // Skip Fridays (5) and Saturdays (6)
-      if (date.getDay() !== 5 && date.getDay() !== 6) {
-        dates.push(date);
-      }
+      // Include all days - let admin decide availability
+      // Check if this day is available for the selected barber
+      const dayOfWeek = date.getDay();
+      const isAvailable = selectedBarber ? weeklyAvailability[dayOfWeek] && weeklyAvailability[dayOfWeek].length > 0 : true;
+      
+      dates.push({
+        date,
+        isAvailable,
+        dayOfWeek
+      });
     }
     
     return dates;
@@ -348,77 +458,35 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
         const slots = await generateAvailableSlots(selectedBarber.id, date, selectedTreatment.duration);
         const timeStrings = slots.map(slot => slot.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         
-        // If no slots available, show basic times as fallback but filter out taken ones
+        // If no slots available, check if barber has availability for this day
         if (timeStrings.length === 0) {
-          console.log('No slots available, using fallback times');
-          const fallbackTimes = [];
+          console.log('No slots available, checking barber availability');
+          const dayOfWeek = date.getDay();
+          const hasAvailability = weeklyAvailability[dayOfWeek] && weeklyAvailability[dayOfWeek].length > 0;
           
-          // Get existing appointments for filtering
-          const existingAppointments = await getBarberAppointmentsForDay(selectedBarber.id, date);
-          
-          for (let hour = 9; hour <= 18; hour++) {
-            const timeSlots = [
-              `${hour.toString().padStart(2, '0')}:00`,
-              hour < 18 ? `${hour.toString().padStart(2, '0')}:30` : null
-            ].filter(Boolean);
-            
-            for (const timeSlot of timeSlots) {
-              // Check if this time slot is available
-              const slotDateTime = new Date(date);
-              const [slotHour, slotMin] = timeSlot?.split(':').map(Number) || [0, 0];
-              slotDateTime.setHours(slotHour, slotMin, 0, 0);
-              
-              if (isSlotAvailable(slotDateTime, selectedTreatment.duration, existingAppointments)) {
-                fallbackTimes.push(timeSlot);
-              }
-            }
+          if (!hasAvailability) {
+            console.log('Barber not available on this day - no fallback times');
+            setAvailableTimes([]);
+          } else {
+            console.log('Barber has availability but no slots generated - this might be a bug');
+            setAvailableTimes([]);
           }
-          
-          console.log('Filtered fallback times:', fallbackTimes);
-          setAvailableTimes(fallbackTimes.filter(t => t !== null) as string[]);
         } else {
           setAvailableTimes(timeStrings);
         }
       } catch (error) {
-        console.error('Error generating slots, using fallback:', error);
-        // Fallback to basic times but filter out taken ones
-        const fallbackTimes = [];
+        console.error('Error generating slots:', error);
+        // Don't use fallback times - respect admin's availability settings
+        const dayOfWeek = date.getDay();
+        const hasAvailability = weeklyAvailability[dayOfWeek] && weeklyAvailability[dayOfWeek].length > 0;
         
-        try {
-          // Get existing appointments for filtering
-          const existingAppointments = await getBarberAppointmentsForDay(selectedBarber.id, date);
-          
-          for (let hour = 9; hour <= 18; hour++) {
-            const timeSlots = [
-              `${hour.toString().padStart(2, '0')}:00`,
-              hour < 18 ? `${hour.toString().padStart(2, '0')}:30` : null
-            ].filter(Boolean);
-            
-            for (const timeSlot of timeSlots) {
-              // Check if this time slot is available
-              const slotDateTime = new Date(date);
-              const [slotHour, slotMin] = timeSlot?.split(':').map(Number) || [0, 0];
-              slotDateTime.setHours(slotHour, slotMin, 0, 0);
-              
-              if (isSlotAvailable(slotDateTime, selectedTreatment.duration, existingAppointments)) {
-                fallbackTimes.push(timeSlot);
-              }
-            }
-          }
-          
-          console.log('Error fallback - filtered times:', fallbackTimes);
-        } catch (innerError) {
-          console.error('Error in fallback filtering:', innerError);
-          // Last resort - show basic times
-          for (let hour = 9; hour <= 18; hour++) {
-            fallbackTimes.push(`${hour.toString().padStart(2, '0')}:00`);
-            if (hour < 18) {
-              fallbackTimes.push(`${hour.toString().padStart(2, '0')}:30`);
-            }
-          }
+        if (!hasAvailability) {
+          console.log('Barber not available on this day - no fallback times');
+          setAvailableTimes([]);
+        } else {
+          console.log('Error generating slots but barber should be available - showing empty times');
+          setAvailableTimes([]);
         }
-        
-        setAvailableTimes(fallbackTimes.filter(t => t !== null) as string[]);
       }
     }
   };
@@ -561,16 +629,35 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
 
   // פונקציה לתזמון התראות פוש ללקוח שעה ורבע שעה לפני התור
   const scheduleAppointmentReminders = async (appointmentDate: Date, treatmentName: string) => {
-    // Calculate seconds until notification
     const now = new Date();
+    
+    // Check if appointment is in the future
+    const timeUntilAppointment = appointmentDate.getTime() - now.getTime();
+    const hoursUntilAppointment = timeUntilAppointment / (1000 * 60 * 60);
+    
+    console.log('📅 Appointment date:', appointmentDate.toLocaleString());
+    console.log('⏰ Current time:', now.toLocaleString());
+    console.log('⏱️ Hours until appointment:', hoursUntilAppointment);
+    
+    // Only schedule reminders if appointment is in the future
+    if (hoursUntilAppointment <= 0) {
+      console.log('❌ Appointment is in the past, skipping reminders');
+      return;
+    }
+    
+    // Calculate notification times
     const hourBefore = new Date(appointmentDate.getTime() - 60 * 60 * 1000);
     const quarterBefore = new Date(appointmentDate.getTime() - 15 * 60 * 1000);
 
     const secondsUntilHour = Math.floor((hourBefore.getTime() - now.getTime()) / 1000);
     const secondsUntilQuarter = Math.floor((quarterBefore.getTime() - now.getTime()) / 1000);
 
-    // Only schedule if in the future
-    if (secondsUntilHour > 0) {
+    console.log('⏰ Seconds until hour reminder:', secondsUntilHour);
+    console.log('⏰ Seconds until quarter reminder:', secondsUntilQuarter);
+
+    // Schedule hour reminder only if it's in the future and appointment is at least 1 hour away
+    if (secondsUntilHour > 0 && hoursUntilAppointment >= 1) {
+      console.log('✅ Scheduling hour reminder for', new Date(now.getTime() + secondsUntilHour * 1000).toLocaleString());
       await Notifications.scheduleNotificationAsync({
         content: {
           title: 'תזכורת לתור! 💈',
@@ -580,8 +667,13 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
         },
         trigger: { seconds: secondsUntilHour, repeats: false, channelId: 'default' },
       });
+    } else {
+      console.log('❌ Hour reminder not scheduled - too soon or in past');
     }
-    if (secondsUntilQuarter > 0) {
+    
+    // Schedule quarter reminder only if it's in the future and appointment is at least 15 minutes away
+    if (secondsUntilQuarter > 0 && hoursUntilAppointment >= 0.25) {
+      console.log('✅ Scheduling quarter reminder for', new Date(now.getTime() + secondsUntilQuarter * 1000).toLocaleString());
       await Notifications.scheduleNotificationAsync({
         content: {
           title: 'תזכורת לתור! 💈',
@@ -591,6 +683,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
         },
         trigger: { seconds: secondsUntilQuarter, repeats: false, channelId: 'default' },
       });
+    } else {
+      console.log('❌ Quarter reminder not scheduled - too soon or in past');
     }
   };
 
@@ -727,24 +821,74 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
         {/* Step 3: Select Date */}
         {currentStep === 3 && (
           <View style={styles.stepContent}>
+            {/* Refresh Button */}
+            <View style={styles.refreshContainer}>
+              <TouchableOpacity
+                style={[styles.refreshButton, refreshing && styles.refreshButtonDisabled]}
+                onPress={refreshAvailability}
+                disabled={refreshing || !selectedBarber}
+              >
+                <Text style={styles.refreshButtonText}>
+                  {refreshing ? 'מעדכן...' : '🔄 רענן זמינות'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            
             <View style={styles.datesContainer}>
-              {generateAvailableDates().map((date, index) => (
+              {availableDates.length > 0 ? availableDates.map((dateObj, index) => (
                 <TouchableOpacity
                   key={index}
                   style={[
                     styles.dateCard,
-                    selectedDate?.getTime() === date.getTime() && styles.selectedCard
+                    selectedDate?.getTime() === dateObj.date.getTime() && styles.selectedCard,
+                    !dateObj.isAvailable && styles.unavailableCard
                   ]}
-                  onPress={() => handleDateSelect(date)}
+                  onPress={() => dateObj.isAvailable ? handleDateSelect(dateObj.date) : null}
+                  disabled={!dateObj.isAvailable}
                 >
                   <LinearGradient
-                    colors={['#1a1a1a', '#000000', '#1a1a1a']}
+                    colors={dateObj.isAvailable ? ['#1a1a1a', '#000000', '#1a1a1a'] : ['#ff4444', '#cc0000', '#ff4444']}
                     style={styles.dateGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
-                    <Text style={styles.dateText}>{formatDate(date)}</Text>
-                    <Text style={styles.dateNumber}>{date.getDate()}</Text>
+                    <Text style={[styles.dateText, !dateObj.isAvailable && styles.unavailableText]}>
+                      {formatDate(dateObj.date)}
+                    </Text>
+                    <Text style={[styles.dateNumber, !dateObj.isAvailable && styles.unavailableText]}>
+                      {dateObj.date.getDate()}
+                    </Text>
+                    {!dateObj.isAvailable && (
+                      <Text style={styles.unavailableLabel}>לא זמין</Text>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              )) : generateAvailableDates().map((dateObj, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.dateCard,
+                    selectedDate?.getTime() === dateObj.date.getTime() && styles.selectedCard,
+                    !dateObj.isAvailable && styles.unavailableCard
+                  ]}
+                  onPress={() => dateObj.isAvailable ? handleDateSelect(dateObj.date) : null}
+                  disabled={!dateObj.isAvailable}
+                >
+                  <LinearGradient
+                    colors={dateObj.isAvailable ? ['#1a1a1a', '#000000', '#1a1a1a'] : ['#ff4444', '#cc0000', '#ff4444']}
+                    style={styles.dateGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Text style={[styles.dateText, !dateObj.isAvailable && styles.unavailableText]}>
+                      {formatDate(dateObj.date)}
+                    </Text>
+                    <Text style={[styles.dateNumber, !dateObj.isAvailable && styles.unavailableText]}>
+                      {dateObj.date.getDate()}
+                    </Text>
+                    {!dateObj.isAvailable && (
+                      <Text style={styles.unavailableLabel}>לא זמין</Text>
+                    )}
                   </LinearGradient>
                 </TouchableOpacity>
               ))}
@@ -755,6 +899,19 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
         {/* Step 4: Select Time */}
         {currentStep === 4 && (
           <View style={styles.stepContent}>
+            {/* Refresh Button */}
+            <View style={styles.refreshContainer}>
+              <TouchableOpacity
+                style={[styles.refreshButton, refreshing && styles.refreshButtonDisabled]}
+                onPress={refreshAvailability}
+                disabled={refreshing || !selectedBarber}
+              >
+                <Text style={styles.refreshButtonText}>
+                  {refreshing ? 'מעדכן...' : '🔄 רענן זמינות'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            
             <View style={styles.timesContainer}>
               {availableTimes.map((time, index) => (
                 <TouchableOpacity
@@ -1067,6 +1224,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: 'bold',
+    opacity: 0.8,
   },
   barberPhoto: {
     width: 80,
@@ -1156,6 +1314,9 @@ const styles = StyleSheet.create({
     elevation: 8,
     overflow: 'hidden',
   },
+  unavailableCard: {
+    opacity: 0.6,
+  },
   dateGradient: {
     padding: 20,
     alignItems: 'center',
@@ -1171,6 +1332,13 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  unavailableLabel: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: 'bold',
+    marginTop: 4,
+    textAlign: 'center',
   },
   timesContainer: {
     flexDirection: 'row',
@@ -1311,6 +1479,31 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  refreshContainer: {
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  refreshButton: {
+    backgroundColor: '#007bff',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  refreshButtonDisabled: {
+    backgroundColor: '#ccc',
+    opacity: 0.6,
+  },
+  refreshButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
 

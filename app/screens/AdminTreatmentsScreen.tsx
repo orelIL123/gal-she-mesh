@@ -62,7 +62,10 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
   const loadTreatments = async () => {
     try {
       setLoading(true);
-      const treatmentsData = await getTreatments();
+      console.log('🔄 Loading treatments...');
+      // Force fresh data by disabling cache
+      const treatmentsData = await getTreatments(false);
+      console.log('📦 Loaded treatments:', treatmentsData.length);
       setTreatments(treatmentsData);
     } catch (error) {
       console.error('Error loading treatments:', error);
@@ -98,29 +101,6 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
     return null;
   };
 
-  const uploadTreatmentImage = async () => {
-    try {
-      const imageUri = await pickImageFromDevice();
-      if (!imageUri) return;
-
-      showToast('מעלה תמונה...', 'success');
-      
-      const fileName = `treatment_${Date.now()}.jpg`;
-      const folderPath = 'treatments';
-      
-      const downloadURL = await uploadImageToStorage(imageUri, folderPath, fileName);
-      
-      setFormData({
-        ...formData,
-        image: downloadURL
-      });
-      
-      showToast('התמונה הועלתה בהצלחה', 'success');
-    } catch (error) {
-      console.error('Error uploading treatment image:', error);
-      showToast('שגיאה בהעלאת התמונה', 'error');
-    }
-  };
 
   const focusNextField = () => {
     switch (currentField) {
@@ -212,6 +192,7 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
     if (!validateForm()) return;
 
     try {
+      console.log('💾 Saving treatment...');
       const treatmentData = {
         name: formData.name.trim(),
         duration: parseInt(formData.duration),
@@ -220,23 +201,31 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
         image: formData.image.trim() || 'https://via.placeholder.com/200x150'
       };
 
+      console.log('📊 Treatment data:', treatmentData);
+
       if (editingTreatment) {
+        console.log('✏️ Updating existing treatment:', editingTreatment.id);
         await updateTreatment(editingTreatment.id, treatmentData);
-        setTreatments(prev => 
-          prev.map(t => 
+        setTreatments(prev =>
+          prev.map(t =>
             t.id === editingTreatment.id ? { ...t, ...treatmentData } : t
           )
         );
         showToast('הטיפול עודכן בהצלחה');
       } else {
+        console.log('➕ Adding new treatment...');
         const newTreatmentId = await addTreatment(treatmentData);
+        console.log('✅ New treatment ID:', newTreatmentId);
         setTreatments(prev => [...prev, { id: newTreatmentId, ...treatmentData }]);
         showToast('הטיפול נוסף בהצלחה');
       }
 
+      // Reload treatments to ensure we have fresh data
+      await loadTreatments();
+
       setModalVisible(false);
     } catch (error) {
-      console.error('Error saving treatment:', error);
+      console.error('❌ Error saving treatment:', error);
       showToast('שגיאה בשמירת הטיפול', 'error');
     }
   };

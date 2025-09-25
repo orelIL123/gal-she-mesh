@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore';
-import React, { memo, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -39,38 +39,6 @@ interface AdminGalleryScreenProps {
   initialTab?: 'gallery' | 'background' | 'splash' | 'aboutus' | 'shop';
 }
 
-// Optimized Image Component with lazy loading
-const OptimizedImage = memo(({ source, style, resizeMode = 'cover' }: {
-  source: any;
-  style: any;
-  resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
-}) => {
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [hasError, setHasError] = useState(false);
-
-  return (
-    <View style={[style, { backgroundColor: '#f0f0f0' }]}>
-      {!isLoaded && !hasError && (
-        <View style={[style, { 
-          position: 'absolute', 
-          backgroundColor: '#f0f0f0', 
-          justifyContent: 'center', 
-          alignItems: 'center' 
-        }]}>
-          <Text style={{ color: '#999', fontSize: 12 }}>טוען...</Text>
-        </View>
-      )}
-      <Image
-        source={source}
-        style={[style, { opacity: isLoaded ? 1 : 0 }]}
-        resizeMode={resizeMode}
-        onLoad={() => setIsLoaded(true)}
-        onError={() => setHasError(true)}
-        fadeDuration={200}
-      />
-    </View>
-  );
-});
 
 const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onBack, initialTab }) => {
   const [images, setImages] = useState<GalleryImage[]>([]);
@@ -504,30 +472,42 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     }
   };
 
-  // העלאת תמונה ל-shop
+  // העלאת תמונה ל-shop - פשוטה ויציבה
   const uploadShopImageFromDevice = async () => {
     try {
+      // Request permissions first
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult.granted) {
         showToast('נדרשת הרשאה לגישה לגלריה', 'error');
         return null;
       }
+
+      // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
+        allowsEditing: false,
         quality: 0.8,
       });
-      if (!result.canceled && result.assets[0]) {
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
         const imageUri = result.assets[0].uri;
-        const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+        
+        showToast('מעלה תמונה...', 'success');
+        
+        const fileName = `shop_${Date.now()}.jpg`;
         const downloadURL = await uploadImageToStorage(imageUri, 'shop', fileName);
+        
+        showToast('התמונה הועלתה בהצלחה', 'success');
         return downloadURL;
+      } else {
+        console.log('Image selection cancelled');
+        return null;
       }
     } catch (error) {
+      console.error('Error uploading shop image:', error);
       showToast('שגיאה בהעלאת התמונה', 'error');
+      return null;
     }
-    return null;
   };
 
   // שמירת מוצר חדש/ערוך
@@ -999,7 +979,9 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
                     style={styles.uploadButton}
                     onPress={async()=>{
                       const url = await uploadShopImageFromDevice();
-                      if(url) setShopForm(f=>({...f,imageUrl:url}));
+                      if(url) {
+                        setShopForm(f=>({...f,imageUrl:url}));
+                      }
                     }}
                   >
                     <Ionicons name="cloud-upload" size={20} color="#007bff" />

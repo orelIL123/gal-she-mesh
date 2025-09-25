@@ -1,4 +1,4 @@
-import React, { useEffect, useState, memo, useMemo } from 'react';
+import React, { useEffect, useState, memo } from 'react';
 import {
     Alert,
     Dimensions,
@@ -21,38 +21,6 @@ interface TeamScreenProps {
   onBack?: () => void;
 }
 
-// Optimized Image Component with lazy loading
-const OptimizedImage = memo(({ source, style, resizeMode = 'cover' }: {
-  source: any;
-  style: any;
-  resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
-}) => {
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [hasError, setHasError] = useState(false);
-
-  return (
-    <View style={[style, { backgroundColor: '#f0f0f0' }]}>
-      {!isLoaded && !hasError && (
-        <View style={[style, { 
-          position: 'absolute', 
-          backgroundColor: '#f0f0f0', 
-          justifyContent: 'center', 
-          alignItems: 'center' 
-        }]}>
-          <Text style={{ color: '#999', fontSize: 12 }}>טוען...</Text>
-        </View>
-      )}
-      <Image
-        source={source}
-        style={[style, { opacity: isLoaded ? 1 : 0 }]}
-        resizeMode={resizeMode}
-        onLoad={() => setIsLoaded(true)}
-        onError={() => setHasError(true)}
-        fadeDuration={200}
-      />
-    </View>
-  );
-});
 
 const TeamScreen: React.FC<TeamScreenProps> = ({ onNavigate, onBack }) => {
   const [barbers, setBarbers] = useState<Barber[]>([]);

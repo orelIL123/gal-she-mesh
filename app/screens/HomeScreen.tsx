@@ -2,23 +2,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { collection, doc, getDoc, getDocs, getFirestore, query, where } from 'firebase/firestore';
-import React, { memo, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-    Alert,
-    Animated,
-    Dimensions,
-    Image,
-    ImageBackground,
-    InteractionManager,
-    Linking,
-    Modal,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Animated,
+  Dimensions,
+  Image,
+  ImageBackground,
+  InteractionManager,
+  Linking,
+  Modal,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import NotificationPanel from '../components/NotificationPanel';
 import SideMenu from '../components/SideMenu';
@@ -32,38 +32,6 @@ interface HomeScreenProps {
   isGuestMode?: boolean;
 }
 
-// Optimized Image Component with lazy loading
-const OptimizedImage = memo(({ source, style, resizeMode = 'cover' }: {
-  source: any;
-  style: any;
-  resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
-}) => {
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [hasError, setHasError] = useState(false);
-
-  return (
-    <View style={[style, { backgroundColor: '#f0f0f0' }]}>
-      {!isLoaded && !hasError && (
-        <View style={[style, { 
-          position: 'absolute', 
-          backgroundColor: '#f0f0f0', 
-          justifyContent: 'center', 
-          alignItems: 'center' 
-        }]}>
-          <Text style={{ color: '#999', fontSize: 12 }}>טוען...</Text>
-        </View>
-      )}
-      <Image
-        source={source}
-        style={[style, { opacity: isLoaded ? 1 : 0 }]}
-        resizeMode={resizeMode}
-        onLoad={() => setIsLoaded(true)}
-        onError={() => setHasError(true)}
-        fadeDuration={200}
-      />
-    </View>
-  );
-});
 
 // Simple NeonButton component
 const NeonButton: React.FC<{
@@ -886,7 +854,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 0,
-    height: height * 0.4,
+    height: height * 0.5, // הגדלת הרכיב מ-0.4 ל-0.5 כדי שיתפוס יותר מקום
     width: '100%',
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,

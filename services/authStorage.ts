@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const AUTH_STORAGE_KEY = '@barber_app_auth';
+const PREFIX = '@barberapp:'; // שנה לשם האפליקציה שלך
+const AUTH_STORAGE_KEY = `${PREFIX}auth`;
 
 export interface AuthData {
   uid: string;
@@ -9,6 +10,12 @@ export interface AuthData {
   displayName?: string;
   isAdmin: boolean;
   lastLoginAt: string;
+  // Add credentials for auto-login
+  savedCredentials?: {
+    email?: string;
+    phoneNumber?: string;
+    hasPassword: boolean;
+  };
 }
 
 export const AuthStorageService = {
@@ -42,11 +49,14 @@ export const AuthStorageService = {
     }
   },
 
-  // Clear auth data (logout)
+  // Clear auth data (logout) - מסונן לפי prefix
   async clearAuthData(): Promise<void> {
     try {
-      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-      console.log('🗑️ Auth data cleared');
+      // ❗️אל תשתמש ב-AsyncStorage.clear()
+      const keys = await AsyncStorage.getAllKeys();
+      const mine = keys.filter(k => k.startsWith(PREFIX));
+      if (mine.length) await AsyncStorage.multiRemove(mine);
+      console.log('🗑️ Auth data cleared (filtered by prefix)');
     } catch (error) {
       console.error('❌ Error clearing auth data:', error);
     }
@@ -60,6 +70,38 @@ export const AuthStorageService = {
     } catch (error) {
       console.error('❌ Error checking login status:', error);
       return false;
+    }
+  },
+
+  // Save login credentials for auto-login
+  async saveLoginCredentials(email?: string, phoneNumber?: string, hasPassword: boolean = false): Promise<void> {
+    try {
+      const currentData = await this.getAuthData();
+      if (currentData) {
+        const updatedData = {
+          ...currentData,
+          savedCredentials: {
+            email,
+            phoneNumber,
+            hasPassword
+          }
+        };
+        await this.saveAuthData(updatedData);
+        console.log('✅ Login credentials saved');
+      }
+    } catch (error) {
+      console.error('❌ Error saving login credentials:', error);
+    }
+  },
+
+  // Get saved login credentials
+  async getSavedCredentials(): Promise<{email?: string, phoneNumber?: string, hasPassword: boolean} | null> {
+    try {
+      const data = await this.getAuthData();
+      return data?.savedCredentials || null;
+    } catch (error) {
+      console.error('❌ Error getting saved credentials:', error);
+      return null;
     }
   }
 };

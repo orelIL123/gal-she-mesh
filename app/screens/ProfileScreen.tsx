@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useState, memo, useMemo } from 'react';
+import React, { useEffect, useState, memo } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -28,45 +28,13 @@ import { NeonButton } from '../components/NeonButton';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 interface ProfileScreenProps {
   onNavigate: (screen: string) => void;
   onBack?: () => void;
 }
 
-// Optimized Image Component with lazy loading
-const OptimizedImage = memo(({ source, style, resizeMode = 'cover' }: {
-  source: any;
-  style: any;
-  resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
-}) => {
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [hasError, setHasError] = useState(false);
-
-  return (
-    <View style={[style, { backgroundColor: '#f0f0f0' }]}>
-      {!isLoaded && !hasError && (
-        <View style={[style, { 
-          position: 'absolute', 
-          backgroundColor: '#f0f0f0', 
-          justifyContent: 'center', 
-          alignItems: 'center' 
-        }]}>
-          <Text style={{ color: '#999', fontSize: 12 }}>טוען...</Text>
-        </View>
-      )}
-      <Image
-        source={source}
-        style={[style, { opacity: isLoaded ? 1 : 0 }]}
-        resizeMode={resizeMode}
-        onLoad={() => setIsLoaded(true)}
-        onError={() => setHasError(true)}
-        fadeDuration={200}
-      />
-    </View>
-  );
-});
 
 const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => {
   const [user, setUser] = useState<any>(null);
@@ -83,7 +51,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
   const [phone, setPhone] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [verificationId, setVerificationId] = useState('');
-  const [confirmationResult, setConfirmationResult] = useState<any>(null);
   const [phoneUserExists, setPhoneUserExists] = useState(false);
   const [phoneUserHasPassword, setPhoneUserHasPassword] = useState(false);
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
@@ -155,7 +122,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
         try {
           const { sendSMSVerification } = await import('../../services/firebase');
           const result = await sendSMSVerification(phone);
-          setConfirmationResult(result);
           setVerificationId(result.verificationId);
           setStep('otp');
           showToast('קוד אימות נשלח לטלפון', 'success');

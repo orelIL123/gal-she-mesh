@@ -27,48 +27,79 @@ export default function SplashScreen() {
       }),
     ]).start();
 
-    const timer = setTimeout(() => {
-      // Fade out before navigation
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start(async () => {
-        // Navigate after fade out completes
-        try {
-          // First check if we have stored auth data
+    // Wait for Firebase Auth to initialize and check auth state
+    let authStateChecked = false;
+
+    const checkAuthState = async () => {
+      try {
+        console.log('🔍 Checking authentication state...');
+
+        // Wait for Firebase Auth to initialize
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+          if (authStateChecked) return; // Prevent multiple calls
+          authStateChecked = true;
+
+          console.log('🔥 Firebase Auth state:', user ? 'User found' : 'No user');
+
+          // Check stored auth data
           const storedAuthData = await AuthStorageService.getAuthData();
-          
-          if (storedAuthData) {
-            console.log('🔐 Found stored auth data, checking current auth state...');
-            
-            // Check if user is still authenticated with Firebase
-            onAuthStateChanged(auth, (user) => {
-              if (user && user.uid === storedAuthData.uid) {
-                console.log('✅ User still authenticated, navigating to home');
-                router.replace('/(tabs)');
-              } else {
-                console.log('❌ Auth state mismatch, clearing stored data');
-                AuthStorageService.clearAuthData();
-                router.replace('/auth-choice');
+          console.log('💾 Stored auth data:', storedAuthData ? 'Found' : 'None');
+
+          // Fade out before navigation
+          Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }).start(() => {
+            unsubscribe(); // Clean up listener
+
+            if (user && storedAuthData && user.uid === storedAuthData.uid) {
+              console.log('✅ User authenticated, navigating to home');
+              router.replace('/(tabs)');
+            } else if (user && !storedAuthData) {
+              console.log('✅ Firebase user found but no stored data, navigating to home');
+              router.replace('/(tabs)');
+            } else {
+              console.log('❌ No valid authentication, navigating to auth choice');
+              if (storedAuthData) {
+                AuthStorageService.clearAuthData(); // Clear invalid stored data
               }
-            });
-          } else {
-            console.log('📱 No stored auth data, checking current auth state...');
-            onAuthStateChanged(auth, (user) => {
-              if (user) {
-                router.replace('/(tabs)');
-              } else {
-                router.replace('/auth-choice');
-              }
+              router.replace('/auth-choice');
+            }
+          });
+        });
+
+        // Fallback: if no auth state change after 3 seconds, proceed anyway
+        setTimeout(() => {
+          if (!authStateChecked) {
+            console.log('⏰ Auth state check timeout, proceeding...');
+            authStateChecked = true;
+            unsubscribe();
+
+            Animated.timing(fadeAnim, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+            }).start(() => {
+              router.replace('/auth-choice');
             });
           }
-        } catch (error) {
-          console.error('Error checking stored auth data:', error);
+        }, 3000);
+
+      } catch (error) {
+        console.error('Error checking auth state:', error);
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
           router.replace('/auth-choice');
-        }
-      });
-    }, 2000); // Show splash for exactly 2 seconds
+        });
+      }
+    };
+
+    // Start auth check after animation
+    const timer = setTimeout(checkAuthState, 2000);
 
     return () => clearTimeout(timer);
   }, []);
