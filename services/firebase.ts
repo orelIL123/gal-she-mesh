@@ -302,9 +302,10 @@ export const logoutUser = async () => {
 // Helper function to save auth data after successful login
 const saveAuthDataAfterLogin = async (user: User) => {
   try {
+    console.log('🔄 Starting to save auth data for user:', user.uid);
     const userProfile = await getUserProfile(user.uid);
     if (userProfile) {
-      await AuthStorageService.saveAuthData({
+      const authData = {
         uid: user.uid,
         email: user.email || undefined,
         phoneNumber: user.phoneNumber || userProfile.phone,
@@ -315,11 +316,27 @@ const saveAuthDataAfterLogin = async (user: User) => {
           email: user.email || undefined,
           phoneNumber: user.phoneNumber || userProfile.phone,
           hasPassword: true
+          // Note: We don't save password here for security reasons
+          // Password should be saved separately when user explicitly chooses to
         }
+      };
+      
+      console.log('💾 Saving auth data:', {
+        uid: authData.uid,
+        email: authData.email,
+        phoneNumber: authData.phoneNumber,
+        displayName: authData.displayName,
+        isAdmin: authData.isAdmin,
+        savedCredentials: authData.savedCredentials
       });
+      
+      await AuthStorageService.saveAuthData(authData);
+      console.log('✅ Auth data saved successfully');
+    } else {
+      console.log('❌ No user profile found for user:', user.uid);
     }
   } catch (error) {
-    console.error('Error saving auth data:', error);
+    console.error('❌ Error saving auth data:', error);
   }
 };
 

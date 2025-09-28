@@ -1,9 +1,7 @@
 import { useRouter } from 'expo-router';
-import { onAuthStateChanged } from 'firebase/auth';
 import React, { useEffect } from 'react';
 import { Animated, Dimensions, Image, StyleSheet, View } from 'react-native';
-import { AuthStorageService } from '../services/authStorage';
-import { auth } from './config/firebase';
+import { authManager } from '../services/authManager';
 
 const { width, height } = Dimensions.get('window');
 
@@ -27,92 +25,66 @@ export default function SplashScreen() {
       }),
     ]).start();
 
-    // Wait for Firebase Auth to initialize and check auth state
+    // Check auth state using the new AuthManager
     let authStateChecked = false;
 
     const checkAuthState = async () => {
       try {
-        console.log('🔍 Checking authentication state...');
+        console.log('🔍 SplashScreen: Starting auth check...');
 
-        // Wait for Firebase Auth to initialize
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-          if (authStateChecked) return; // Prevent multiple calls
-          authStateChecked = true;
+        // Wait for AuthManager to initialize
+        await authManager.waitForInitialization();
 
-          console.log('🔥 Firebase Auth state:', user ? 'User found' : 'No user');
+        if (authStateChecked) return;
+        authStateChecked = true;
 
-          // Check stored auth data
-          const storedAuthData = await AuthStorageService.getAuthData();
-          console.log('💾 Stored auth data:', storedAuthData ? 'Found' : 'None');
+        console.log('🔍 SplashScreen: AuthManager initialized, checking auth state...');
 
-          // Fade out before navigation
+        // First: Check if already authenticated via Firebase persistence
+        const isAuthenticated = await authManager.isAuthenticated();
+
+        if (isAuthenticated) {
+          console.log('✅ SplashScreen: User already authenticated via Firebase persistence');
+
+          // Fade out and navigate to home
           Animated.timing(fadeAnim, {
             toValue: 0,
             duration: 300,
             useNativeDriver: true,
-          }).start(async () => {
-            unsubscribe(); // Clean up listener
-
-            if (user) {
-              // Firebase user exists = user is authenticated
-              console.log('✅ User authenticated, navigating to home');
-
-              // Make sure we save/update auth data for this session
-              try {
-                const { getUserProfile } = await import('../services/firebase');
-                const userProfile = await getUserProfile(user.uid);
-                if (userProfile) {
-                  await AuthStorageService.saveAuthData({
-                    uid: user.uid,
-                    email: user.email || undefined,
-                    phoneNumber: user.phoneNumber || userProfile.phone,
-                    displayName: userProfile.displayName,
-                    isAdmin: userProfile.isAdmin || false,
-                    lastLoginAt: new Date().toISOString()
-                  });
-                }
-              } catch (error) {
-                console.log('⚠️ Could not save auth data, but continuing with login');
-              }
-
-              router.replace('/(tabs)');
-            } else {
-              console.log('❌ No authenticated user, navigating to auth choice');
-              // Clear any stale auth data
-              await AuthStorageService.clearAuthData();
-              router.replace('/auth-choice');
-            }
+          }).start(() => {
+            router.replace('/(tabs)');
           });
-        });
+          return;
+        }
 
-        // Fallback: if no auth state change after 3 seconds, proceed anyway
-        setTimeout(async () => {
-          if (!authStateChecked) {
-            console.log('⏰ Auth state check timeout, proceeding...');
-            authStateChecked = true;
-            unsubscribe();
+        // Second: Try auto-login with saved credentials
+        console.log('🔍 SplashScreen: No Firebase auth, trying auto-login...');
+        const autoLoginSuccess = await authManager.attemptAutoLogin();
 
-            Animated.timing(fadeAnim, {
-              toValue: 0,
-              duration: 300,
-              useNativeDriver: true,
-            }).start(async () => {
-              // Clear any stale auth data on timeout
-              await AuthStorageService.clearAuthData();
-              router.replace('/auth-choice');
-            });
-          }
-        }, 3000);
-
-      } catch (error) {
-        console.error('Error checking auth state:', error);
+        // Fade out before navigation
         Animated.timing(fadeAnim, {
           toValue: 0,
           duration: 300,
           useNativeDriver: true,
-        }).start(async () => {
-          // Clear any stale auth data on error
-          await AuthStorageService.clearAuthData();
+        }).start(() => {
+          if (autoLoginSuccess) {
+            console.log('✅ SplashScreen: Auto-login successful, navigating to home');
+            router.replace('/(tabs)');
+          } else {
+            console.log('❌ SplashScreen: No auto-login possible, navigating to auth choice');
+            router.replace('/auth-choice');
+          }
+        });
+
+      } catch (error) {
+        console.error('❌ SplashScreen: Error in auth check:', error);
+
+        // Fallback to auth choice on error
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
           router.replace('/auth-choice');
         });
       }
@@ -149,18 +121,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999, // Ensure it's above everything during splash
   },
   imageContainer: {
-    width: width,
-    height: height,
+    flex: 1,
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
   image: {
     width: width,
     height: height,
-    resizeMode: 'cover',
+    resizeMode: 'cover', // This will fill the entire screen without distortion
   },
 });

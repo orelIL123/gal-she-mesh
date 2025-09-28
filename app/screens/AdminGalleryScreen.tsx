@@ -56,6 +56,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     aboutus: []
   });
   const [loading, setLoading] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'gallery' | 'background' | 'splash' | 'aboutus' | 'shop'>(initialTab || 'gallery');
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
@@ -173,14 +174,34 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
 
   const pickImageFromDevice = async () => {
     try {
+      console.log('📱 Requesting media library permissions...');
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        showToast('נדרשת הרשאה לגישה לגלריה', 'error');
+        return null;
+      }
+
+      // Double check permission status
+      if (permissionResult.status !== 'granted') {
+        showToast('הרשאת גישה נדחתה', 'error');
+        return null;
+      }
+
+      console.log('📱 Permissions granted, launching image picker...');
+      
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
         quality: 1,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        return result.assets[0].uri;
+      console.log('📱 Image picker result:', result);
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const imageUri = result.assets[0].uri;
+        console.log('📤 Selected image URI:', imageUri);
+        return imageUri;
       }
     } catch (error) {
       console.error('Error picking image:', error);
@@ -474,22 +495,39 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
 
   // העלאת תמונה ל-shop - משתמשת באותה לוגיקה שעובדת בגלריה
   const uploadShopImageFromDevice = async () => {
-    try {
-      // Use the same logic that works for gallery
-      const imageUri = await pickImageFromDevice();
-      if (!imageUri) return null;
+    if (isUploading) {
+      showToast('מעלה תמונה, אנא המתן...', 'error');
+      return;
+    }
 
+    try {
+      setIsUploading(true);
+      console.log('🔄 Starting shop image upload...');
+      
+      const imageUri = await pickImageFromDevice();
+      if (!imageUri) {
+        console.log('❌ No image selected');
+        return;
+      }
+
+      console.log('📱 Image selected:', imageUri);
       showToast('מעלה תמונה...', 'success');
       
       const fileName = `shop_${Date.now()}.jpg`;
+      console.log('📁 Uploading to shop folder with filename:', fileName);
+      
       const downloadURL = await uploadImageToStorage(imageUri, 'shop', fileName);
+      console.log('✅ Upload successful, URL:', downloadURL);
+      
+      // עדכון ישיר של ה-state במקום החזרת URL
+      setShopForm(f => ({ ...f, imageUrl: downloadURL }));
       
       showToast('התמונה הועלתה בהצלחה', 'success');
-      return downloadURL;
     } catch (error) {
-      console.error('Error uploading shop image:', error);
-      showToast('שגיאה בהעלאת התמונה', 'error');
-      return null;
+      console.error('❌ Error uploading shop image:', error);
+      showToast(`שגיאה בהעלאת התמונה: ${error instanceof Error ? error.message : 'שגיאה לא ידועה'}`, 'error');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -960,12 +998,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
                   <Text style={styles.inputLabel}>תמונה</Text>
                   <TouchableOpacity
                     style={styles.uploadButton}
-                    onPress={async()=>{
-                      const url = await uploadShopImageFromDevice();
-                      if(url) {
-                        setShopForm(f=>({...f,imageUrl:url}));
-                      }
-                    }}
+                    onPress={uploadShopImageFromDevice}
                   >
                     <Ionicons name="cloud-upload" size={20} color="#007bff" />
                     <Text style={styles.uploadButtonText}>

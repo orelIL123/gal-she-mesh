@@ -2,22 +2,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    Image,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { getSavedLoginCredentials, loginUser, loginWithPhoneAndPassword, registerForPushNotifications } from '../../services/firebase';
+import { loginUser, loginWithPhoneAndPassword, registerForPushNotifications } from '../../services/firebase';
+import { authManager } from '../../services/authManager';
 import { colors } from '../constants/colors';
 import { CONTACT_INFO } from '../constants/contactInfo';
 
@@ -29,22 +30,42 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   // Load saved credentials on component mount
   useEffect(() => {
     const loadSavedCredentials = async () => {
       try {
-        const savedCredentials = await getSavedLoginCredentials();
+        console.log('🔄 LoginScreen: Loading saved credentials...');
+        const savedCredentials = await authManager.getSavedCredentials();
+
         if (savedCredentials) {
           if (savedCredentials.email) {
             setEmailOrPhone(savedCredentials.email);
+            console.log('✅ LoginScreen: Loaded saved email:', savedCredentials.email);
           } else if (savedCredentials.phoneNumber) {
             setEmailOrPhone(savedCredentials.phoneNumber);
+            console.log('✅ LoginScreen: Loaded saved phone:', savedCredentials.phoneNumber);
           }
-          console.log('✅ Loaded saved credentials');
+
+          // Load saved password if available
+          if (savedCredentials.password) {
+            setPassword(savedCredentials.password);
+            console.log('✅ LoginScreen: Loaded saved password');
+          }
+
+          // Set remember me if credentials were saved
+          if (savedCredentials.rememberMe) {
+            setRememberMe(true);
+            console.log('✅ LoginScreen: Remember Me enabled');
+          }
+
+          console.log('✅ LoginScreen: Loaded saved credentials successfully');
+        } else {
+          console.log('ℹ️ LoginScreen: No saved credentials found');
         }
       } catch (error) {
-        console.error('❌ Error loading saved credentials:', error);
+        console.error('❌ LoginScreen: Error loading saved credentials:', error);
       }
     };
 
@@ -67,6 +88,22 @@ export default function LoginScreen() {
       // Check if it's email or phone format
       const isEmail = emailOrPhone.includes('@');
 
+      // Save credentials using AuthManager if "remember me" is checked
+      if (rememberMe) {
+        try {
+          console.log('💾 LoginScreen: Saving credentials...');
+          await authManager.saveLoginCredentials(
+            isEmail ? emailOrPhone : undefined,
+            isEmail ? undefined : emailOrPhone,
+            password,
+            true
+          );
+          console.log('✅ LoginScreen: Credentials saved successfully');
+        } catch (error) {
+          console.error('❌ LoginScreen: Error saving credentials:', error);
+        }
+      }
+
       if (isEmail) {
         await loginUser(emailOrPhone, password);
       } else {
@@ -75,14 +112,13 @@ export default function LoginScreen() {
 
       // Register for push notifications after successful login
       try {
-        const { getCurrentUser } = await import('../../services/firebase');
-        const user = getCurrentUser();
+        const user = authManager.getCurrentUser();
         if (user) {
           await registerForPushNotifications(user.uid);
-          console.log('✅ Push notifications registered for user:', user.uid);
+          console.log('✅ LoginScreen: Push notifications registered for user:', user.uid);
         }
       } catch (error) {
-        console.error('❌ Error registering for push notifications:', error);
+        console.error('❌ LoginScreen: Error registering for push notifications:', error);
         // Don't fail login if push registration fails
       }
 
@@ -168,6 +204,22 @@ export default function LoginScreen() {
                 secureTextEntry
               />
 
+              {/* Remember Me Checkbox */}
+              <View style={styles.rememberMeContainer}>
+                <TouchableOpacity
+                  style={styles.checkboxContainer}
+                  onPress={() => {
+                    console.log('🔄 Remember me toggled:', !rememberMe);
+                    setRememberMe(!rememberMe);
+                  }}
+                >
+                  <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                    {rememberMe && <Ionicons name="checkmark" size={16} color="#fff" />}
+                  </View>
+                  <Text style={styles.rememberMeText}>זכור אותי</Text>
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity
                 style={[styles.loginButton, loading && styles.buttonDisabled]}
                 onPress={handleLogin}
@@ -179,6 +231,7 @@ export default function LoginScreen() {
                   <Text style={styles.loginButtonText}>התחבר</Text>
                 )}
               </TouchableOpacity>
+
 
               <TouchableOpacity onPress={() => router.push('/register')}>
                 <Text style={styles.linkText}>אין לך חשבון? הירשם</Text>
@@ -449,5 +502,36 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '600',
+  },
+  // Remember Me Checkbox Styles
+  rememberMeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    marginTop: 10,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.primary,
+  },
+  rememberMeText: {
+    fontSize: 16,
+    color: '#000000',
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });

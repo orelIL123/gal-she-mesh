@@ -43,7 +43,7 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed'>('all');
+  const [filter, setFilter] = useState<'all' | 'confirmed' | 'completed'>('all');
   const [selectedDayFilter, setSelectedDayFilter] = useState<string | null>(null); // null = all days, date string = specific date
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
 
@@ -71,7 +71,33 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
         getAllUsers(),
         getTreatments()
       ]);
-      setAppointments(appointmentsData);
+      
+      // Auto-complete past appointments
+      const now = new Date();
+      const pastAppointments = appointmentsData.filter(apt => {
+        const aptTime = apt.date.toMillis ? apt.date.toMillis() : apt.date.toDate().getTime();
+        return aptTime < now.getTime() && apt.status === 'confirmed';
+      });
+      
+      // Update past appointments to completed status
+      if (pastAppointments.length > 0) {
+        console.log(`🔄 Auto-completing ${pastAppointments.length} past appointments`);
+        for (const appointment of pastAppointments) {
+          try {
+            await updateAppointment(appointment.id, { status: 'completed' });
+            console.log(`✅ Auto-completed appointment ${appointment.id}`);
+          } catch (error) {
+            console.error(`❌ Failed to auto-complete appointment ${appointment.id}:`, error);
+          }
+        }
+        
+        // Reload appointments after auto-completion
+        const updatedAppointments = await getCurrentMonthAppointments();
+        setAppointments(updatedAppointments);
+      } else {
+        setAppointments(appointmentsData);
+      }
+      
       setBarbers(barbersData);
       setUsers(usersData);
       setTreatments(treatmentsData);
@@ -107,7 +133,6 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'confirmed': return '#4CAF50';
-      case 'pending': return '#FF9800';
       case 'completed': return '#2196F3';
       case 'cancelled': return '#F44336';
       default: return '#757575';
@@ -117,7 +142,6 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
   const getStatusText = (status: string) => {
     switch (status) {
       case 'confirmed': return 'מאושר';
-      case 'pending': return 'ממתין';
       case 'completed': return 'הושלם';
       case 'cancelled': return 'בוטל';
       default: return status;
@@ -313,6 +337,26 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
       return aTime - bTime;
     });
 
+  // Get the actual next appointment (not just first in list)
+  const getActualNextAppointment = () => {
+    const now = new Date();
+    const upcomingAppointments = filteredAppointments
+      .filter(apt => apt.status === 'confirmed')
+      .filter(apt => {
+        const aptTime = apt.date.toMillis ? apt.date.toMillis() : apt.date.toDate().getTime();
+        return aptTime > now.getTime();
+      })
+      .sort((a, b) => {
+        const aTime = a.date.toMillis ? a.date.toMillis() : a.date.toDate().getTime();
+        const bTime = b.date.toMillis ? b.date.toMillis() : b.date.toDate().getTime();
+        return aTime - bTime;
+      });
+    
+    return upcomingAppointments[0] || null;
+  };
+
+  const actualNextAppointment = getActualNextAppointment();
+
   const getNextClient = () => {
     const now = new Date();
     const upcomingAppointments = appointments
@@ -334,7 +378,6 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
 
   const filterButtons = [
     { key: 'all', label: 'הכל', count: appointments.length },
-    { key: 'pending', label: 'ממתין', count: appointments.filter(a => a.status === 'pending').length },
     { key: 'confirmed', label: 'מאושר', count: appointments.filter(a => a.status === 'confirmed').length },
     { key: 'completed', label: 'הושלם', count: appointments.filter(a => a.status === 'completed').length },
   ];
@@ -458,18 +501,18 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
         </View>
 
         {/* Next Client Button */}
-        {nextClient && (
+        {actualNextAppointment && (
           <View style={styles.nextClientContainer}>
             <TouchableOpacity 
               style={styles.nextClientButton}
               onPress={() => {
-                setSelectedAppointment(nextClient);
+                setSelectedAppointment(actualNextAppointment);
                 setModalVisible(true);
               }}
             >
               <Ionicons name="person" size={16} color="#fff" />
               <Text style={styles.nextClientText}>
-                הלקוח הבא: {getUserName(nextClient)} ב-{formatDate(nextClient.date)}
+                הלקוח הבא: {getUserName(actualNextAppointment)} ב-{formatDate(actualNextAppointment.date)}
               </Text>
             </TouchableOpacity>
           </View>
@@ -488,34 +531,36 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
                 <Text style={styles.emptyStateText}>אין תורים למצב זה</Text>
               </View>
             ) : (
-              filteredAppointments.map((appointment, index) => (
-                <TouchableOpacity
-                  key={appointment.id}
-                  style={[
-                    styles.appointmentCard,
-                    index === 0 && styles.nextAppointmentCard
-                  ]}
-                  onPress={() => {
-                    setSelectedAppointment(appointment);
-                    setModalVisible(true);
-                  }}
-                >
-                  <View style={styles.appointmentHeader}>
-                    <View style={[
-                      styles.statusBadge,
-                      { backgroundColor: getStatusColor(appointment.status) }
-                    ]}>
-                      <Text style={styles.statusText}>
-                        {index === 0 ? 'התור הבא' : getStatusText(appointment.status)}
+              filteredAppointments.map((appointment, index) => {
+                const isNextAppointment = actualNextAppointment && appointment.id === actualNextAppointment.id;
+                return (
+                  <TouchableOpacity
+                    key={appointment.id}
+                    style={[
+                      styles.appointmentCard,
+                      isNextAppointment && styles.nextAppointmentCard
+                    ]}
+                    onPress={() => {
+                      setSelectedAppointment(appointment);
+                      setModalVisible(true);
+                    }}
+                  >
+                    <View style={styles.appointmentHeader}>
+                      <View style={[
+                        styles.statusBadge,
+                        { backgroundColor: getStatusColor(appointment.status) }
+                      ]}>
+                        <Text style={styles.statusText}>
+                          {isNextAppointment ? 'התור הבא' : getStatusText(appointment.status)}
+                        </Text>
+                      </View>
+                      <Text style={[
+                        styles.appointmentDate,
+                        isNextAppointment && styles.nextAppointmentDate
+                      ]}>
+                        {formatDate(appointment.date)}
                       </Text>
                     </View>
-                    <Text style={[
-                      styles.appointmentDate,
-                      index === 0 && styles.nextAppointmentDate
-                    ]}>
-                      {formatDate(appointment.date)}
-                    </Text>
-                  </View>
                   
                   <View style={styles.appointmentDetails}>
                     <View style={styles.appointmentRow}>
@@ -554,8 +599,9 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
                       </View>
                     </View>
                   </View>
-                </TouchableOpacity>
-              ))
+                  </TouchableOpacity>
+                );
+              })
             )}
           </ScrollView>
         )}

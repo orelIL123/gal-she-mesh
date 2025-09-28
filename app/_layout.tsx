@@ -10,6 +10,7 @@ import { I18nextProvider } from 'react-i18next';
 import { Alert } from 'react-native';
 import 'react-native-reanimated';
 import '../app/globals.css';
+import AppAuthGate from './components/AppAuthGate';
 import i18n from './i18n';
 
 import { useColorScheme } from '../hooks/useColorScheme';
@@ -74,26 +75,28 @@ export default function RootLayout() {
   return (
     <I18nextProvider i18n={i18n}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="splash" options={{ headerShown: false }} />
-          <Stack.Screen name="auth-choice" options={{ headerShown: false }} />
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-          <Stack.Screen name="register" options={{ headerShown: false }} />
-          <Stack.Screen name="settings" options={{ headerShown: false }} />
-          <Stack.Screen name="booking" options={{ headerShown: false }} />
-          <Stack.Screen name="admin-home" options={{ headerShown: false }} />
-          <Stack.Screen name="admin-appointments" options={{ headerShown: false }} />
-          <Stack.Screen name="admin-availability" options={{ headerShown: false }} />
-          <Stack.Screen name="admin-gallery" options={{ headerShown: false }} />
-          <Stack.Screen name="admin-notification-settings" options={{ headerShown: false }} />
-          <Stack.Screen name="admin-notifications" options={{ headerShown: false }} />
-          <Stack.Screen name="admin-settings" options={{ headerShown: false }} />
-          <Stack.Screen name="admin-statistics" options={{ headerShown: false }} />
-          <Stack.Screen name="admin-team" options={{ headerShown: false }} />
-          <Stack.Screen name="admin-treatments" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="+not-found" options={{ headerShown: false }} />
-        </Stack>
+        <AppAuthGate>
+          <Stack>
+            <Stack.Screen name="splash" options={{ headerShown: false }} />
+            <Stack.Screen name="auth-choice" options={{ headerShown: false }} />
+            <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="register" options={{ headerShown: false }} />
+            <Stack.Screen name="settings" options={{ headerShown: false }} />
+            <Stack.Screen name="booking" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-home" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-appointments" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-availability" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-gallery" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-notification-settings" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-notifications" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-settings" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-statistics" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-team" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-treatments" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="+not-found" options={{ headerShown: false }} />
+          </Stack>
+        </AppAuthGate>
         <StatusBar style="auto" />
       </ThemeProvider>
     </I18nextProvider>

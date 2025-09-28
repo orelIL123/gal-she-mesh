@@ -7,7 +7,7 @@ const { width } = Dimensions.get('window');
 export default function WelcomeAuthScreen() {
   const router = useRouter();
   React.useEffect(() => {
-    router.replace('/screens/AuthChoiceScreen');
+    router.replace('/auth-choice');
   }, [router]);
   return null;
 }

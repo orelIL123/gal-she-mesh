@@ -164,10 +164,11 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
     return (
       <SafeAreaView style={styles.container}>
         <TopNav 
-          title="רשימת לקוחות" 
+          title="Admin Customers" 
           onBellPress={() => {}} 
-          onMenuPress={handleBack}
+          onMenuPress={() => {}}
           showBackButton={true}
+          onBackPress={handleBack}
         />
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>טוען לקוחות...</Text>
@@ -180,10 +181,11 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
     return (
       <SafeAreaView style={styles.container}>
         <TopNav 
-          title="רשימת לקוחות" 
+          title="Admin Customers" 
           onBellPress={() => {}} 
-          onMenuPress={handleBack}
+          onMenuPress={() => {}}
           showBackButton={true}
+          onBackPress={handleBack}
         />
         <View style={styles.errorContainer}>
           <Ionicons name="warning" size={64} color="#dc3545" />
@@ -196,10 +198,11 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
   return (
     <SafeAreaView style={styles.container}>
       <TopNav 
-        title="רשימת לקוחות" 
+        title="Admin Customers" 
         onBellPress={() => {}} 
-        onMenuPress={handleBack}
+        onMenuPress={() => {}}
         showBackButton={true}
+        onBackPress={handleBack}
       />
       
       <ScrollView style={styles.content}>

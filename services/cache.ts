@@ -113,6 +113,10 @@ export const CACHE_KEYS = {
   GALLERY_IMAGES: 'cache_gallery_images',
   SETTINGS_IMAGES: 'cache_settings_images',
   USER_PROFILE: 'cache_user_profile',
+  // Auth-related cache keys
+  AUTH_DATA: 'cache_auth_data',
+  LOGIN_CREDENTIALS: 'cache_login_credentials',
+  AUTH_STATE: 'cache_auth_state',
 } as const;
 
 // Export singleton instance
@@ -171,6 +175,55 @@ export const CacheUtils = {
 
   async clearSettingsImages() {
     return cache.clear(CACHE_KEYS.SETTINGS_IMAGES);
+  },
+
+  // Auth data utilities
+  async getAuthData() {
+    return cache.get(CACHE_KEYS.AUTH_DATA);
+  },
+
+  async setAuthData(authData: any, ttlMinutes: number = 60 * 24) { // 24 שעות
+    return cache.set(CACHE_KEYS.AUTH_DATA, authData, ttlMinutes);
+  },
+
+  async getLoginCredentials() {
+    return cache.get(CACHE_KEYS.LOGIN_CREDENTIALS);
+  },
+
+  async setLoginCredentials(credentials: any, ttlMinutes: number = 60 * 24 * 30) { // 30 יום
+    return cache.set(CACHE_KEYS.LOGIN_CREDENTIALS, credentials, ttlMinutes);
+  },
+
+  async getAuthState() {
+    return cache.get(CACHE_KEYS.AUTH_STATE);
+  },
+
+  async setAuthState(state: any, ttlMinutes: number = 60 * 24) { // 24 שעות
+    return cache.set(CACHE_KEYS.AUTH_STATE, state, ttlMinutes);
+  },
+
+  // Clear auth caches
+  async clearAuthData() {
+    return cache.clear(CACHE_KEYS.AUTH_DATA);
+  },
+
+  async clearLoginCredentials() {
+    return cache.clear(CACHE_KEYS.LOGIN_CREDENTIALS);
+  },
+
+  async clearAuthState() {
+    return cache.clear(CACHE_KEYS.AUTH_STATE);
+  },
+
+  // Clear all auth caches
+  async invalidateAuthCaches() {
+    await Promise.all([
+      cache.clear(CACHE_KEYS.AUTH_DATA),
+      cache.clear(CACHE_KEYS.LOGIN_CREDENTIALS),
+      cache.clear(CACHE_KEYS.AUTH_STATE),
+      cache.clear(CACHE_KEYS.USER_PROFILE),
+    ]);
+    console.log('🧹 Cache: Auth caches invalidated');
   },
 
   // Clear data caches when admin makes changes
