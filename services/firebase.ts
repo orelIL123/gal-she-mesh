@@ -31,6 +31,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, listAll, ref, uploadBytes } from 'firebase/storage';
+import { generateTimeSlots, isValidDuration, SLOT_SIZE_MINUTES } from '../app/constants/scheduling';
 import { auth, db, storage } from '../config/firebase';
 import { AuthStorageService } from './authStorage';
 import { CacheUtils } from './cache';
@@ -1034,6 +1035,11 @@ export const getTreatments = async (useCache: boolean = true): Promise<Treatment
 // Appointments functions
 export const createAppointment = async (appointmentData: Omit<Appointment, 'id' | 'createdAt'>) => {
   try {
+    // Validate duration is a multiple of 25 minutes
+    if (appointmentData.duration && !isValidDuration(appointmentData.duration)) {
+      throw new Error(`Duration must be a multiple of ${SLOT_SIZE_MINUTES} minutes. Got: ${appointmentData.duration} minutes`);
+    }
+    
     const appointment = {
       ...appointmentData,
       createdAt: Timestamp.now()
@@ -1442,6 +1448,11 @@ export const deleteGalleryImage = async (imageId: string) => {
 // Treatment management functions
 export const addTreatment = async (treatmentData: Omit<Treatment, 'id'>) => {
   try {
+    // Validate duration is a multiple of 25 minutes
+    if (treatmentData.duration && !isValidDuration(treatmentData.duration)) {
+      throw new Error(`Treatment duration must be a multiple of ${SLOT_SIZE_MINUTES} minutes. Got: ${treatmentData.duration} minutes`);
+    }
+    
     const docRef = await addDoc(collection(db, 'treatments'), treatmentData);
     
     // Send notification about new treatment
@@ -1459,6 +1470,11 @@ export const addTreatment = async (treatmentData: Omit<Treatment, 'id'>) => {
 
 export const updateTreatment = async (treatmentId: string, updates: Partial<Treatment>) => {
   try {
+    // Validate duration is a multiple of 25 minutes if being updated
+    if (updates.duration && !isValidDuration(updates.duration)) {
+      throw new Error(`Treatment duration must be a multiple of ${SLOT_SIZE_MINUTES} minutes. Got: ${updates.duration} minutes`);
+    }
+    
     const docRef = doc(db, 'treatments', treatmentId);
     await updateDoc(docRef, updates);
   } catch (error) {
@@ -1619,68 +1635,61 @@ export const uploadImageToStorage = async (
 export const getBarberAvailableSlots = async (barberId: string, date: string): Promise<string[]> => {
   try {
     console.log('🔍 Getting available slots for barber:', barberId, 'date:', date);
-    
+
     // Get the day of week (0 = Sunday, 1 = Monday, etc.)
     const dateObj = new Date(date);
     const dayOfWeek = dateObj.getDay();
-    
+
     console.log('📅 Day of week:', dayOfWeek);
-    
-    // Query the new availability collection
+
+    // Query the availability collection
     const q = query(
-      collection(db, 'availability'), 
+      collection(db, 'availability'),
       where('barberId', '==', barberId),
       where('dayOfWeek', '==', dayOfWeek),
       where('isAvailable', '==', true)
     );
-    
+
     const snap = await getDocs(q);
     console.log('📊 Found availability documents:', snap.docs.length);
-    
+
     if (snap.empty) {
       console.log('❌ No availability found for this day');
       return [];
     }
-    
+
     // Get all time slots for this day
     const allSlots: string[] = [];
-    
+
     snap.docs.forEach(doc => {
       const data = doc.data();
       console.log('📄 Availability doc:', doc.id, data);
-      
-      if (data.isAvailable && data.startTime && data.endTime) {
-        // Convert startTime-endTime to 30-minute slots
-        const startTime = data.startTime;
-        const endTime = data.endTime;
-        
-        // Parse start and end times
-        const [startHour, startMin] = startTime.split(':').map(Number);
-        const [endHour, endMin] = endTime.split(':').map(Number);
-        
-        // Generate 30-minute slots
-        let currentHour = startHour;
-        let currentMin = startMin;
-        
-        while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
-          const timeString = `${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')}`;
-          allSlots.push(timeString);
-          
-          // Move to next 30-minute slot
-          if (currentMin === 0) {
-            currentMin = 30;
-          } else {
-            currentMin = 0;
-            currentHour++;
-          }
+
+      if (data.isAvailable) {
+        let slots = [];
+
+        // Prefer exact slots if available (new format)
+        if (data.availableSlots && Array.isArray(data.availableSlots)) {
+          slots = data.availableSlots;
+          console.log('✅ Using exact availableSlots:', slots);
+
+          // Use slots exactly as they are - perfect sync
+        } else if (data.startTime && data.endTime) {
+          // DO NOT USE FALLBACK - This causes sync issues!
+          console.error('❌ CRITICAL SYNC ISSUE: availableSlots missing in getBarberAvailableSlots');
+          console.error('❌ Document data:', data);
+          console.error('❌ Admin slots will not match customer view - using empty slots');
+          slots = []; // Force empty to prevent wrong slots
         }
+
+        allSlots.push(...slots);
       }
     });
-    
+
     // Remove duplicates and sort
     const uniqueSlots = [...new Set(allSlots)].sort();
     console.log('✅ Available slots:', uniqueSlots);
-    
+
     return uniqueSlots;
   } catch (error) {
     console.error('Error getting barber available slots:', error);
@@ -1707,38 +1716,27 @@ export const subscribeToAvailabilityChanges = (barberId: string, callback: (week
     snapshot.docs.forEach(doc => {
       const data = doc.data();
       const dayOfWeek = data.dayOfWeek;
-      
-      if (data.isAvailable && data.startTime && data.endTime) {
-        // Convert startTime-endTime to 30-minute slots
-        const startTime = data.startTime;
-        const endTime = data.endTime;
-        
-        // Parse start and end times
-        const [startHour, startMin] = startTime.split(':').map(Number);
-        const [endHour, endMin] = endTime.split(':').map(Number);
-        
-        // Generate 30-minute slots
-        let currentHour = startHour;
-        let currentMin = startMin;
-        const slots: string[] = [];
-        
-        while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
-          const timeString = `${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')}`;
-          slots.push(timeString);
-          
-          // Move to next 30-minute slot
-          if (currentMin === 0) {
-            currentMin = 30;
-          } else {
-            currentMin = 0;
-            currentHour++;
+
+      if (data.isAvailable) {
+        let slots: string[] = [];
+
+        // Use exact availableSlots if available (matches admin's exact selections)
+        if (data.availableSlots && Array.isArray(data.availableSlots)) {
+          slots = data.availableSlots;
+        } else if (data.startTime && data.endTime) {
+          // DO NOT USE FALLBACK - This causes sync issues!
+          console.error('❌ CRITICAL SYNC ISSUE: availableSlots missing in subscribeToAvailabilityChanges');
+          console.error('❌ Document data:', data);
+          console.error('❌ Admin slots will not match customer view - using empty slots');
+          slots = []; // Force empty to prevent wrong slots
+        }
+
+        if (slots.length > 0) {
+          if (!weeklySlots[dayOfWeek]) {
+            weeklySlots[dayOfWeek] = [];
           }
+          weeklySlots[dayOfWeek].push(...slots);
         }
-        
-        if (!weeklySlots[dayOfWeek]) {
-          weeklySlots[dayOfWeek] = [];
-        }
-        weeklySlots[dayOfWeek].push(...slots);
       }
     });
     
@@ -1751,6 +1749,36 @@ export const subscribeToAvailabilityChanges = (barberId: string, callback: (week
     callback(weeklySlots);
   }, (error) => {
     console.error('❌ Error listening to availability changes:', error);
+  });
+};
+
+// New function for daily availability changes
+export const subscribeToDailyAvailabilityChanges = (barberId: string, callback: (dailySlots: {[key: string]: string[]}) => void) => {
+  console.log('🔔 Subscribing to daily availability changes for barber:', barberId);
+
+  const q = query(
+    collection(db, 'dailyAvailability'),
+    where('barberId', '==', barberId),
+    where('isAvailable', '==', true)
+  );
+
+  return onSnapshot(q, (snapshot) => {
+    console.log('📡 Daily availability changed, updating slots...');
+
+    // Group slots by specific date
+    const dailySlots: {[key: string]: string[]} = {};
+
+    snapshot.docs.forEach(doc => {
+      const data = doc.data();
+      if (data.isAvailable && data.availableSlots && Array.isArray(data.availableSlots)) {
+        dailySlots[data.date] = data.availableSlots;
+      }
+    });
+
+    console.log('✅ Updated daily availability:', dailySlots);
+    callback(dailySlots);
+  }, (error) => {
+    console.error('❌ Error listening to daily availability changes:', error);
   });
 };
 

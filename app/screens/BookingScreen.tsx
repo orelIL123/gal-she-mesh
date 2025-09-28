@@ -29,6 +29,7 @@ import {
 } from '../../services/firebase';
 import ConfirmationModal from '../components/ConfirmationModal';
 import TopNav from '../components/TopNav';
+import { generateTimeSlots, getSlotsNeeded, getValidSlotsForTreatment, SLOT_SIZE_MINUTES } from '../constants/scheduling';
 
 const { width } = Dimensions.get('window');
 
@@ -136,57 +137,55 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       // Force reload availability from Firebase
       const db = getFirestore();
       const q = query(
-        collection(db, 'availability'), 
+        collection(db, 'availability'),
         where('barberId', '==', selectedBarber.id),
         where('isAvailable', '==', true)
       );
-      
+
       const snapshot = await getDocs(q);
       const weeklySlots: {[key: number]: string[]} = {};
-      
+
       snapshot.docs.forEach(doc => {
         const data = doc.data();
         const dayOfWeek = data.dayOfWeek;
-        
-        if (data.isAvailable && data.startTime && data.endTime) {
-          // Convert startTime-endTime to 30-minute slots
-          const startTime = data.startTime;
-          const endTime = data.endTime;
-          
-          // Parse start and end times
-          const [startHour, startMin] = startTime.split(':').map(Number);
-          const [endHour, endMin] = endTime.split(':').map(Number);
-          
-          // Generate 30-minute slots
-          let currentHour = startHour;
-          let currentMin = startMin;
-          const slots: string[] = [];
-          
-          while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
-            const timeString = `${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')}`;
-            slots.push(timeString);
-            
-            // Move to next 30-minute slot
-            if (currentMin === 0) {
-              currentMin = 30;
-            } else {
-              currentMin = 0;
-              currentHour++;
+
+        if (data.isAvailable) {
+          let slots = [];
+
+          // Use exact availableSlots if available (matches admin's exact selections)
+          if (data.availableSlots && Array.isArray(data.availableSlots)) {
+            slots = data.availableSlots;
+            console.log('✅ PERFECT SYNC: Customer seeing exact admin slots:', slots);
+            console.log('✅ SYNC SUCCESS: dayOfWeek', dayOfWeek, 'barberId', selectedBarber.id);
+
+            // Use slots exactly as they are - perfect sync
+          } else if (data.startTime && data.endTime) {
+            // This should NEVER happen with the new fixes!
+            console.error('❌ SYNC ISSUE DETECTED: availableSlots missing in customer view!');
+            console.error('❌ Document data causing sync issue:', data);
+            console.error('❌ dayOfWeek:', dayOfWeek, 'barberId:', selectedBarber.id);
+            const startTime = data.startTime;
+            const endTime = data.endTime;
+            const [startHour] = startTime.split(':').map(Number);
+            const [endHour] = endTime.split(':').map(Number);
+            slots = generateTimeSlots(startHour, endHour);
+            console.error('❌ Generated fallback slots (NOT matching admin):', slots);
+          }
+
+          if (slots.length > 0) {
+            if (!weeklySlots[dayOfWeek]) {
+              weeklySlots[dayOfWeek] = [];
             }
+            weeklySlots[dayOfWeek].push(...slots);
           }
-          
-          if (!weeklySlots[dayOfWeek]) {
-            weeklySlots[dayOfWeek] = [];
-          }
-          weeklySlots[dayOfWeek].push(...slots);
         }
       });
-      
+
       // Remove duplicates and sort for each day
       Object.keys(weeklySlots).forEach(day => {
         weeklySlots[parseInt(day)] = [...new Set(weeklySlots[parseInt(day)])].sort();
       });
-      
+
       console.log('✅ Refreshed availability:', weeklySlots);
       setWeeklyAvailability(weeklySlots);
       
@@ -222,17 +221,17 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       const unsubscribe = subscribeToAvailabilityChanges(selectedBarber.id, (weeklySlots) => {
         console.log('📡 Availability updated:', weeklySlots);
         setWeeklyAvailability(weeklySlots);
-        
+
         // Update available dates
         const dates = generateAvailableDates();
         setAvailableDates(dates);
-        
+
         // If we have a selected date, update available times
         if (selectedDate && selectedTreatment) {
           const dayOfWeek = selectedDate.getDay();
           const slotsForDay = weeklySlots[dayOfWeek] || [];
           console.log('🔄 Updating available times for selected date:', selectedDate.toDateString(), 'slots:', slotsForDay);
-          
+
           // Regenerate available slots with the new availability
           generateAvailableSlots(selectedBarber.id, selectedDate, selectedTreatment.duration).then(slots => {
             const timeStrings = slots.map(slot => slot.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
@@ -292,7 +291,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
           continue;
         }
         
-        const apptDuration = appt.duration || 30; // Default 30min
+        const apptDuration = appt.duration || 25; // Default 25min
         const apptEnd = new Date(apptStart.getTime() + apptDuration * 60000);
         
         // Check for overlap - if any part of the slot overlaps with appointment
@@ -354,8 +353,12 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       
       const slots = [];
       
+      // Filter available slots to only include those that fit within day boundaries
+      const dayEndHour = 22; // 10:00 PM
+      const validSlots = getValidSlotsForTreatment(availableTimeSlots, treatmentDuration, dayEndHour);
+      
       // Convert time strings to Date objects and check availability
-      for (const timeString of availableTimeSlots) {
+      for (const timeString of validSlots) {
         const [hour, minute] = timeString.split(':').map(Number);
         const slotStart = new Date(date);
         slotStart.setHours(hour, minute, 0, 0);
@@ -368,20 +371,19 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
         
         // Check if slot + treatment duration fits within the time slot
         const slotEnd = new Date(slotStart.getTime() + treatmentDuration * 60000);
-        const nextSlotStart = new Date(slotStart.getTime() + 30 * 60000); // Next 30-min slot
+        const nextSlotStart = new Date(slotStart.getTime() + SLOT_SIZE_MINUTES * 60000); // Next 25-min slot
         
-        // For treatments longer than 30 minutes, we need to check if there are enough consecutive slots
-        if (treatmentDuration > 30) {
-          // Check if we have enough consecutive 30-minute slots for the treatment
-          const requiredSlots = Math.ceil(treatmentDuration / 30);
+        // For treatments longer than 25 minutes, we need to check if there are enough consecutive slots
+        if (treatmentDuration > SLOT_SIZE_MINUTES) {
+          // Check if we have enough consecutive 25-minute slots for the treatment
+          const requiredSlots = getSlotsNeeded(treatmentDuration);
           let hasEnoughSlots = true;
-          
+
           for (let i = 0; i < requiredSlots; i++) {
-            const checkSlotStart = new Date(slotStart.getTime() + (i * 30 * 60000));
-            const checkSlotEnd = new Date(checkSlotStart.getTime() + 30 * 60000);
-            
-            // Check if this 30-minute slot is available
-            if (!isSlotAvailable(checkSlotStart, 30, appointments)) {
+            const checkSlotStart = new Date(slotStart.getTime() + (i * SLOT_SIZE_MINUTES * 60000));
+
+            // Check if this 25-minute slot is available
+            if (!isSlotAvailable(checkSlotStart, SLOT_SIZE_MINUTES, appointments)) {
               hasEnoughSlots = false;
               break;
             }
@@ -391,7 +393,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
             slots.push(slotStart);
           }
         } else {
-          // For treatments 30 minutes or less, use the original logic
+          // For treatments 25 minutes or less, use the original logic
           if (slotEnd <= nextSlotStart && isSlotAvailable(slotStart, treatmentDuration, appointments)) {
             slots.push(slotStart);
           }
