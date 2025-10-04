@@ -66,6 +66,8 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
   const [sideMenuVisible, setSideMenuVisible] = useState(false);
   const [notificationPanelVisible, setNotificationPanelVisible] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string>('');
   const [settingsImages, setSettingsImages] = useState<{
     atmosphere: string;
     aboutUs: string;
@@ -92,8 +94,8 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
   
   // 3D Carousel refs
   const carousel3DRef = useRef<ScrollView>(null);
-  const cardWidth = 140;
-  const cardSpacing = 4;
+  const cardWidth = 160;
+  const cardSpacing = 8;
   const scrollX = useRef(new Animated.Value(0)).current;
   
   // Get original images array
@@ -432,19 +434,19 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
     
     const scale = scrollXValue.interpolate({
       inputRange,
-      outputRange: [0.8, 1, 0.8],
+      outputRange: [0.9, 1, 0.9],
       extrapolate: 'extend',
     });
     
     const rotateY = scrollXValue.interpolate({
       inputRange,
-      outputRange: ['-45deg', '0deg', '45deg'],
+      outputRange: ['-30deg', '0deg', '30deg'],
       extrapolate: 'extend',
     });
     
     const opacity = scrollXValue.interpolate({
       inputRange,
-      outputRange: [0.5, 1, 0.5],
+      outputRange: [0.8, 1, 0.8],
       extrapolate: 'extend',
     });
 
@@ -669,25 +671,38 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
                 scrollEventThrottle={16}
               >
                 {infiniteImages.map((img, index) => (
-                  <Animated.View 
-                    key={index} 
-                    style={[
-                      styles.carousel3DCard,
-                      getCardTransform(index, scrollX),
-                    ]}
+                  <TouchableOpacity
+                    key={index}
+                    onPress={() => {
+                      const imageUrl = typeof img === 'string' ? img : img.uri;
+                      setSelectedImage(imageUrl);
+                      setShowImageModal(true);
+                    }}
+                    activeOpacity={0.9}
                   >
-                    <Image
-                      source={typeof img === 'string' ? { uri: img } : img}
-                      style={styles.carousel3DImage}
-                      resizeMode="cover"
-                    />
-                    <View style={styles.carousel3DOverlay}>
-                      <LinearGradient
-                        colors={['transparent', 'rgba(0,0,0,0.8)']}
-                        style={styles.carousel3DGradient}
+                    <Animated.View 
+                      style={[
+                        styles.carousel3DCard,
+                        getCardTransform(index, scrollX),
+                      ]}
+                    >
+                      <Image
+                        source={typeof img === 'string' ? { uri: img } : img}
+                        style={styles.carousel3DImage}
+                        resizeMode="cover"
                       />
-                    </View>
-                  </Animated.View>
+                      <View style={styles.carousel3DOverlay}>
+                        <LinearGradient
+                          colors={['transparent', 'rgba(0,0,0,0.8)']}
+                          style={styles.carousel3DGradient}
+                        />
+                        <View style={styles.tapIndicator}>
+                          <Ionicons name="expand" size={20} color="#fff" />
+                          <Text style={styles.tapIndicatorText}>לחץ לצפייה</Text>
+                        </View>
+                      </View>
+                    </Animated.View>
+                  </TouchableOpacity>
                 ))}
               </Animated.ScrollView>
             </View>
@@ -798,6 +813,35 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
               <Text style={styles.popupButtonText}>הבנתי</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      </Modal>
+
+      {/* Image Viewing Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showImageModal}
+        onRequestClose={() => setShowImageModal(false)}
+      >
+        <View style={styles.imageModalOverlay}>
+          <TouchableOpacity
+            style={styles.imageModalCloseArea}
+            onPress={() => setShowImageModal(false)}
+          >
+            <View style={styles.imageModalContent}>
+              <Image
+                source={{ uri: selectedImage }}
+                style={styles.fullScreenImage}
+                resizeMode="contain"
+              />
+              <TouchableOpacity
+                style={styles.imageModalCloseButton}
+                onPress={() => setShowImageModal(false)}
+              >
+                <Ionicons name="close" size={30} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
         </View>
       </Modal>
     </SafeAreaView>
@@ -1049,35 +1093,35 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.95)',
     marginHorizontal: 16,
     borderRadius: 20,
-    padding: 20,
+    padding: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 8,
   },
   galleryCarouselContent: {
     paddingHorizontal: 4,
   },
   carousel3DContainer: {
-    height: 240,
+    height: 280,
     justifyContent: 'center',
     alignItems: 'center',
   },
   carousel3DContent: {
-    paddingHorizontal: 15,
+    paddingHorizontal: 16,
   },
   carousel3DCard: {
-    width: 140,
-    height: 200,
-    borderRadius: 18,
-    marginRight: 4,
+    width: 160,
+    height: 240,
+    borderRadius: 20,
+    marginRight: 8,
     backgroundColor: '#eee',
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 15 },
     shadowOpacity: 0.4,
-    shadowRadius: 18,
+    shadowRadius: 20,
     elevation: 15,
   },
   carousel3DImage: {
@@ -1093,8 +1137,59 @@ const styles = StyleSheet.create({
   },
   carousel3DGradient: {
     flex: 1,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  tapIndicator: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tapIndicatorText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  imageModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageModalCloseArea: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageModalContent: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  fullScreenImage: {
+    width: '90%',
+    height: '80%',
+    borderRadius: 8,
+  },
+  imageModalCloseButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    padding: 10,
   },
   // Legacy styles (can be removed if not used elsewhere)
   galleryCard: {

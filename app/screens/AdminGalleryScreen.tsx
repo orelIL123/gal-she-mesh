@@ -13,7 +13,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import {
   addGalleryImage,
@@ -607,6 +607,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
   const isImageTab = (tab: string): tab is 'gallery' | 'background' | 'splash' | 'aboutus' =>
     tab === 'gallery' || tab === 'background' || tab === 'splash' || tab === 'aboutus';
 
+
   return (
     <SafeAreaView style={styles.container}>
       <TopNav 
@@ -1141,6 +1142,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
           </View>
         </Modal>
       )}
+
 
       <ToastMessage
         visible={toast.visible}

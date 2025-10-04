@@ -29,7 +29,7 @@ import {
 } from '../../services/firebase';
 import ConfirmationModal from '../components/ConfirmationModal';
 import TopNav from '../components/TopNav';
-import { generateTimeSlots, getSlotsNeeded, getValidSlotsForTreatment, SLOT_SIZE_MINUTES } from '../constants/scheduling';
+import { generateTimeSlots, getSlotsNeeded, SLOT_SIZE_MINUTES, toMin } from '../constants/scheduling';
 
 const { width } = Dimensions.get('window');
 
@@ -133,6 +133,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
     setRefreshing(true);
     try {
       console.log('🔄 Refreshing availability for barber:', selectedBarber.id);
+      console.log('🗓️ TODAY\'S DATE FOR SYNC TEST:', new Date().toLocaleDateString());
+      const todayDayOfWeek = new Date().getDay();
+      console.log('🗓️ TODAY\'S DAY OF WEEK:', todayDayOfWeek);
       
       // Force reload availability from Firebase
       const db = getFirestore();
@@ -148,6 +151,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       snapshot.docs.forEach(doc => {
         const data = doc.data();
         const dayOfWeek = data.dayOfWeek;
+        console.log('🔍 CUSTOMER QUERY RESULT: docId=' + doc.id + ', dayOfWeek=' + dayOfWeek);
+        console.log('🔍 CUSTOMER QUERY RESULT: data=' + JSON.stringify(data));
 
         if (data.isAvailable) {
           let slots = [];
@@ -157,6 +162,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
             slots = data.availableSlots;
             console.log('✅ PERFECT SYNC: Customer seeing exact admin slots:', slots);
             console.log('✅ SYNC SUCCESS: dayOfWeek', dayOfWeek, 'barberId', selectedBarber.id);
+            if (dayOfWeek === todayDayOfWeek) {
+              console.log('🎯 TODAY\'S SYNC: Admin saved slots for today:', slots);
+              console.log('🎯 TODAY\'S SYNC: Customer will see these exact slots for today');
+            }
 
             // Use slots exactly as they are - perfect sync
           } else if (data.startTime && data.endTime) {
@@ -173,10 +182,13 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
           }
 
           if (slots.length > 0) {
-            if (!weeklySlots[dayOfWeek]) {
-              weeklySlots[dayOfWeek] = [];
+            // CRITICAL FIX: Replace slots instead of adding them
+            // This ensures admin's latest settings overwrite any old data
+            weeklySlots[dayOfWeek] = [...slots];
+            console.log('🔄 Customer set exact slots for dayOfWeek', dayOfWeek, ':', slots);
+            if (dayOfWeek === todayDayOfWeek) {
+              console.log('🎯 TODAY\'S FINAL RESULT: Customer weeklySlots[' + todayDayOfWeek + '] =', weeklySlots[dayOfWeek]);
             }
-            weeklySlots[dayOfWeek].push(...slots);
           }
         }
       });
@@ -187,10 +199,22 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       });
 
       console.log('✅ Refreshed availability:', weeklySlots);
+      const today = new Date();
+      const todayYMD = today.toISOString().split('T')[0];
+      const [Y, M, D] = todayYMD.split('-').map(Number);
+      const refreshTodayDayOfWeek = new Date(Y, M - 1, D).getDay();
+      console.log('🎯 TODAY SYNC CHECK: Today is ' + todayYMD + ' dayOfWeek=' + refreshTodayDayOfWeek);
+      console.log('🎯 TODAY SYNC CHECK: Admin saved slots for today: ' + JSON.stringify(weeklySlots[refreshTodayDayOfWeek] || []));
+      console.log('🎯 TODAY SYNC CHECK: Customer will see for today: ' + JSON.stringify(weeklySlots[refreshTodayDayOfWeek] || []));
       setWeeklyAvailability(weeklySlots);
       
       // Update available dates
       const dates = generateAvailableDates();
+      console.log('📅 Generated available dates after refresh:', dates.map(d => ({
+        date: d.date.toISOString().split('T')[0],
+        dayOfWeek: d.dayOfWeek,
+        isAvailable: d.isAvailable
+      })));
       setAvailableDates(dates);
       
       // If we have a selected date and treatment, update available times
@@ -228,7 +252,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
 
         // If we have a selected date, update available times
         if (selectedDate && selectedTreatment) {
-          const dayOfWeek = selectedDate.getDay();
+          // Use same calculation as admin to avoid timezone issues
+          const dateStr = selectedDate.toISOString().split('T')[0];
+          const [Y, M, D] = dateStr.split('-').map(Number);
+          const dayOfWeek = new Date(Y, M - 1, D).getDay();
           const slotsForDay = weeklySlots[dayOfWeek] || [];
           console.log('🔄 Updating available times for selected date:', selectedDate.toDateString(), 'slots:', slotsForDay);
 
@@ -326,19 +353,27 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       console.log('Treatment Duration:', treatmentDuration, 'minutes');
       
       // Get barber's availability for the selected day
-      const dayOfWeek = date.getDay();
-      
+      // Use same calculation as admin to avoid timezone issues
+      const dateString = date.toISOString().split('T')[0];
+      const [Y, M, D] = dateString.split('-').map(Number);
+      const dayOfWeek = new Date(Y, M - 1, D).getDay();
+
       // Use real-time availability data if available
       let availableTimeSlots: string[] = [];
-      
+
+      console.log('🔍 generateAvailableSlots - weeklyAvailability state:', weeklyAvailability);
+      console.log('🔍 generateAvailableSlots - looking for dayOfWeek=' + dayOfWeek);
+      console.log('🔍 generateAvailableSlots - weeklyAvailability[' + dayOfWeek + ']:', weeklyAvailability[dayOfWeek]);
+
       if (weeklyAvailability[dayOfWeek]) {
         console.log('📅 Using real-time availability data');
         availableTimeSlots = weeklyAvailability[dayOfWeek];
+        console.log('📅 Real-time slots loaded:', availableTimeSlots);
       } else {
-        console.log('📅 Loading availability from database');
+        console.log('📅 Loading availability from database (real-time not available)');
         // Fallback to database query
-        const dateString = date.toISOString().split('T')[0];
         availableTimeSlots = await getBarberAvailableSlots(barberId, dateString);
+        console.log('📅 Database slots loaded:', availableTimeSlots);
       }
       
       if (availableTimeSlots.length === 0) {
@@ -353,9 +388,16 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       
       const slots = [];
       
-      // Filter available slots to only include those that fit within day boundaries
-      const dayEndHour = 22; // 10:00 PM
-      const validSlots = getValidSlotsForTreatment(availableTimeSlots, treatmentDuration, dayEndHour);
+      // Use ALL admin slots - no artificial cutoff
+      // Admin controls what slots are available, not the booking screen
+      const validSlots = availableTimeSlots.filter(slot => {
+        // Only filter by treatment duration fit, not by arbitrary dayEnd
+        const startMinutes = toMin(slot);
+        const endMinutes = startMinutes + treatmentDuration;
+
+        // Check if slot + treatment fits within the same day (before midnight)
+        return endMinutes <= 24 * 60; // 24:00 = midnight
+      });
       
       // Convert time strings to Date objects and check availability
       for (const timeString of validSlots) {
@@ -422,7 +464,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       
       // Include all days - let admin decide availability
       // Check if this day is available for the selected barber
-      const dayOfWeek = date.getDay();
+      // Use same calculation as admin to avoid timezone issues
+      const dateStr = date.toISOString().split('T')[0];
+      const [Y, M, D] = dateStr.split('-').map(Number);
+      const dayOfWeek = new Date(Y, M - 1, D).getDay();
       const isAvailable = selectedBarber ? weeklyAvailability[dayOfWeek] && weeklyAvailability[dayOfWeek].length > 0 : true;
       
       dates.push({
@@ -455,10 +500,16 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
   const handleDateSelect = async (date: Date) => {
     setSelectedDate(date);
     setCurrentStep(4);
+    const dateStr = date.toISOString().split('T')[0];
+    const [Y, M, D] = dateStr.split('-').map(Number);
+    const selectedDayOfWeek = new Date(Y, M - 1, D).getDay();
+    console.log('🎯 DATE SELECTED: ' + dateStr + ' dayOfWeek=' + selectedDayOfWeek);
+    console.log('🎯 DATE SELECTED: weeklyAvailability for this day:', weeklyAvailability[selectedDayOfWeek] || []);
     if (selectedBarber && selectedTreatment) {
       try {
         const slots = await generateAvailableSlots(selectedBarber.id, date, selectedTreatment.duration);
         const timeStrings = slots.map(slot => slot.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        console.log('🎯 DATE SELECTED: Final timeStrings generated:', timeStrings);
         
         // If no slots available, check if barber has availability for this day
         if (timeStrings.length === 0) {

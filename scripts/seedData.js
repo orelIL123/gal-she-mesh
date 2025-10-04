@@ -61,7 +61,7 @@ const seedData = async () => {
         name: "עיצוב זקן",
         description: "עיצוב וגימור זקן מקצועי",
         price: 60,
-        duration: 30,
+        duration: 25,
         image: ""
       },
       {

@@ -28,6 +28,7 @@ import {
 } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
+import { generateTimeSlots, isOnGrid, isValidDuration, SLOT_SIZE_MINUTES, slotFitsInDay } from '../constants/scheduling';
 
 interface AdminAppointmentsScreenProps {
   onNavigate: (screen: string) => void;
@@ -202,14 +203,9 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
     return dates;
   };
 
-  // Generate time slots (9:00 AM to 8:00 PM)
-  const generateTimeSlots = () => {
-    const slots = [];
-    for (let hour = 9; hour < 20; hour++) {
-      slots.push(`${hour.toString().padStart(2, '0')}:00`);
-      slots.push(`${hour.toString().padStart(2, '0')}:30`);
-    }
-    return slots;
+  // Generate time slots (9:00 AM to 8:00 PM) using 25-minute grid
+  const generateTimeSlotsForAdmin = () => {
+    return generateTimeSlots(9, 20);
   };
 
   const resetForm = () => {
@@ -244,12 +240,31 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
     }
 
     try {
+      // Validate that the selected time is on the 25-minute grid
+      if (!isOnGrid(selectedTime)) {
+        showToast(`זמן חייב להיות על גריד של ${SLOT_SIZE_MINUTES} דקות (HH:00, HH:25, HH:50, HH+1:15)`, 'error');
+        return;
+      }
+
       // Create appointment date with selected date and time
       const appointmentDateTime = new Date(selectedDate);
       const [hours, minutes] = selectedTime.split(':').map(Number);
       appointmentDateTime.setHours(hours, minutes, 0, 0);
 
       const selectedTreatmentObj = treatments.find(t => t.id === selectedTreatment);
+      
+      // Validate treatment duration is a multiple of 25 minutes
+      if (selectedTreatmentObj && !isValidDuration(selectedTreatmentObj.duration)) {
+        showToast(`משך הטיפול חייב להיות כפולה של ${SLOT_SIZE_MINUTES} דקות`, 'error');
+        return;
+      }
+
+      // Validate that the appointment doesn't overflow past day end
+      const dayEndHour = 24; // Midnight - matches admin settings
+      if (selectedTreatmentObj && !slotFitsInDay(selectedTime, selectedTreatmentObj.duration, dayEndHour)) {
+        showToast(`התור גולש מעבר לסוף המשמרת (${dayEndHour}:00). בחר שעה מוקדמת יותר או טיפול קצר יותר.`, 'error');
+        return;
+      }
       const appointmentData = {
         userId: inputMethod === 'manual' ? 'manual-client' : selectedUser,
         barberId: selectedBarber,
@@ -754,7 +769,7 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
               {/* Time Selection */}
               <Text style={styles.formLabel}>בחר שעה *</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeContainer}>
-                {generateTimeSlots().map((time, index) => (
+                {generateTimeSlotsForAdmin().map((time, index) => (
                   <TouchableOpacity
                     key={`time-${time}`}
                     style={[

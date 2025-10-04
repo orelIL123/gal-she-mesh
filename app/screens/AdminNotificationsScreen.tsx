@@ -198,7 +198,7 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
                   <View style={styles.statCard}>
                     <Ionicons name="people" size={24} color="#007bff" />
                     <Text style={styles.statValue}>{users.length}</Text>
-                    <Text style={styles.statLabel}>סה"כ משתמשים</Text>
+                    <Text style={styles.statLabel}>סה&quot;כ משתמשים</Text>
                   </View>
                   <View style={styles.statCard}>
                     <Ionicons name="notifications" size={24} color="#28a745" />

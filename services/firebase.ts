@@ -31,7 +31,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, listAll, ref, uploadBytes } from 'firebase/storage';
-import { generateTimeSlots, isValidDuration, SLOT_SIZE_MINUTES } from '../app/constants/scheduling';
+import { isValidDuration, SLOT_SIZE_MINUTES } from '../app/constants/scheduling';
 import { auth, db, storage } from '../config/firebase';
 import { AuthStorageService } from './authStorage';
 import { CacheUtils } from './cache';
@@ -229,7 +229,9 @@ export interface AppSettings {
 // Auth functions
 export const loginUser = async (email: string, password: string) => {
   try {
+    console.log(`🔐 Attempting email login with: ${email}`);
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    console.log(`✅ Email login successful for: ${email}`);
 
     // Save auth data for persistence
     await saveAuthDataAfterLogin(userCredential.user);
@@ -238,7 +240,8 @@ export const loginUser = async (email: string, password: string) => {
     await registerForPushNotifications(userCredential.user.uid);
 
     return userCredential.user;
-  } catch (error) {
+  } catch (error: any) {
+    console.error(`❌ Email login failed for: ${email}`, error.code, error.message);
     throw error;
   }
 };
@@ -570,6 +573,8 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
         createdAt: Timestamp.now()
       };
 
+      console.log('💾 Saving user profile with phone:', phoneNumber);
+      console.log('💾 Saving user profile with email:', tempEmail);
       await setDoc(doc(db, 'users', user.uid), userProfile);
 
       // Save auth data for persistence
@@ -586,7 +591,8 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
       try {
         await sendNotificationToAdmin(
           'משתמש חדש נרשם! 🎉',
-          `${displayName} נרשם לאפליקציה עם מספר ${phoneNumber}`
+          `${displayName} נרשם לאפליקציה עם מספר ${phoneNumber}`,
+          { type: 'new_user', userName: displayName, phoneNumber: phoneNumber }
         );
         console.log('✅ Admin notification sent for new user registration');
       } catch (error) {
@@ -705,25 +711,87 @@ export const findUserByPhoneNumber = async (phoneNumber: string): Promise<UserPr
 // New function to check if phone user exists and has password
 export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exists: boolean; hasPassword: boolean; uid?: string }> => {
   try {
-    const usersRef = collection(db, 'users');
-    const q = query(usersRef, where('phone', '==', phoneNumber));
-    const querySnapshot = await getDocs(q);
+    console.log(`🔍 Checking if user exists for phone: ${phoneNumber}`);
     
-    if (querySnapshot.empty) {
-      console.log(`📞 No user found with phone: ${phoneNumber}`);
-      return { exists: false, hasPassword: false };
+    // Generate all possible phone formats
+    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+    const possiblePhones = [
+      phoneNumber, // Original format
+      `+972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}`, // +972 format
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}`, // 972 format
+      `0${cleanPhone.startsWith('972') ? cleanPhone.substring(3) : cleanPhone}`, // 0 format
+      cleanPhone // Just numbers
+    ];
+    
+    console.log(`🔍 Trying phone formats:`, possiblePhones);
+    
+    const usersRef = collection(db, 'users');
+    
+    // Try each phone format
+    for (const phoneFormat of possiblePhones) {
+      try {
+        console.log(`🔍 Searching for phone format: ${phoneFormat}`);
+        const q = query(usersRef, where('phone', '==', phoneFormat));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          const userDoc = querySnapshot.docs[0];
+          const userData = userDoc.data();
+          
+          console.log(`✅ User found with phone format: ${phoneFormat}, hasPassword: ${userData.hasPassword || false}, UID: ${userDoc.id}`);
+          
+          return {
+            exists: true,
+            hasPassword: userData.hasPassword || false,
+            uid: userDoc.id
+          };
+        }
+      } catch (error) {
+        console.log(`❌ Error searching for phone format ${phoneFormat}:`, error);
+        continue;
+      }
     }
     
-    const userDoc = querySnapshot.docs[0];
-    const userData = userDoc.data();
+    // If not found by phone, try to find by the auto-generated email
+    console.log(`🔍 Phone search failed, trying email search for: ${phoneNumber}`);
+    const possibleEmails = [
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@ronbarber.app`, // Most common format
+      `${cleanPhone}@ronbarber.app`,
+      `${cleanPhone}@sms.barbershop.local`, // New SMS format
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@sms.barbershop.local`,
+      `${cleanPhone}@temp.turgi.com`, // Alternative format
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@temp.turgi.com`
+    ];
     
-    console.log(`📞 User found - Phone: ${phoneNumber}, hasPassword: ${userData.hasPassword || false}, UID: ${userDoc.id}`);
+    console.log(`🔍 Trying email formats:`, possibleEmails);
     
-    return {
-      exists: true,
-      hasPassword: userData.hasPassword || false,
-      uid: userDoc.id
-    };
+    for (const emailFormat of possibleEmails) {
+      try {
+        console.log(`🔍 Searching for email format: ${emailFormat}`);
+        const q = query(usersRef, where('email', '==', emailFormat));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          const userDoc = querySnapshot.docs[0];
+          const userData = userDoc.data();
+          
+          console.log(`✅ User found with email format: ${emailFormat}, hasPassword: ${userData.hasPassword || false}, UID: ${userDoc.id}`);
+          
+          return {
+            exists: true,
+            hasPassword: userData.hasPassword || false,
+            uid: userDoc.id
+          };
+        }
+      } catch (error) {
+        console.log(`❌ Error searching for email format ${emailFormat}:`, error);
+        continue;
+      }
+    }
+    
+    console.log(`❌ No user found with any phone or email format for: ${phoneNumber}`);
+    return { exists: false, hasPassword: false };
+    
   } catch (error) {
     console.error('Error checking phone user:', error);
     return { exists: false, hasPassword: false };
@@ -786,21 +854,38 @@ export const loginWithPhoneAndPassword = async (phoneNumber: string, password: s
   try {
     console.log(`🔐 Attempting login with phone: ${phoneNumber}`);
     
-    // Skip phone check due to permissions - try direct login with email formats
+    // First, check if user exists in database
+    const userCheck = await checkPhoneUserExists(phoneNumber);
+    console.log(`📞 User check result:`, userCheck);
+    
+    if (!userCheck.exists) {
+      console.log(`❌ User not found in database for phone: ${phoneNumber}`);
+      throw new Error('משתמש לא נמצא במערכת. אנא הירשם תחילה.');
+    }
+    
+    if (!userCheck.hasPassword) {
+      console.log(`❌ User exists but has no password set for phone: ${phoneNumber}`);
+      throw new Error('לא הוגדרה סיסמה לחשבון זה. אנא הירשם מחדש או השתמש בהתחברות עם SMS.');
+    }
+    
+    // Try different email formats based on how the user was registered
     const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
     const possibleEmails = [
       `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@ronbarber.app`, // Most common format
       `${cleanPhone}@ronbarber.app`,
       `${cleanPhone}@sms.barbershop.local`, // New SMS format
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@sms.barbershop.local`
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@sms.barbershop.local`,
+      `${cleanPhone}@temp.turgi.com`, // Alternative format
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@temp.turgi.com`
     ];
     
     console.log(`🔍 Trying email formats for login:`, possibleEmails);
     
     // Try each possible email format
+    let lastError: any = null;
     for (const email of possibleEmails) {
       try {
-        console.log(`🔐 Trying email format: ${email}`);
+        console.log(`🔐 Trying email format: ${email} with password length: ${password.length}`);
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         console.log(`✅ Login successful with email: ${email}`);
 
@@ -809,15 +894,35 @@ export const loginWithPhoneAndPassword = async (phoneNumber: string, password: s
 
         return userCredential.user;
       } catch (error: any) {
-        console.log(`❌ Failed with email: ${email}`, error.code);
+        lastError = error;
+        console.log(`❌ Failed with email: ${email}`, error.code, error.message);
         continue;
       }
     }
     
-    throw new Error('פרטי הכניסה שגויים או המשתמש לא נמצא');
+    console.log(`❌ All email formats failed for phone: ${phoneNumber}`);
+    console.log(`❌ Last error:`, lastError?.code, lastError?.message);
+    
+    // Provide more specific error message based on the last error
+    if (lastError?.code === 'auth/wrong-password') {
+      throw new Error('הסיסמה שגויה. אנא נסה שוב.');
+    } else if (lastError?.code === 'auth/user-not-found') {
+      throw new Error('משתמש לא נמצא ב-Firebase Auth. אנא הירשם מחדש.');
+    } else if (lastError?.code === 'auth/invalid-credential') {
+      throw new Error('פרטי הכניסה שגויים. אנא נסה שוב.');
+    }
+    
+    throw new Error('פרטי הכניסה שגויים. בדוק את הטלפון והסיסמה.');
     
   } catch (error: any) {
     console.error('Error login with phone and password:', error);
+    
+    // If it's already our custom error message, just throw it
+    if (error.message.includes('משתמש לא נמצא במערכת') || 
+        error.message.includes('לא הוגדרה סיסמה') ||
+        error.message.includes('פרטי הכניסה שגויים')) {
+      throw error;
+    }
     
     if (error.code === 'auth/user-not-found') {
       throw new Error('משתמש לא נמצא במערכת ההזדהות');
@@ -1063,16 +1168,36 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
       const dateVal: any = appointmentData.date as any;
       const asDate = typeof dateVal?.toDate === 'function' ? dateVal.toDate() : new Date(dateVal);
       const dateStr = asDate.toLocaleDateString('he-IL');
-      await sendNotificationToAdmin('תור חדש! 📅', `תור חדש נוצר עבור ${dateStr}`, { appointmentId: docRef.id });
+      const timeStr = asDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+      
+      // Get customer name for better admin notification
+      let customerName = 'לקוח';
+      try {
+        const customerDoc = await getDoc(doc(db, 'users', appointmentData.userId));
+        if (customerDoc.exists()) {
+          customerName = customerDoc.data().displayName || 'לקוח';
+        }
+      } catch (e) {
+        console.log('Could not fetch customer name');
+      }
+      
+      await sendNotificationToAdmin(
+        'תור חדש! 📅', 
+        `${customerName} קבע תור ל-${dateStr} ב-${timeStr}`, 
+        { appointmentId: docRef.id }
+      );
+      console.log('✅ Admin notification sent for new appointment');
     } catch (adminNotificationError) {
-      console.log('Failed to send admin notification:', adminNotificationError);
+      console.log('❌ Failed to send admin notification:', adminNotificationError);
     }
     
-    // Schedule reminder notifications for the appointment
+    // Schedule reminder notifications for the appointment (CUSTOMERS ONLY)
     try {
+      console.log('📅 Scheduling appointment reminders for customer only...');
       await scheduleAppointmentReminders(docRef.id, appointmentData);
+      console.log('✅ Appointment reminders scheduled successfully');
     } catch (scheduleError) {
-      console.log('Failed to schedule appointment reminders:', scheduleError);
+      console.log('❌ Failed to schedule appointment reminders:', scheduleError);
     }
     
     return docRef.id;
@@ -1193,12 +1318,28 @@ export const cancelAppointment = async (appointmentId: string) => {
     // Send notification to admin about cancellation
     try {
       console.log('🔔 Sending cancellation notification to admin...');
+      
+      // Get customer name for better admin notification
+      let customerName = 'לקוח';
+      try {
+        const customerDoc = await getDoc(doc(db, 'users', appointmentData.userId));
+        if (customerDoc.exists()) {
+          customerName = customerDoc.data().displayName || 'לקוח';
+        }
+      } catch (e) {
+        console.log('Could not fetch customer name');
+      }
+      
+      const appointmentDate = appointmentData.date.toDate();
+      const dateStr = appointmentDate.toLocaleDateString('he-IL');
+      const timeStr = appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+      
       await sendNotificationToAdmin(
-        'תור בוטל 🚫',
-        `לקוח ביטל תור לתאריך ${appointmentData.date.toDate().toLocaleDateString('he-IL')}`,
+        'תור בוטל! ❌',
+        `${customerName} ביטל תור ל-${dateStr} ב-${timeStr}`,
         { appointmentId: appointmentId }
       );
-      console.log('✅ Cancellation notification sent successfully');
+      console.log('✅ Cancellation notification sent successfully to admin');
     } catch (notificationError) {
       console.log('❌ Failed to send cancellation notification to admin:', notificationError);
     }
@@ -1600,22 +1741,41 @@ export const uploadImageToStorage = async (
     }
 
     console.log('📤 Starting image upload:', imageUri);
+    console.log('📁 Target folder:', folderPath);
+    console.log('📝 File name:', fileName);
     
     // Create reference
     const imageRef = ref(storage, `${folderPath}/${fileName}`);
+    console.log('📍 Storage reference created');
     
-    // Simple approach - just try to upload the URI directly
-    // This should work for most React Native setups
-    console.log('📤 Uploading image to storage...');
+    // For React Native, we need to convert the URI to a blob using XMLHttpRequest
+    // This is more stable than fetch() in React Native
+    console.log('🔄 Converting image URI to blob...');
     
-    // For React Native, we need to convert the URI to a blob
-    const response = await fetch(imageUri);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.status}`);
-    }
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = function() {
+        try {
+          console.log('✅ Image loaded, creating blob...');
+          resolve(xhr.response);
+        } catch (error) {
+          console.error('❌ Error creating blob:', error);
+          reject(error);
+        }
+      };
+      xhr.onerror = function(e) {
+        console.error('❌ XHR error:', e);
+        reject(new Error('Failed to load image'));
+      };
+      xhr.responseType = 'blob';
+      console.log('📡 Starting XHR request...');
+      xhr.open('GET', imageUri, true);
+      xhr.send(null);
+    });
     
-    const blob = await response.blob();
+    console.log('✅ Blob created, uploading to Firebase Storage...');
     await uploadBytes(imageRef, blob);
+    console.log('✅ Upload complete, getting download URL...');
     
     // Get download URL
     const downloadURL = await getDownloadURL(imageRef);
@@ -1624,6 +1784,10 @@ export const uploadImageToStorage = async (
     return downloadURL;
   } catch (error) {
     console.error('❌ Error uploading image:', error);
+    console.error('❌ Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    });
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     throw new Error(`Failed to upload image: ${errorMessage}`);
   }
@@ -1637,10 +1801,13 @@ export const getBarberAvailableSlots = async (barberId: string, date: string): P
     console.log('🔍 Getting available slots for barber:', barberId, 'date:', date);
 
     // Get the day of week (0 = Sunday, 1 = Monday, etc.)
-    const dateObj = new Date(date);
-    const dayOfWeek = dateObj.getDay();
+    // Use same method as admin to avoid timezone issues
+    const [Y, M, D] = date.split('-').map(Number);
+    const dayOfWeek = new Date(Y, M - 1, D).getDay();
 
     console.log('📅 Day of week:', dayOfWeek);
+    console.log('🔍 CUSTOMER DAYOFWEEK CALC: dateString=' + date + ', dayOfWeek=' + dayOfWeek);
+    console.log('🔍 CUSTOMER QUERY: barberId=' + barberId + ', dayOfWeek=' + dayOfWeek + ', date=' + date);
 
     // Query the availability collection
     const q = query(
@@ -1658,39 +1825,35 @@ export const getBarberAvailableSlots = async (barberId: string, date: string): P
       return [];
     }
 
-    // Get all time slots for this day
-    const allSlots: string[] = [];
+    // Should be exactly ONE record per barberId+dayOfWeek
+    if (snap.docs.length > 1) {
+      console.warn('⚠️ Multiple availability records found for same barberId+dayOfWeek:', snap.docs.length);
+    }
 
-    snap.docs.forEach(doc => {
-      const data = doc.data();
-      console.log('📄 Availability doc:', doc.id, data);
+    // Use the FIRST (and should be ONLY) record
+    const doc = snap.docs[0];
+    const data = doc.data();
+    console.log('📄 Using availability doc:', doc.id, data);
 
-      if (data.isAvailable) {
-        let slots = [];
+    if (!data.isAvailable) {
+      console.log('❌ Document marked as not available');
+      return [];
+    }
 
-        // Prefer exact slots if available (new format)
-        if (data.availableSlots && Array.isArray(data.availableSlots)) {
-          slots = data.availableSlots;
-          console.log('✅ Using exact availableSlots:', slots);
+    let slots = [];
 
-          // Use slots exactly as they are - perfect sync
-        } else if (data.startTime && data.endTime) {
-          // DO NOT USE FALLBACK - This causes sync issues!
-          console.error('❌ CRITICAL SYNC ISSUE: availableSlots missing in getBarberAvailableSlots');
-          console.error('❌ Document data:', data);
-          console.error('❌ Admin slots will not match customer view - using empty slots');
-          slots = []; // Force empty to prevent wrong slots
-        }
+    // Use exact slots - this is what admin set
+    if (data.availableSlots && Array.isArray(data.availableSlots)) {
+      slots = data.availableSlots;
+      console.log('✅ Customer using EXACT admin slots:', slots);
+    } else if (data.startTime && data.endTime) {
+      console.error('❌ CRITICAL: No availableSlots found - admin save failed!');
+      console.error('❌ Document data:', data);
+      return []; // Don't use fallback - it causes wrong slots
+    }
 
-        allSlots.push(...slots);
-      }
-    });
-
-    // Remove duplicates and sort
-    const uniqueSlots = [...new Set(allSlots)].sort();
-    console.log('✅ Available slots:', uniqueSlots);
-
-    return uniqueSlots;
+    console.log('✅ Final customer slots:', slots);
+    return slots;
   } catch (error) {
     console.error('Error getting barber available slots:', error);
     return [];
@@ -1700,6 +1863,8 @@ export const getBarberAvailableSlots = async (barberId: string, date: string): P
 // Real-time listener for availability changes
 export const subscribeToAvailabilityChanges = (barberId: string, callback: (weeklySlots: {[key: number]: string[]}) => void) => {
   console.log('🔔 Subscribing to availability changes for barber:', barberId);
+  const todayDayOfWeek = new Date().getDay();
+  console.log('🗓️ REAL-TIME LISTENER - TODAY\'S DAY OF WEEK:', todayDayOfWeek);
   
   const q = query(
     collection(db, 'availability'), 
@@ -1716,6 +1881,8 @@ export const subscribeToAvailabilityChanges = (barberId: string, callback: (week
     snapshot.docs.forEach(doc => {
       const data = doc.data();
       const dayOfWeek = data.dayOfWeek;
+      console.log('📡 REAL-TIME QUERY RESULT: docId=' + doc.id + ', dayOfWeek=' + dayOfWeek);
+      console.log('📡 REAL-TIME QUERY RESULT: data=' + JSON.stringify(data));
 
       if (data.isAvailable) {
         let slots: string[] = [];
@@ -1732,10 +1899,12 @@ export const subscribeToAvailabilityChanges = (barberId: string, callback: (week
         }
 
         if (slots.length > 0) {
-          if (!weeklySlots[dayOfWeek]) {
-            weeklySlots[dayOfWeek] = [];
+          // CRITICAL FIX: Replace slots instead of adding them (same as BookingScreen fix)
+          weeklySlots[dayOfWeek] = [...slots];
+          console.log('🔄 Real-time: Set exact slots for dayOfWeek', dayOfWeek, ':', slots);
+          if (dayOfWeek === todayDayOfWeek) {
+            console.log('🎯 REAL-TIME TODAY: Customer gets these slots for today via live update:', slots);
           }
-          weeklySlots[dayOfWeek].push(...slots);
         }
       }
     });
@@ -1746,6 +1915,12 @@ export const subscribeToAvailabilityChanges = (barberId: string, callback: (week
     });
     
     console.log('✅ Updated weekly availability:', weeklySlots);
+    const today = new Date();
+    const todayYMD = today.toISOString().split('T')[0];
+    const [Y, M, D] = todayYMD.split('-').map(Number);
+    const realTimeTodayDayOfWeek = new Date(Y, M - 1, D).getDay();
+    console.log('🎯 REAL-TIME TODAY SYNC: Today is ' + todayYMD + ' dayOfWeek=' + realTimeTodayDayOfWeek);
+    console.log('🎯 REAL-TIME TODAY SYNC: Sending slots for today: ' + JSON.stringify(weeklySlots[realTimeTodayDayOfWeek] || []));
     callback(weeklySlots);
   }, (error) => {
     console.error('❌ Error listening to availability changes:', error);
@@ -2837,18 +3012,31 @@ export const scheduleAppointmentReminders = async (appointmentId: string, appoin
     const now = new Date();
     const timeDiff = appointmentDate.getTime() - now.getTime();
     
+    console.log(`📅 Scheduling reminders for appointment ${appointmentId}:`);
+    console.log(`📅 Appointment time: ${appointmentDate.toLocaleString('he-IL')}`);
+    console.log(`📅 Current time: ${now.toLocaleString('he-IL')}`);
+    console.log(`📅 Time difference: ${timeDiff}ms`);
+    
     // Only schedule if appointment is in the future
     if (timeDiff <= 0) {
-      console.log('Appointment is in the past, not scheduling reminders');
+      console.log('❌ Appointment is in the past, not scheduling reminders');
       return;
     }
     
     const hoursUntilAppointment = timeDiff / (1000 * 60 * 60);
+    const minutesUntilAppointment = timeDiff / (1000 * 60);
+    
+    console.log(`📅 Hours until appointment: ${hoursUntilAppointment.toFixed(2)}`);
+    console.log(`📅 Minutes until appointment: ${minutesUntilAppointment.toFixed(2)}`);
+    
+    // Get admin settings to check reminder timings
+    const adminSettings = await getAdminNotificationSettings();
+    console.log('🔧 Admin reminder settings:', adminSettings.reminderTimings);
     
     // Schedule 24-hour reminder if appointment is more than 24 hours away
     if (hoursUntilAppointment > 24) {
       const reminder24hTime = new Date(appointmentDate.getTime() - 24 * 60 * 60 * 1000);
-      console.log(`📅 Scheduling 24h reminder for ${reminder24hTime.toLocaleString()}`);
+      console.log(`📅 Scheduling 24h reminder for ${reminder24hTime.toLocaleString('he-IL')}`);
       
       // Store scheduled reminder in Firestore
       await addDoc(collection(db, 'scheduledReminders'), {
@@ -2856,50 +3044,91 @@ export const scheduleAppointmentReminders = async (appointmentId: string, appoin
         userId: appointmentData.userId,
         scheduledTime: Timestamp.fromDate(reminder24hTime),
         reminderType: '24h',
-        status: 'pending'
+        status: 'pending',
+        createdAt: Timestamp.now()
       });
     }
     
-    // Schedule 1-hour reminder if appointment is more than 1 hour away
-    if (hoursUntilAppointment > 1) {
+    // Schedule 1-hour reminder if appointment is more than 1 hour away AND enabled in settings
+    if (hoursUntilAppointment > 1 && adminSettings.reminderTimings.oneHourBefore) {
       const reminder1hTime = new Date(appointmentDate.getTime() - 60 * 60 * 1000);
-      console.log(`📅 Scheduling 1h reminder for ${reminder1hTime.toLocaleString()}`);
+      console.log(`📅 Scheduling 1h reminder for ${reminder1hTime.toLocaleString('he-IL')} (enabled in settings)`);
       
       await addDoc(collection(db, 'scheduledReminders'), {
         appointmentId: appointmentId,
         userId: appointmentData.userId,
         scheduledTime: Timestamp.fromDate(reminder1hTime),
         reminderType: '1h',
-        status: 'pending'
+        status: 'pending',
+        createdAt: Timestamp.now()
       });
+    } else if (hoursUntilAppointment > 1) {
+      console.log('🔕 1-hour reminder disabled in admin settings');
     }
     
-    // Schedule 15-minute reminder if appointment is more than 15 minutes away
-    if (timeDiff > 15 * 60 * 1000) {
+    // Schedule 30-minute reminder if appointment is more than 30 minutes away AND enabled in settings
+    if (minutesUntilAppointment > 30 && adminSettings.reminderTimings.thirtyMinutesBefore) {
+      const reminder30mTime = new Date(appointmentDate.getTime() - 30 * 60 * 1000);
+      console.log(`📅 Scheduling 30m reminder for ${reminder30mTime.toLocaleString('he-IL')} (enabled in settings)`);
+      
+      await addDoc(collection(db, 'scheduledReminders'), {
+        appointmentId: appointmentId,
+        userId: appointmentData.userId,
+        scheduledTime: Timestamp.fromDate(reminder30mTime),
+        reminderType: '30m',
+        status: 'pending',
+        createdAt: Timestamp.now()
+      });
+    } else if (minutesUntilAppointment > 30) {
+      console.log('🔕 30-minute reminder disabled in admin settings');
+    }
+    
+    // Schedule 15-minute reminder if appointment is more than 15 minutes away AND enabled in settings
+    if (minutesUntilAppointment > 15 && adminSettings.reminderTimings.tenMinutesBefore) {
       const reminder15mTime = new Date(appointmentDate.getTime() - 15 * 60 * 1000);
-      console.log(`📅 Scheduling 15m reminder for ${reminder15mTime.toLocaleString()}`);
+      console.log(`📅 Scheduling 15m reminder for ${reminder15mTime.toLocaleString('he-IL')} (enabled in settings)`);
       
       await addDoc(collection(db, 'scheduledReminders'), {
         appointmentId: appointmentId,
         userId: appointmentData.userId,
         scheduledTime: Timestamp.fromDate(reminder15mTime),
         reminderType: '15m',
-        status: 'pending'
+        status: 'pending',
+        createdAt: Timestamp.now()
       });
+    } else if (minutesUntilAppointment > 15) {
+      console.log('🔕 15-minute reminder disabled in admin settings');
     }
     
-    console.log(`✅ Scheduled reminders for appointment ${appointmentId}`);
+    // Schedule "when starting" reminder if enabled in settings
+    if (adminSettings.reminderTimings.whenStarting) {
+      const reminderStartTime = new Date(appointmentDate.getTime());
+      console.log(`📅 Scheduling "when starting" reminder for ${reminderStartTime.toLocaleString('he-IL')} (enabled in settings)`);
+      
+      await addDoc(collection(db, 'scheduledReminders'), {
+        appointmentId: appointmentId,
+        userId: appointmentData.userId,
+        scheduledTime: Timestamp.fromDate(reminderStartTime),
+        reminderType: 'whenStarting',
+        status: 'pending',
+        createdAt: Timestamp.now()
+      });
+    } else {
+      console.log('🔕 "When starting" reminder disabled in admin settings');
+    }
+    
+    console.log(`✅ Successfully scheduled reminders for appointment ${appointmentId}`);
   } catch (error) {
-    console.error('Error scheduling appointment reminders:', error);
+    console.error('❌ Error scheduling appointment reminders:', error);
   }
 };
 
-// Send appointment reminder notification
+// Send appointment reminder notification (CUSTOMERS ONLY - NOT ADMINS)
 export const sendAppointmentReminder = async (appointmentId: string) => {
   try {
     const appointmentDoc = await getDoc(doc(db, 'appointments', appointmentId));
     if (!appointmentDoc.exists()) {
-      console.log('Appointment not found');
+      console.log('❌ Appointment not found');
       return false;
     }
     
@@ -2910,37 +3139,93 @@ export const sendAppointmentReminder = async (appointmentId: string) => {
     const hoursUntilAppointment = timeDiff / (1000 * 60 * 60);
     const minutesUntilAppointment = timeDiff / (1000 * 60);
     
-    // Send different reminders based on time until appointment
-    if (hoursUntilAppointment > 0 && hoursUntilAppointment <= 24) {
+    console.log(`📅 CUSTOMER REMINDER for appointment ${appointmentId}:`);
+    console.log(`📅 Appointment time: ${appointmentDate.toLocaleString('he-IL')}`);
+    console.log(`📅 Current time: ${now.toLocaleString('he-IL')}`);
+    console.log(`📅 Hours until: ${hoursUntilAppointment.toFixed(2)}`);
+    console.log(`📅 Minutes until: ${minutesUntilAppointment.toFixed(2)}`);
+    
+    // Get treatment name for better message
+    let treatmentName = 'הטיפול';
+    try {
+      const treatmentDoc = await getDoc(doc(db, 'treatments', appointmentData.treatmentId));
+      if (treatmentDoc.exists()) {
+        treatmentName = treatmentDoc.data().name || 'הטיפול';
+      }
+    } catch (e) {
+      console.log('Could not fetch treatment name');
+    }
+    
+    // Get admin settings to check reminder timings
+    const adminSettings = await getAdminNotificationSettings();
+    console.log('🔧 Admin reminder settings for sending:', adminSettings.reminderTimings);
+    
+    // Send different reminders based on time until appointment AND admin settings
+    if (timeDiff > 0) { // Only send if appointment is in the future
       let title = '';
       let message = '';
+      let shouldSend = false;
       
-      if (minutesUntilAppointment <= 15) {
+      if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && adminSettings.reminderTimings.tenMinutesBefore) {
         // 15 minutes before
         title = 'תזכורת לתור! ⏰';
         message = `התור שלך בעוד 15 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
-      } else if (hoursUntilAppointment <= 1) {
+        shouldSend = true;
+        console.log('📅 Sending 15-minute reminder to CUSTOMER (enabled in settings)');
+      } else if (minutesUntilAppointment <= 30 && minutesUntilAppointment > 15 && adminSettings.reminderTimings.thirtyMinutesBefore) {
+        // 30 minutes before
+        title = 'תזכורת לתור! ⏰';
+        message = `התור שלך בעוד 30 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+        shouldSend = true;
+        console.log('📅 Sending 30-minute reminder to CUSTOMER (enabled in settings)');
+      } else if (hoursUntilAppointment <= 1 && hoursUntilAppointment > 0 && adminSettings.reminderTimings.oneHourBefore) {
         // 1 hour before
         title = 'תזכורת לתור! ⏰';
-        message = `יש לך תור ל-${appointmentData.treatmentId} בעוד שעה!`;
-      } else {
-        // 24 hours before
+        message = `יש לך תור ל${treatmentName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+        shouldSend = true;
+        console.log('📅 Sending 1-hour reminder to CUSTOMER (enabled in settings)');
+      } else if (hoursUntilAppointment <= 24 && hoursUntilAppointment > 1) {
+        // 24 hours before (always send this one)
         title = 'תזכורת לתור! ⏰';
-        message = `התור שלך מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+        const isTomorrow = appointmentDate.getDate() === new Date(now.getTime() + 24 * 60 * 60 * 1000).getDate();
+        if (isTomorrow) {
+          message = `התור שלך מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+        } else {
+          message = `התור שלך ב-${appointmentDate.toLocaleDateString('he-IL')} ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+        }
+        shouldSend = true;
+        console.log('📅 Sending 24-hour reminder to CUSTOMER');
+      } else if (minutesUntilAppointment <= 0 && minutesUntilAppointment > -60 && adminSettings.reminderTimings.whenStarting) {
+        // When starting (within 1 hour after appointment time)
+        title = 'התור שלך מתחיל! 🎯';
+        message = `התור שלך ל${treatmentName} מתחיל עכשיו!`;
+        shouldSend = true;
+        console.log('📅 Sending "when starting" reminder to CUSTOMER (enabled in settings)');
+      } else {
+        console.log('📅 No reminder needed at this time or disabled in settings');
+        return false;
       }
       
+      if (!shouldSend) {
+        console.log('🔕 Reminder disabled in admin settings');
+        return false;
+      }
+      
+      // Send reminder ONLY to the customer (NOT to admin)
       await sendNotificationToUser(
         appointmentData.userId,
         title,
         message,
         { appointmentId: appointmentId }
       );
+      console.log('✅ Reminder sent successfully to CUSTOMER ONLY');
       return true;
+    } else {
+      console.log('📅 Appointment is in the past, no reminder needed');
+      return false;
     }
-    
-    return false;
   } catch (error) {
-    console.error('Error sending appointment reminder:', error);
+    console.error('❌ Error sending appointment reminder:', error);
     return false;
   }
 };
@@ -2959,17 +3244,37 @@ export const getAdminNotificationSettings = async (): Promise<{
   };
 }> => {
   try {
+    console.log('🔧 Getting admin notification settings...');
     const { doc, getDoc, getFirestore } = await import('firebase/firestore');
     const db = getFirestore();
     
     const settingsDoc = await getDoc(doc(db, 'adminSettings', 'notifications'));
     
     if (settingsDoc.exists()) {
-      return settingsDoc.data() as any;
+      const data = settingsDoc.data();
+      console.log('📋 Admin notification settings found:', data);
+      
+      // Ensure all required fields exist with defaults
+      const settings = {
+        newUserRegistered: data.newUserRegistered ?? true,
+        newAppointmentBooked: data.newAppointmentBooked ?? true,
+        appointmentCancelled: data.appointmentCancelled ?? true,
+        appointmentReminders: data.appointmentReminders ?? true,
+        reminderTimings: {
+          oneHourBefore: data.reminderTimings?.oneHourBefore ?? true,
+          thirtyMinutesBefore: data.reminderTimings?.thirtyMinutesBefore ?? true,
+          tenMinutesBefore: data.reminderTimings?.tenMinutesBefore ?? false,
+          whenStarting: data.reminderTimings?.whenStarting ?? false,
+        },
+      };
+      
+      console.log('✅ Processed admin notification settings:', settings);
+      return settings;
     }
     
+    console.log('📋 No admin notification settings found, using defaults');
     // Return default settings if none exist
-    return {
+    const defaultSettings = {
       newUserRegistered: true,
       newAppointmentBooked: true,
       appointmentCancelled: true,
@@ -2981,10 +3286,13 @@ export const getAdminNotificationSettings = async (): Promise<{
         whenStarting: false,
       },
     };
+    
+    console.log('✅ Using default admin notification settings:', defaultSettings);
+    return defaultSettings;
   } catch (error) {
-    console.error('Error getting admin notification settings:', error);
+    console.error('❌ Error getting admin notification settings:', error);
     // Return default settings on error
-    return {
+    const defaultSettings = {
       newUserRegistered: true,
       newAppointmentBooked: true,
       appointmentCancelled: true,
@@ -2996,6 +3304,9 @@ export const getAdminNotificationSettings = async (): Promise<{
         whenStarting: false,
       },
     };
+    
+    console.log('✅ Using default admin notification settings due to error:', defaultSettings);
+    return defaultSettings;
   }
 };
 
@@ -3006,43 +3317,42 @@ export const sendNotificationToAdmin = async (title: string, body: string, data?
     
     // Check if this type of notification is enabled
     const settings = await getAdminNotificationSettings();
+    console.log('🔧 Current admin notification settings:', settings);
     
     // Determine notification type based on title/content
     let shouldSend = false;
+    let notificationType = '';
+    
     if (title.includes('משתמש חדש') || title.includes('נרשם')) {
+      notificationType = 'newUserRegistered';
       shouldSend = settings.newUserRegistered;
+      console.log(`🔔 New user notification - enabled: ${shouldSend}`);
     } else if (title.includes('תור חדש') || title.includes('תור נוצר')) {
+      notificationType = 'newAppointmentBooked';
       shouldSend = settings.newAppointmentBooked;
+      console.log(`🔔 New appointment notification - enabled: ${shouldSend}`);
     } else if (title.includes('בוטל') || title.includes('תור בוטל')) {
+      notificationType = 'appointmentCancelled';
       shouldSend = settings.appointmentCancelled;
+      console.log(`🔔 Appointment cancelled notification - enabled: ${shouldSend}`);
     } else if (title.includes('תזכורת') || title.includes('תור קרוב')) {
-      // Check specific reminder timings
-      if (title.includes('שעה לפני') || title.includes('1 שעה')) {
-        shouldSend = settings.appointmentReminders && settings.reminderTimings.oneHourBefore;
-      } else if (title.includes('30 דקות') || title.includes('חצי שעה')) {
-        shouldSend = settings.appointmentReminders && settings.reminderTimings.thirtyMinutesBefore;
-      } else if (title.includes('10 דקות')) {
-        shouldSend = settings.appointmentReminders && settings.reminderTimings.tenMinutesBefore;
-      } else if (title.includes('מתחיל') || title.includes('התחיל')) {
-        shouldSend = settings.appointmentReminders && settings.reminderTimings.whenStarting;
-      } else {
-        // General reminder - check if any timing is enabled
-        shouldSend = settings.appointmentReminders && (
-          settings.reminderTimings.oneHourBefore ||
-          settings.reminderTimings.thirtyMinutesBefore ||
-          settings.reminderTimings.tenMinutesBefore ||
-          settings.reminderTimings.whenStarting
-        );
-      }
+      // IMPORTANT: Admins should NOT receive appointment reminders for customers
+      // These are only for customers to remind them of their own appointments
+      console.log('🔕 Skipping appointment reminder for admin - these are for customers only');
+      shouldSend = false;
     } else {
       // Default to sending if we can't determine the type
+      notificationType = 'unknown';
       shouldSend = true;
+      console.log(`🔔 Unknown notification type - defaulting to send: ${shouldSend}`);
     }
     
     if (!shouldSend) {
-      console.log(`🔕 Notification disabled for this type: "${title}"`);
+      console.log(`🔕 Notification disabled for type "${notificationType}": "${title}"`);
       return 0;
     }
+    
+    console.log(`✅ Notification enabled for type "${notificationType}": "${title}"`);
     
     // Try to get current user's profile directly if they're admin
     const currentUser = getCurrentUser();
@@ -3072,16 +3382,34 @@ export const sendNotificationToAdmin = async (title: string, body: string, data?
     }
     
     console.log(`👨‍💼 Admin users with push tokens: ${adminUsers.length}`);
+    console.log(`📱 Admin users: ${adminUsers.map(u => `${u.displayName} (${u.uid})`).join(', ')}`);
+    
+    if (adminUsers.length === 0) {
+      console.log('❌ No admin users with push tokens found');
+      return 0;
+    }
+    
     console.log(`📱 Sending notification to ${adminUsers.length} admin users`);
     
     const results = await Promise.allSettled(
-      adminUsers.map(user => 
-        sendPushNotification(user.pushToken!, title, body, data)
-      )
+      adminUsers.map(async (user) => {
+        try {
+          console.log(`📱 Sending to admin: ${user.displayName} (${user.uid})`);
+          return await sendPushNotification(user.pushToken!, title, body, data);
+        } catch (error) {
+          console.error(`❌ Failed to send to admin ${user.displayName}:`, error);
+          throw error;
+        }
+      })
     );
     
     const successful = results.filter(result => result.status === 'fulfilled').length;
+    const failed = results.filter(result => result.status === 'rejected').length;
+    
     console.log(`✅ Successfully sent to ${successful}/${adminUsers.length} admin users`);
+    if (failed > 0) {
+      console.log(`❌ Failed to send to ${failed} admin users`);
+    }
     
     return successful;
   } catch (error) {

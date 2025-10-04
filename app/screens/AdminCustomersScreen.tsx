@@ -83,7 +83,7 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
         .sort((a, b) => {
           // Sort by creation date (newest first)
           if (a.createdAt && b.createdAt) {
-            return b.createdAt.toDate() - a.createdAt.toDate();
+            return b.createdAt.toDate().getTime() - a.createdAt.toDate().getTime();
           }
           return 0;
         });

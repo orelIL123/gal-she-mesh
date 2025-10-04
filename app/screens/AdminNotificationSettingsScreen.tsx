@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore';
+import { doc, getFirestore, setDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
@@ -90,34 +90,16 @@ const AdminNotificationSettingsScreen: React.FC<AdminNotificationSettingsScreenP
   const loadSettings = async () => {
     try {
       setLoading(true);
-      // Load settings from Firestore
-      const db = getFirestore();
+      console.log('🔧 Loading admin notification settings...');
       
-      const settingsDoc = await getDoc(doc(db, 'adminSettings', 'notifications'));
+      // Use the centralized function from firebase.ts
+      const { getAdminNotificationSettings } = await import('../../services/firebase');
+      const savedSettings = await getAdminNotificationSettings();
       
-      if (settingsDoc.exists()) {
-        const savedSettings = settingsDoc.data() as NotificationSettings;
-        setSettings(savedSettings);
-        console.log('Loaded notification settings:', savedSettings);
-      } else {
-        // Use default settings if none exist
-        const defaultSettings: NotificationSettings = {
-          newUserRegistered: true,
-          newAppointmentBooked: true,
-          appointmentCancelled: true,
-          appointmentReminders: true,
-          reminderTimings: {
-            oneHourBefore: true,
-            thirtyMinutesBefore: true,
-            tenMinutesBefore: false,
-            whenStarting: false,
-          },
-        };
-        setSettings(defaultSettings);
-        console.log('Using default notification settings');
-      }
+      setSettings(savedSettings);
+      console.log('✅ Loaded notification settings:', savedSettings);
     } catch (error) {
-      console.error('Error loading notification settings:', error);
+      console.error('❌ Error loading notification settings:', error);
       // Fallback to default settings
       const defaultSettings: NotificationSettings = {
         newUserRegistered: true,
@@ -132,6 +114,7 @@ const AdminNotificationSettingsScreen: React.FC<AdminNotificationSettingsScreenP
         },
       };
       setSettings(defaultSettings);
+      console.log('✅ Using default notification settings due to error');
     } finally {
       setLoading(false);
     }
@@ -142,15 +125,29 @@ const AdminNotificationSettingsScreen: React.FC<AdminNotificationSettingsScreenP
       const newSettings = { ...settings, [key]: !settings[key] };
       setSettings(newSettings);
       
-      // Save to Firestore
+      console.log(`🔧 Updating notification setting: ${key} = ${newSettings[key]}`);
+      
+      // Save to Firestore with proper error handling
       const db = getFirestore();
       
       await setDoc(doc(db, 'adminSettings', 'notifications'), {
         ...newSettings,
-        updatedAt: new Date()
-      });
+        updatedAt: new Date(),
+        lastUpdatedBy: getCurrentUser()?.uid || 'unknown'
+      }, { merge: true }); // Use merge to avoid overwriting other fields
       
-      console.log('Notification settings updated and saved:', newSettings);
+      console.log('✅ Notification settings updated and saved:', newSettings);
+      
+      // Verify the settings were saved by reloading them
+      setTimeout(async () => {
+        try {
+          const { getAdminNotificationSettings } = await import('../../services/firebase');
+          const savedSettings = await getAdminNotificationSettings();
+          console.log('🔍 Verification - loaded settings after save:', savedSettings);
+        } catch (e) {
+          console.error('❌ Error verifying saved settings:', e);
+        }
+      }, 1000);
       
       // Show success message
       Alert.alert(
@@ -159,8 +156,11 @@ const AdminNotificationSettingsScreen: React.FC<AdminNotificationSettingsScreenP
         [{ text: 'אישור' }]
       );
     } catch (error) {
-      console.error('Error updating notification settings:', error);
-      Alert.alert('שגיאה', 'לא ניתן לעדכן את ההגדרות');
+      console.error('❌ Error updating notification settings:', error);
+      Alert.alert(
+        'שגיאה', 
+        `לא ניתן לעדכן את ההגדרות: ${error instanceof Error ? error.message : 'שגיאה לא ידועה'}`
+      );
     }
   };
 
@@ -170,15 +170,29 @@ const AdminNotificationSettingsScreen: React.FC<AdminNotificationSettingsScreenP
       const newSettings = { ...settings, reminderTimings: newReminderTimings };
       setSettings(newSettings);
       
-      // Save to Firestore
+      console.log(`🔧 Updating reminder timing: ${timing} = ${newReminderTimings[timing]}`);
+      
+      // Save to Firestore with proper error handling
       const db = getFirestore();
       
       await setDoc(doc(db, 'adminSettings', 'notifications'), {
         ...newSettings,
-        updatedAt: new Date()
-      });
+        updatedAt: new Date(),
+        lastUpdatedBy: getCurrentUser()?.uid || 'unknown'
+      }, { merge: true }); // Use merge to avoid overwriting other fields
       
-      console.log('Reminder timing settings updated and saved:', newReminderTimings);
+      console.log('✅ Reminder timing settings updated and saved:', newReminderTimings);
+      
+      // Verify the settings were saved by reloading them
+      setTimeout(async () => {
+        try {
+          const { getAdminNotificationSettings } = await import('../../services/firebase');
+          const savedSettings = await getAdminNotificationSettings();
+          console.log('🔍 Verification - loaded reminder settings after save:', savedSettings.reminderTimings);
+        } catch (e) {
+          console.error('❌ Error verifying saved reminder settings:', e);
+        }
+      }, 1000);
       
       // Show success message
       Alert.alert(
@@ -187,8 +201,11 @@ const AdminNotificationSettingsScreen: React.FC<AdminNotificationSettingsScreenP
         [{ text: 'אישור' }]
       );
     } catch (error) {
-      console.error('Error updating reminder settings:', error);
-      Alert.alert('שגיאה', 'לא ניתן לעדכן את הגדרות התזכורות');
+      console.error('❌ Error updating reminder settings:', error);
+      Alert.alert(
+        'שגיאה', 
+        `לא ניתן לעדכן את הגדרות התזכורות: ${error instanceof Error ? error.message : 'שגיאה לא ידועה'}`
+      );
     }
   };
 

@@ -20,11 +20,11 @@ import {
     addTreatment,
     deleteTreatment,
     getTreatments,
-    updateTreatment,
-    uploadImageToStorage
+    updateTreatment
 } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
+import { SLOT_SIZE_MINUTES, isValidDuration } from '../constants/scheduling';
 
 interface AdminTreatmentsScreenProps {
   onNavigate: (screen: string) => void;
@@ -191,11 +191,19 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
   const handleSave = async () => {
     if (!validateForm()) return;
 
+    const duration = parseInt(formData.duration);
+    
+    // Validate duration is a multiple of 25 minutes
+    if (!isValidDuration(duration)) {
+      showToast(`משך הטיפול חייב להיות כפולה של ${SLOT_SIZE_MINUTES} דקות (25, 50, 75, 100, וכו')`, 'error');
+      return;
+    }
+
     try {
       console.log('💾 Saving treatment...');
       const treatmentData = {
         name: formData.name.trim(),
-        duration: parseInt(formData.duration),
+        duration: duration,
         price: parseFloat(formData.price),
         description: formData.description.trim(),
         image: formData.image.trim() || 'https://via.placeholder.com/200x150'

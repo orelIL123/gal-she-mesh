@@ -110,7 +110,7 @@ export default function SplashScreen() {
         <Image
           source={require('../assets/images/TURGI.png')}
           style={styles.image}
-          resizeMode="contain"
+          resizeMode="cover"
         />
       </Animated.View>
     </View>
@@ -119,13 +119,14 @@ export default function SplashScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#000',
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
     zIndex: 9999, // Ensure it's above everything during splash
   },
   imageContainer: {
@@ -136,8 +137,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   image: {
-    width: width,
-    height: height,
-    resizeMode: 'cover', // This will fill the entire screen without distortion
+    width: '100%',
+    height: '100%',
   },
 });

@@ -112,8 +112,8 @@ const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigat
           continue;
         }
         
-        // Check if appointment time has passed (add 30 minutes buffer for treatment duration)
-        const appointmentEndTime = new Date(appointmentDate.getTime() + 30 * 60000);
+        // Check if appointment time has passed (add 25 minutes buffer for treatment duration)
+        const appointmentEndTime = new Date(appointmentDate.getTime() + 25 * 60000);
         
         if (now > appointmentEndTime) {
           console.log(`🕐 Auto-completing appointment: ${appointment.id} at ${appointmentDate.toLocaleString()}`);

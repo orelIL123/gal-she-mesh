@@ -17,8 +17,8 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { loginUser, loginWithPhoneAndPassword, registerForPushNotifications } from '../../services/firebase';
 import { authManager } from '../../services/authManager';
+import { loginUser, loginWithPhoneAndPassword, registerForPushNotifications } from '../../services/firebase';
 import { colors } from '../constants/colors';
 import { CONTACT_INFO } from '../constants/contactInfo';
 
@@ -87,6 +87,7 @@ export default function LoginScreen() {
     try {
       // Check if it's email or phone format
       const isEmail = emailOrPhone.includes('@');
+      console.log(`🔍 LoginScreen: Input "${emailOrPhone}" detected as ${isEmail ? 'EMAIL' : 'PHONE'}`);
 
       // Save credentials using AuthManager if "remember me" is checked
       if (rememberMe) {
@@ -105,8 +106,10 @@ export default function LoginScreen() {
       }
 
       if (isEmail) {
+        console.log('🔐 LoginScreen: Attempting email login with:', emailOrPhone);
         await loginUser(emailOrPhone, password);
       } else {
+        console.log('📱 LoginScreen: Attempting phone login with:', emailOrPhone);
         await loginWithPhoneAndPassword(emailOrPhone, password);
       }
 
@@ -130,13 +133,15 @@ export default function LoginScreen() {
 
       let errorMessage = 'פרטי הכניסה שגויים';
 
-      if (error.message.includes('משתמש לא נמצא')) {
-        errorMessage = 'משתמש לא נמצא. אנא הירשם תחילה.';
+      if (error.message.includes('משתמש לא נמצא במערכת')) {
+        errorMessage = 'מצטערים, משתמש לא נמצא. אנא הירשם תחילה.';
+      } else if (error.message.includes('משתמש לא נמצא')) {
+        errorMessage = 'מצטערים, משתמש לא נמצא. אנא הירשם תחילה.';
       } else if (error.message.includes('סיסמה שגויה')) {
         errorMessage = 'הסיסמה שגויה. אנא נסה שוב.';
       } else if (error.message.includes('פרטי הכניסה שגויים')) {
         errorMessage = 'פרטי הכניסה שגויים. בדוק את הטלפון והסיסמה.';
-      } else if (error.message.includes('לא הגדיר סיסמה')) {
+      } else if (error.message.includes('לא הוגדרה סיסמה')) {
         errorMessage = 'לא הוגדרה סיסמה לחשבון זה. אנא הירשם מחדש או השתמש בהתחברות עם SMS.';
       }
 

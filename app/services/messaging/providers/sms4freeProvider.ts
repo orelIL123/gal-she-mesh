@@ -36,7 +36,11 @@ export class SMS4FreeProvider implements MessageProvider {
       }
       
       // Ensure message is short (<70 characters in Hebrew) to avoid splitting
-      const message = params.message.length > 70 ? params.message.substring(0, 67) + '...' : params.message;
+      // But don't truncate verification codes - they need to be complete
+      let message = params.message;
+      if (message.length > 70 && !message.includes('קוד האימות')) {
+        message = message.substring(0, 67) + '...';
+      }
       
       const body = {
         key: this.apiKey,

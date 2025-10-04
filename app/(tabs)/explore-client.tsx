@@ -101,39 +101,85 @@ const ShopScreen: React.FC<ShopScreenProps> = ({ onNavigate, onBack, isAdmin = f
   // Admin functions
   const pickImageFromDevice = async () => {
     try {
+      console.log('📱 Requesting media library permissions...');
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permissionResult.granted) {
+      
+      if (permissionResult.granted === false) {
         Alert.alert('שגיאה', 'נדרשת הרשאה לגישה לגלריה');
         return null;
       }
 
+      // Double check permission status
+      if (permissionResult.status !== 'granted') {
+        Alert.alert('שגיאה', 'הרשאת גישה נדחתה');
+        return null;
+      }
+
+      console.log('📱 Permissions granted, launching image picker...');
+      
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
+        allowsEditing: false, // Changed from true to false to prevent crashes
+        quality: 1,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        return result.assets[0].uri;
+      console.log('📱 Image picker result:', result);
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const imageUri = result.assets[0].uri;
+        console.log('📤 Selected image URI:', imageUri);
+        return imageUri;
       }
-    } catch {
-      Alert.alert('שגיאה', 'שגיאה בבחירת התמונה');
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('שגיאה', `שגיאה בבחירת התמונה: ${error instanceof Error ? error.message : 'שגיאה לא ידועה'}`);
     }
     return null;
   };
 
   const uploadProductImage = async () => {
+    console.log('=== START UPLOAD PRODUCT IMAGE ===');
     try {
+      console.log('🔄 Step 1: Starting product image upload...');
+      
+      console.log('🔄 Step 2: Requesting image from device...');
       const imageUri = await pickImageFromDevice();
-      if (!imageUri) return;
+      
+      if (!imageUri) {
+        console.log('❌ No image selected - user cancelled or error');
+        return;
+      }
 
+      console.log('✅ Step 3: Image selected successfully:', imageUri);
+      console.log('📱 Image URI type:', typeof imageUri);
+      console.log('📱 Image URI length:', imageUri.length);
+      
       const fileName = `product_${Date.now()}.jpg`;
+      console.log('📁 Step 4: Generated filename:', fileName);
+      console.log('📁 Target folder: shop');
+      
+      console.log('🔄 Step 5: Starting upload to Firebase Storage...');
       const downloadURL = await uploadImageToStorage(imageUri, 'shop', fileName);
+      console.log('✅ Step 6: Upload successful! URL:', downloadURL);
+      
+      console.log('🔄 Step 7: Updating form state...');
       setProductForm(prev => ({ ...prev, imageUrl: downloadURL }));
+      console.log('✅ Step 8: Form state updated successfully');
+      
+      console.log('=== END UPLOAD PRODUCT IMAGE - SUCCESS ===');
       Alert.alert('הצלחה', 'התמונה הועלתה בהצלחה');
-    } catch {
-      Alert.alert('שגיאה', 'שגיאה בהעלאת התמונה');
+    } catch (error) {
+      console.error('=== UPLOAD PRODUCT IMAGE FAILED ===');
+      console.error('❌ Error type:', typeof error);
+      console.error('❌ Error name:', error instanceof Error ? error.name : 'Unknown');
+      console.error('❌ Error message:', error instanceof Error ? error.message : String(error));
+      console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack');
+      console.error('❌ Full error object:', JSON.stringify(error, null, 2));
+      
+      Alert.alert(
+        'שגיאה בהעלאת תמונה', 
+        `${error instanceof Error ? error.message : 'שגיאה לא ידועה'}\n\nאנא בדוק את החיבור לאינטרנט ונסה שוב.`
+      );
     }
   };
 
