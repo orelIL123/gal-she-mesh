@@ -293,8 +293,33 @@ export const registerUser = async (email: string, password: string, displayName:
 
 export const logoutUser = async () => {
   try {
+    const user = auth.currentUser;
+    
+    // Remove push token from user profile before logout
+    if (user) {
+      console.log('🔄 Removing push token for user:', user.uid);
+      try {
+        await updateUserProfile(user.uid, { pushToken: null as any });
+        console.log('✅ Push token removed from user profile');
+      } catch (tokenError) {
+        console.error('⚠️ Error removing push token (continuing with logout):', tokenError);
+        // Continue with logout even if token removal fails
+      }
+    }
+    
+    // Clear all local notifications from device
+    try {
+      await Notifications.dismissAllNotificationsAsync();
+      console.log('✅ All local notifications cleared');
+    } catch (notifError) {
+      console.error('⚠️ Error clearing notifications:', notifError);
+      // Continue with logout even if notification clearing fails
+    }
+    
     // Clear stored auth data - מסונן לפי prefix
     await AuthStorageService.clearAuthData(); // מסונן לפי prefix
+    
+    // Sign out from Firebase
     await signOut(auth);
     console.log('✅ User logged out successfully');
   } catch (error) {
