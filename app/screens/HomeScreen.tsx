@@ -474,7 +474,7 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
   };
 
   const handleWaze = () => {
-    Linking.openURL('https://waze.com/ul?ll=32.0853,34.7818&navigate=yes').catch(() => {
+    Linking.openURL('https://waze.com/ul?ll=31.3167,34.5833&navigate=yes').catch(() => {
       Alert.alert(t('common.error'), t('errors.waze_error'));
     });
   };
