@@ -58,6 +58,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [shopModalVisible, setShopModalVisible] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'gallery' | 'background' | 'splash' | 'aboutus' | 'shop'>(initialTab || 'gallery');
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
   const [editingImage, setEditingImage] = useState<GalleryImage | null>(null);
@@ -193,7 +194,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
-        quality: 1,
+        quality: 0.5, // Reduced quality to save space - especially for shop images
       });
 
       console.log('📱 Image picker result:', result);
@@ -647,24 +648,47 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
 
         {/* Add Image Button */}
         <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.addButton} 
-            onPress={() => isImageTab(selectedTab) && openAddModal(selectedTab)}
-            disabled={!isImageTab(selectedTab)}
-          >
-            <Ionicons name="add" size={24} color="#fff" />
-            <Text style={styles.addButtonText}>
-              {isImageTab(selectedTab) ? `הוסף תמונה ל${getTabTitle(selectedTab)}` : ''}
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.uploadButton} 
-            onPress={uploadImageFromDevice}
-          >
-            <Ionicons name="phone-portrait" size={24} color="#fff" />
-            <Text style={styles.uploadButtonText}>העלה מהטלפון</Text>
-          </TouchableOpacity>
+          {selectedTab === 'shop' ? (
+            <TouchableOpacity 
+              style={styles.addButton} 
+              onPress={() => {
+                setShopForm({ 
+                  name: '', 
+                  description: '',
+                  price: '', 
+                  category: '',
+                  imageUrl: '', 
+                  stock: '',
+                  editingId: null 
+                });
+                setShopModalVisible(true);
+              }}
+            >
+              <Ionicons name="add" size={24} color="#fff" />
+              <Text style={styles.addButtonText}>הוסף מוצר חדש</Text>
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity 
+                style={styles.addButton} 
+                onPress={() => isImageTab(selectedTab) && openAddModal(selectedTab)}
+                disabled={!isImageTab(selectedTab)}
+              >
+                <Ionicons name="add" size={24} color="#fff" />
+                <Text style={styles.addButtonText}>
+                  {isImageTab(selectedTab) ? `הוסף תמונה ל${getTabTitle(selectedTab)}` : ''}
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.uploadButton} 
+                onPress={uploadImageFromDevice}
+              >
+                <Ionicons name="phone-portrait" size={24} color="#fff" />
+                <Text style={styles.uploadButtonText}>העלה מהטלפון</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         {/* Images Grid */}
@@ -925,8 +949,8 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
         <Modal
           animationType="slide"
           transparent={true}
-          visible={modalVisible}
-          onRequestClose={() => setModalVisible(false)}
+          visible={shopModalVisible}
+          onRequestClose={() => setShopModalVisible(false)}
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
@@ -934,7 +958,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
                 <Text style={styles.modalTitle}>
                   {shopForm.editingId ? 'עריכת מוצר' : 'הוספת מוצר חדש'}
                 </Text>
-                <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <TouchableOpacity onPress={() => setShopModalVisible(false)}>
                   <Ionicons name="close" size={24} color="#666" />
                 </TouchableOpacity>
               </View>
@@ -1015,7 +1039,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={[styles.actionButton, styles.cancelButton]}
-                  onPress={() => setModalVisible(false)}
+                  onPress={() => setShopModalVisible(false)}
                 >
                   <Text style={styles.cancelButtonText}>ביטול</Text>
                 </TouchableOpacity>

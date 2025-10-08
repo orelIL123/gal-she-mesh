@@ -16,6 +16,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -299,8 +300,12 @@ export const logoutUser = async () => {
     if (user) {
       console.log('🔄 Removing push token for user:', user.uid);
       try {
-        await updateUserProfile(user.uid, { pushToken: null as any });
-        console.log('✅ Push token removed from user profile');
+        // Use deleteField to completely remove the pushToken field
+        const docRef = doc(db, 'users', user.uid);
+        await updateDoc(docRef, {
+          pushToken: deleteField()
+        });
+        console.log('✅ Push token completely removed from user profile');
       } catch (tokenError) {
         console.error('⚠️ Error removing push token (continuing with logout):', tokenError);
         // Continue with logout even if token removal fails
@@ -3006,6 +3011,47 @@ export const sendNotificationToUser = async (userId: string, title: string, body
   }
 };
 
+// Send SMS reminder using SMS4Free service
+export const sendSMSReminder = async (phoneNumber: string, message: string) => {
+  try {
+    // Format phone number for SMS service
+    let formattedPhone = phoneNumber;
+    
+    // Add +972 prefix if not present
+    if (!phoneNumber.startsWith('+')) {
+      if (phoneNumber.startsWith('0')) {
+        formattedPhone = '+972' + phoneNumber.substring(1);
+      } else {
+        formattedPhone = '+972' + phoneNumber;
+      }
+    }
+    
+    console.log('📱 Sending SMS reminder to:', formattedPhone);
+    
+    // Use SMS4Free service
+    const { MessagingService } = await import('../app/services/messaging/service');
+    const { messagingConfig } = await import('../app/config/messaging');
+
+    const messagingService = new MessagingService(messagingConfig);
+
+    const result = await messagingService.sendMessage({
+      to: formattedPhone,
+      message: message
+    });
+
+    if (result.success) {
+      console.log('✅ SMS reminder sent successfully via SMS4Free');
+      return true;
+    } else {
+      console.error('❌ SMS4Free error:', result.error);
+      throw new Error(`Failed to send SMS: ${result.error}`);
+    }
+  } catch (error) {
+    console.error('Error sending SMS reminder:', error);
+    throw error;
+  }
+};
+
 export const sendNotificationToAllUsers = async (title: string, body: string, data?: any) => {
   try {
     const users = await getAllUsers();
@@ -3036,23 +3082,21 @@ export const scheduleAppointmentReminders = async (appointmentId: string, appoin
     const appointmentDate = appointmentData.date.toDate();
     const now = new Date();
     const timeDiff = appointmentDate.getTime() - now.getTime();
+    const hoursUntilAppointment = timeDiff / (1000 * 60 * 60);
+    const minutesUntilAppointment = timeDiff / (1000 * 60);
     
     console.log(`📅 Scheduling reminders for appointment ${appointmentId}:`);
     console.log(`📅 Appointment time: ${appointmentDate.toLocaleString('he-IL')}`);
     console.log(`📅 Current time: ${now.toLocaleString('he-IL')}`);
     console.log(`📅 Time difference: ${timeDiff}ms`);
+    console.log(`📅 Hours until appointment: ${hoursUntilAppointment.toFixed(2)}`);
+    console.log(`📅 Minutes until appointment: ${minutesUntilAppointment.toFixed(2)}`);
     
     // Only schedule if appointment is in the future
     if (timeDiff <= 0) {
       console.log('❌ Appointment is in the past, not scheduling reminders');
       return;
     }
-    
-    const hoursUntilAppointment = timeDiff / (1000 * 60 * 60);
-    const minutesUntilAppointment = timeDiff / (1000 * 60);
-    
-    console.log(`📅 Hours until appointment: ${hoursUntilAppointment.toFixed(2)}`);
-    console.log(`📅 Minutes until appointment: ${minutesUntilAppointment.toFixed(2)}`);
     
     // Get admin settings to check reminder timings
     const adminSettings = await getAdminNotificationSettings();
@@ -3091,22 +3135,6 @@ export const scheduleAppointmentReminders = async (appointmentId: string, appoin
       console.log('🔕 1-hour reminder disabled in admin settings');
     }
     
-    // Schedule 30-minute reminder if appointment is more than 30 minutes away AND enabled in settings
-    if (minutesUntilAppointment > 30 && adminSettings.reminderTimings.thirtyMinutesBefore) {
-      const reminder30mTime = new Date(appointmentDate.getTime() - 30 * 60 * 1000);
-      console.log(`📅 Scheduling 30m reminder for ${reminder30mTime.toLocaleString('he-IL')} (enabled in settings)`);
-      
-      await addDoc(collection(db, 'scheduledReminders'), {
-        appointmentId: appointmentId,
-        userId: appointmentData.userId,
-        scheduledTime: Timestamp.fromDate(reminder30mTime),
-        reminderType: '30m',
-        status: 'pending',
-        createdAt: Timestamp.now()
-      });
-    } else if (minutesUntilAppointment > 30) {
-      console.log('🔕 30-minute reminder disabled in admin settings');
-    }
     
     // Schedule 15-minute reminder if appointment is more than 15 minutes away AND enabled in settings
     if (minutesUntilAppointment > 15 && adminSettings.reminderTimings.tenMinutesBefore) {
@@ -3170,6 +3198,27 @@ export const sendAppointmentReminder = async (appointmentId: string) => {
     console.log(`📅 Hours until: ${hoursUntilAppointment.toFixed(2)}`);
     console.log(`📅 Minutes until: ${minutesUntilAppointment.toFixed(2)}`);
     
+    // Prevent sending reminders for appointments more than 24 hours away
+    if (hoursUntilAppointment > 24) {
+      console.log('🔕 Appointment is more than 24 hours away, skipping reminder');
+      return false;
+    }
+    
+    // IMPORTANT: Check if we already sent a reminder for this appointment recently
+    // to avoid sending duplicate reminders every 5 minutes
+    const recentReminderQuery = query(
+      collection(db, 'scheduledReminders'),
+      where('appointmentId', '==', appointmentId),
+      where('status', '==', 'sent'),
+      where('sentAt', '>=', Timestamp.fromDate(new Date(now.getTime() - 10 * 60 * 1000))) // Last 10 minutes
+    );
+    const recentReminders = await getDocs(recentReminderQuery);
+    
+    if (!recentReminders.empty) {
+      console.log('🔕 Reminder already sent recently for this appointment, skipping');
+      return false;
+    }
+    
     // Get treatment name for better message
     let treatmentName = 'הטיפול';
     try {
@@ -3191,26 +3240,21 @@ export const sendAppointmentReminder = async (appointmentId: string) => {
       let message = '';
       let shouldSend = false;
       
-      if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && adminSettings.reminderTimings.tenMinutesBefore) {
-        // 15 minutes before
+      // Check reminders in order from closest to furthest
+      if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && hoursUntilAppointment < 1 && adminSettings.reminderTimings.tenMinutesBefore) {
+        // 15 minutes before (only if less than 1 hour away)
         title = 'תזכורת לתור! ⏰';
         message = `התור שלך בעוד 15 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
         shouldSend = true;
         console.log('📅 Sending 15-minute reminder to CUSTOMER (enabled in settings)');
-      } else if (minutesUntilAppointment <= 30 && minutesUntilAppointment > 15 && adminSettings.reminderTimings.thirtyMinutesBefore) {
-        // 30 minutes before
-        title = 'תזכורת לתור! ⏰';
-        message = `התור שלך בעוד 30 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
-        shouldSend = true;
-        console.log('📅 Sending 30-minute reminder to CUSTOMER (enabled in settings)');
-      } else if (hoursUntilAppointment <= 1 && hoursUntilAppointment > 0 && adminSettings.reminderTimings.oneHourBefore) {
-        // 1 hour before
+      } else if (hoursUntilAppointment <= 1 && minutesUntilAppointment > 15 && adminSettings.reminderTimings.oneHourBefore) {
+        // 1 hour before (only if more than 15 minutes and less than 1 hour)
         title = 'תזכורת לתור! ⏰';
         message = `יש לך תור ל${treatmentName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
         shouldSend = true;
         console.log('📅 Sending 1-hour reminder to CUSTOMER (enabled in settings)');
       } else if (hoursUntilAppointment <= 24 && hoursUntilAppointment > 1) {
-        // 24 hours before (always send this one)
+        // 24 hours before (only if more than 1 hour and less than 24 hours)
         title = 'תזכורת לתור! ⏰';
         const isTomorrow = appointmentDate.getDate() === new Date(now.getTime() + 24 * 60 * 60 * 1000).getDate();
         if (isTomorrow) {
@@ -3236,14 +3280,48 @@ export const sendAppointmentReminder = async (appointmentId: string) => {
         return false;
       }
       
-      // Send reminder ONLY to the customer (NOT to admin)
+      // Send reminder to the customer
       await sendNotificationToUser(
         appointmentData.userId,
         title,
         message,
         { appointmentId: appointmentId }
       );
-      console.log('✅ Reminder sent successfully to CUSTOMER ONLY');
+      
+      // Send SMS only for 10-minute reminder (to save costs)
+      if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0) {
+        try {
+          const userProfile = await getUserProfile(appointmentData.userId);
+          if (userProfile && userProfile.phone) {
+            console.log('📱 Sending SMS reminder for 10-minute notification');
+            await sendSMSReminder(userProfile.phone, message);
+          }
+        } catch (smsError) {
+          console.error('❌ Failed to send SMS reminder:', smsError);
+        }
+      }
+      
+      // Send reminder to admin (based on admin settings)
+      try {
+        let adminReminderType: '1h' | '15m' | 'whenStarting' | null = null;
+        
+        // Check reminders in order from closest to furthest (same logic as customer)
+        if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && hoursUntilAppointment < 1) {
+          adminReminderType = '15m';
+        } else if (hoursUntilAppointment <= 1 && minutesUntilAppointment > 15) {
+          adminReminderType = '1h';
+        } else if (minutesUntilAppointment <= 0 && minutesUntilAppointment > -60) {
+          adminReminderType = 'whenStarting';
+        }
+        
+        if (adminReminderType) {
+          await sendAppointmentReminderToAdmin(appointmentId, adminReminderType);
+        }
+      } catch (adminError) {
+        console.error('❌ Failed to send admin reminder:', adminError);
+      }
+      
+      console.log('✅ Reminder sent successfully to CUSTOMER and ADMIN');
       return true;
     } else {
       console.log('📅 Appointment is in the past, no reminder needed');
@@ -3263,7 +3341,6 @@ export const getAdminNotificationSettings = async (): Promise<{
   appointmentReminders: boolean;
   reminderTimings: {
     oneHourBefore: boolean;
-    thirtyMinutesBefore: boolean;
     tenMinutesBefore: boolean;
     whenStarting: boolean;
   };
@@ -3287,8 +3364,7 @@ export const getAdminNotificationSettings = async (): Promise<{
         appointmentReminders: data.appointmentReminders ?? true,
         reminderTimings: {
           oneHourBefore: data.reminderTimings?.oneHourBefore ?? true,
-          thirtyMinutesBefore: data.reminderTimings?.thirtyMinutesBefore ?? true,
-          tenMinutesBefore: data.reminderTimings?.tenMinutesBefore ?? false,
+          tenMinutesBefore: data.reminderTimings?.tenMinutesBefore ?? true,
           whenStarting: data.reminderTimings?.whenStarting ?? false,
         },
       };
@@ -3306,8 +3382,7 @@ export const getAdminNotificationSettings = async (): Promise<{
       appointmentReminders: true,
       reminderTimings: {
         oneHourBefore: true,
-        thirtyMinutesBefore: true,
-        tenMinutesBefore: false,
+        tenMinutesBefore: true,
         whenStarting: false,
       },
     };
@@ -3324,8 +3399,7 @@ export const getAdminNotificationSettings = async (): Promise<{
       appointmentReminders: true,
       reminderTimings: {
         oneHourBefore: true,
-        thirtyMinutesBefore: true,
-        tenMinutesBefore: false,
+        tenMinutesBefore: true,
         whenStarting: false,
       },
     };
@@ -3361,10 +3435,26 @@ export const sendNotificationToAdmin = async (title: string, body: string, data?
       shouldSend = settings.appointmentCancelled;
       console.log(`🔔 Appointment cancelled notification - enabled: ${shouldSend}`);
     } else if (title.includes('תזכורת') || title.includes('תור קרוב')) {
-      // IMPORTANT: Admins should NOT receive appointment reminders for customers
-      // These are only for customers to remind them of their own appointments
-      console.log('🔕 Skipping appointment reminder for admin - these are for customers only');
-      shouldSend = false;
+      // Check if admin reminders are enabled and which timings
+      notificationType = 'appointmentReminders';
+      shouldSend = settings.appointmentReminders;
+      
+      // If reminders are enabled, check specific timing based on the message
+      if (shouldSend && data?.reminderType) {
+        const reminderType = data.reminderType;
+        if (reminderType === '1h' && !settings.reminderTimings.oneHourBefore) {
+          shouldSend = false;
+          console.log('🔕 1-hour reminder disabled for admin');
+        } else if (reminderType === '15m' && !settings.reminderTimings.tenMinutesBefore) {
+          shouldSend = false;
+          console.log('🔕 10-minute reminder disabled for admin');
+        } else if (reminderType === 'whenStarting' && !settings.reminderTimings.whenStarting) {
+          shouldSend = false;
+          console.log('🔕 When starting reminder disabled for admin');
+        }
+      }
+      
+      console.log(`🔔 Appointment reminder for admin - enabled: ${shouldSend}`);
     } else {
       // Default to sending if we can't determine the type
       notificationType = 'unknown';
@@ -3702,8 +3792,8 @@ export const sendSystemUpdateNotification = async (updateDetails: string) => {
   }
 };
 
-// Send notification about appointment reminder to admin
-export const sendAppointmentReminderToAdmin = async (appointmentId: string) => {
+// Send notification about appointment reminder to admin (with timing check)
+export const sendAppointmentReminderToAdmin = async (appointmentId: string, reminderType: '1h' | '15m' | 'whenStarting') => {
   try {
     const appointmentDoc = await getDoc(doc(db, 'appointments', appointmentId));
     if (!appointmentDoc.exists()) {
@@ -3713,11 +3803,38 @@ export const sendAppointmentReminderToAdmin = async (appointmentId: string) => {
     
     const appointmentData = appointmentDoc.data() as Appointment;
     const appointmentDate = appointmentData.date.toDate();
+    const now = new Date();
+    const timeDiff = appointmentDate.getTime() - now.getTime();
+    const hoursUntilAppointment = timeDiff / (1000 * 60 * 60);
+    const minutesUntilAppointment = timeDiff / (1000 * 60);
+    
+    // Get customer name for better message
+    let customerName = 'לקוח';
+    try {
+      const customerDoc = await getDoc(doc(db, 'users', appointmentData.userId));
+      if (customerDoc.exists()) {
+        customerName = customerDoc.data().displayName || 'לקוח';
+      }
+    } catch (e) {
+      console.log('Could not fetch customer name');
+    }
+    
+    // Determine message based on reminder type
+    let title = 'תזכורת לתור! ⏰';
+    let message = '';
+    
+    if (reminderType === '1h') {
+      message = `תור של ${customerName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+    } else if (reminderType === '15m') {
+      message = `תור של ${customerName} בעוד 10 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+    } else if (reminderType === 'whenStarting') {
+      message = `תור של ${customerName} מתחיל עכשיו!`;
+    }
     
     await sendNotificationToAdmin(
-      'תזכורת לתור! ⏰',
-      `תור מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`,
-      { appointmentId: appointmentId }
+      title,
+      message,
+      { appointmentId: appointmentId, reminderType: reminderType }
     );
     
     return true;

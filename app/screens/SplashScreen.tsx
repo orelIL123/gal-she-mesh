@@ -5,22 +5,14 @@ import { Animated, Image, StyleSheet, View } from 'react-native';
 export default function SplashScreen() {
   const navigation = useNavigation();
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const scaleAnim = React.useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
-    // Start fade in animation
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    // Start fade in animation only (no scale effect)
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 1000,
+      useNativeDriver: true,
+    }).start();
 
     // Navigate after 2 seconds
     const timer = setTimeout(() => {
@@ -37,7 +29,6 @@ export default function SplashScreen() {
           styles.imageContainer,
           {
             opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }],
           },
         ]}
       >

@@ -8,22 +8,14 @@ const { width, height } = Dimensions.get('window');
 export default function SplashScreen() {
   const router = useRouter();
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const scaleAnim = React.useRef(new Animated.Value(0.9)).current;
 
   useEffect(() => {
-    // Start with immediate fade in for smooth transition
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    // Start with fade in only (no scale effect)
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 800,
+      useNativeDriver: true,
+    }).start();
 
     // Check auth state using the new AuthManager
     let authStateChecked = false;
@@ -103,7 +95,6 @@ export default function SplashScreen() {
           styles.imageContainer,
           {
             opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }],
           },
         ]}
       >

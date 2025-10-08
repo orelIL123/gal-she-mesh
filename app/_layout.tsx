@@ -10,6 +10,7 @@ import { I18nextProvider } from 'react-i18next';
 import { Alert } from 'react-native';
 import 'react-native-reanimated';
 import '../app/globals.css';
+import { processScheduledReminders } from '../services/firebase';
 import AppAuthGate from './components/AppAuthGate';
 import i18n from './i18n';
 
@@ -65,6 +66,27 @@ export default function RootLayout() {
     }
 
     checkForUpdates();
+  }, []);
+
+  // Process scheduled reminders every 5 minutes
+  useEffect(() => {
+    const processReminders = async () => {
+      try {
+        console.log('🕐 Processing scheduled reminders...');
+        await processScheduledReminders();
+        console.log('✅ Reminders processed successfully');
+      } catch (error) {
+        console.error('❌ Error processing reminders:', error);
+      }
+    };
+
+    // Process reminders immediately when app starts
+    processReminders();
+
+    // Process reminders every 5 minutes
+    const interval = setInterval(processReminders, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
   }, []);
 
   if (!loaded) {
