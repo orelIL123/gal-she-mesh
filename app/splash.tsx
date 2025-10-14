@@ -7,15 +7,11 @@ const { width, height } = Dimensions.get('window');
 
 export default function SplashScreen() {
   const router = useRouter();
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const fadeAnim = React.useRef(new Animated.Value(1)).current; // Start at 1 (visible)
 
   useEffect(() => {
-    // Start with fade in only (no scale effect)
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 800,
-      useNativeDriver: true,
-    }).start();
+    // Already visible from the start - no fade in animation needed
+    // This eliminates the "small square" flicker
 
     // Check auth state using the new AuthManager
     let authStateChecked = false;

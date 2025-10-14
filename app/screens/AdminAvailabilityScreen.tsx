@@ -5,7 +5,6 @@ import {
   doc,
   getDocs,
   getFirestore,
-  onSnapshot,
   query,
   setDoc,
   where
@@ -83,9 +82,9 @@ const generateNext14Days = () => {
   return days;
 };
 
-// Simple time slots from 08:00 to 24:00 in 25-minute increments
+// Simple time slots from 07:00 to 24:00 in 25-minute increments
 const getTimeSlots = () => {
-  return generateTimeSlots(8, 24); // 8:00 → 24:00 (exclusive) = 08:00, 08:25, 08:50, 09:00, ... 23:35
+  return generateTimeSlots(7, 24); // 7:00 → 24:00 (exclusive) = 07:00, 07:25, 07:50, 08:00, ... 23:35
 };
 
 // Helper: for TODAY, prevent enabling past slots
@@ -147,56 +146,84 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
     try {
       console.log('🔍 Loading availability for barber:', barberId);
 
-      // Load availability from existing collection but use date-specific approach
-      const q = query(collection(db, 'availability'), where('barberId', '==', barberId));
-      const snap = await getDocs(q);
+      // Load DAILY availability first (has priority)
+      const dailyQuery = query(collection(db, 'dailyAvailability'), where('barberId', '==', barberId));
+      const dailySnap = await getDocs(dailyQuery);
 
-      console.log('📊 Found availability documents:', snap.docs.length);
+      console.log('📊 Found daily availability documents:', dailySnap.docs.length);
 
-      // Use weekly availability and apply to 14-day format
-      const weeklyAvailability: {[key: number]: string[]} = {};
-      snap.docs.forEach(doc => {
+      // Store date-specific availability (including explicit unavailable days)
+      const dateSpecificAvailability: {[date: string]: string[] | null} = {};
+      dailySnap.docs.forEach(doc => {
         const data = doc.data();
-        console.log('📄 Availability doc:', doc.id, data);
-        if (data.isAvailable) {
-          let slots = [];
+        console.log('📄 Daily availability doc:', doc.id, data);
+        console.log('🔍 DEBUG: date =', data.date, ', isAvailable =', data.isAvailable, '(type:', typeof data.isAvailable, '), dayOfWeek =', data.dayOfWeek);
+        
+        if (data.date) {
+          if (data.isAvailable === false) {
+            // Explicitly marked as unavailable - override weekly availability
+            dateSpecificAvailability[data.date] = null;
+            console.log('🚫 Date explicitly unavailable:', data.date, '(dayOfWeek:', data.dayOfWeek, ')');
+          } else if (data.isAvailable) {
+            let slots = [];
 
-          // Use exact availableSlots if available (new format)
-          if (data.availableSlots && Array.isArray(data.availableSlots)) {
-            slots = data.availableSlots;
-            console.log('✅ Using exact slots:', slots);
+            // Use exact availableSlots if available
+            if (data.availableSlots && Array.isArray(data.availableSlots)) {
+              slots = data.availableSlots;
+              console.log('✅ Using exact slots for date', data.date, ':', slots);
+            } else if (data.startTime && data.endTime) {
+              // Fallback to generating from startTime/endTime
+              const startTime = data.startTime;
+              const endTime = data.endTime;
+              const [startHour] = startTime.split(':').map(Number);
+              const [endHour] = endTime.split(':').map(Number);
+              slots = generateTimeSlots(startHour, endHour);
+              console.log('⚠️ Generated slots from time range for date', data.date, ':', slots);
+            }
 
-            // Use slots exactly as they are - no filtering
-          } else if (data.startTime && data.endTime) {
-            // Fallback to generating from startTime/endTime (old format)
-            const startTime = data.startTime;
-            const endTime = data.endTime;
-            const [startHour] = startTime.split(':').map(Number);
-            const [endHour] = endTime.split(':').map(Number);
-            slots = generateTimeSlots(startHour, endHour);
-            console.log('⚠️ Generated slots from time range:', slots);
-          }
-
-          if (slots.length > 0) {
-            weeklyAvailability[data.dayOfWeek] = slots;
+            if (slots.length > 0) {
+              dateSpecificAvailability[data.date] = slots;
+            }
           }
         }
       });
 
-      console.log('📅 Weekly availability loaded:', weeklyAvailability);
+      console.log('📅 Date-specific availability loaded:', dateSpecificAvailability);
 
-      // Convert weekly pattern to 14-day format
+      // Convert to 14-day format, prioritizing date-specific availability
       const next14Days = generateNext14Days();
       const updatedDays = next14Days.map(day => {
-        const dayOfWeek = getDayOfWeekFromYMD(day.date);
-        const hasAvailability = weeklyAvailability[dayOfWeek];
+        // Check if there's date-specific availability first
+        if (day.date in dateSpecificAvailability) {
+          const dateSlots = dateSpecificAvailability[day.date];
+          
+          if (dateSlots === null) {
+            // Explicitly unavailable
+            console.log(`🚫 Day ${day.date}: Explicitly UNAVAILABLE (overrides weekly)`);
+            return {
+              ...day,
+              isAvailable: false,
+              timeSlots: []
+            };
+          } else if (dateSlots && dateSlots.length > 0) {
+            // Has specific slots
+            console.log(`📅 Day ${day.date}: Using DATE-SPECIFIC availability (${dateSlots.length} slots)`);
+            return {
+              ...day,
+              isAvailable: true,
+              timeSlots: dateSlots
+            };
+          }
+        }
 
-        console.log(`📅 Day ${day.date} (${dayOfWeek}): ${hasAvailability ? hasAvailability.length : 0} slots`);
+        // No date-specific data - day is available but has no slots yet
+        // (Admin can add slots by clicking the day)
+        console.log(`📅 Day ${day.date}: No dailyAvailability - defaulting to UNAVAILABLE (admin can enable)`);
 
         return {
           ...day,
-          isAvailable: !!hasAvailability,
-          timeSlots: hasAvailability || []
+          isAvailable: false, // Default to unavailable until admin sets it
+          timeSlots: []
         };
       });
 
@@ -245,72 +272,123 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
     }
   };
 
+  // ------- Convert weekly availability to daily (one-time migration) -------
+  const convertWeeklyToDailyAvailability = async (barberId: string) => {
+    try {
+      console.log('🔄 Ensuring dailyAvailability exists for next 14 days...');
+
+      // Check which dates already have dailyAvailability
+      const dailyQuery = query(collection(db, 'dailyAvailability'), where('barberId', '==', barberId));
+      const dailySnap = await getDocs(dailyQuery);
+
+      const existingDates = new Set<string>();
+      dailySnap.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.date) {
+          existingDates.add(data.date);
+        }
+      });
+
+      console.log('📅 Existing daily availability dates:', Array.from(existingDates));
+
+      // Load weekly availability (if exists) to use as template
+      const weeklyQuery = query(collection(db, 'availability'), where('barberId', '==', barberId));
+      const weeklySnap = await getDocs(weeklyQuery);
+
+      const weeklyAvailability: {[key: number]: string[]} = {};
+      weeklySnap.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.isAvailable && data.availableSlots && Array.isArray(data.availableSlots)) {
+          weeklyAvailability[data.dayOfWeek] = data.availableSlots;
+        }
+      });
+
+      console.log('📅 Weekly availability template:', weeklyAvailability);
+
+      // Create dailyAvailability for next 14 days (if not exists)
+      const next14Days = generateNext14Days();
+      const savePromises: Promise<any>[] = [];
+
+      // Find the LAST existing date to use as template for new dates
+      let templateSlotsByDay: {[key: number]: string[]} = {};
+      
+      // If we have existing dailyAvailability, use it as template (instead of weekly)
+      if (existingDates.size > 0) {
+        console.log('📋 Using existing dailyAvailability as template for new dates');
+        dailySnap.docs.forEach(doc => {
+          const data = doc.data();
+          if (data.isAvailable === true && data.availableSlots && Array.isArray(data.availableSlots)) {
+            // Use the last available pattern for this dayOfWeek
+            templateSlotsByDay[data.dayOfWeek] = data.availableSlots;
+          }
+        });
+        console.log('📋 Template from existing daily:', templateSlotsByDay);
+      } else if (Object.keys(weeklyAvailability).length > 0) {
+        // Fallback to weekly if no daily exists yet
+        console.log('📋 Using weekly availability as template (first-time setup)');
+        templateSlotsByDay = weeklyAvailability;
+      }
+
+      next14Days.forEach(day => {
+        // Skip if this date already has dailyAvailability
+        if (existingDates.has(day.date)) {
+          console.log(`✅ ${day.date} already has dailyAvailability, skipping`);
+          return;
+        }
+
+        const dayOfWeek = getDayOfWeekFromYMD(day.date);
+        const slots = templateSlotsByDay[dayOfWeek];
+
+        if (slots && slots.length > 0) {
+          // Use template pattern as default
+          const sortedSlots = [...slots].sort((a, b) => toMin(a) - toMin(b));
+          const startTime = sortedSlots[0];
+          const finalEndTime = addMinutesSafe(sortedSlots[sortedSlots.length - 1], SLOT_SIZE_MINUTES);
+
+          const docData = {
+            barberId,
+            date: day.date,
+            dayOfWeek,
+            startTime,
+            endTime: finalEndTime,
+            availableSlots: sortedSlots,
+            isAvailable: true,
+            createdAt: new Date()
+          };
+
+          console.log(`💾 Creating daily availability for ${day.date} from template (${slots.length} slots)`);
+          savePromises.push(setDoc(doc(collection(db, 'dailyAvailability')), docData));
+        } else {
+          // No template pattern - leave as unavailable (admin can enable later)
+          console.log(`⚪ ${day.date}: No template, leaving unavailable`);
+          // NOTE: We don't create explicit unavailable records to reduce database writes
+          // The UI will treat missing dates as unavailable
+        }
+      });
+
+      await Promise.all(savePromises);
+      console.log(`✅ Converted ${savePromises.length} weekly patterns to daily availability`);
+    } catch (error) {
+      console.error('❌ Error converting weekly to daily:', error);
+    }
+  };
+
   const openEditModal = async (barber: Barber) => {
     setSelectedBarber(barber);
     await Promise.all([
       loadBarberAvailability(barber.id),
       loadBookedSlots(barber.id)
     ]);
+    
+    // No conversion. Admin controls exact dates only. Just load current state.
+    await loadBarberAvailability(barber.id);
+    
     setModalVisible(true);
   };
 
-  // ------- Real-time listener for availability changes -------
-  useEffect(() => {
-    if (selectedBarber && modalVisible) {
-      console.log('🔔 Setting up real-time listener for barber:', selectedBarber.id);
-
-      const q = query(collection(db, 'availability'), where('barberId', '==', selectedBarber.id));
-
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        console.log('📡 Real-time update received:', snapshot.docs.length, 'docs');
-
-        const weeklyAvailability: {[key: number]: string[]} = {};
-        snapshot.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.isAvailable) {
-            let slots = [];
-
-            // Prefer exact slots if available (new format)
-            if (data.availableSlots && Array.isArray(data.availableSlots)) {
-              slots = data.availableSlots;
-
-              // Use slots exactly as they are - no filtering
-            } else {
-              // Fallback to generating from startTime/endTime (old format)
-              const startTime = data.startTime;
-              const endTime = data.endTime;
-              const [startHour] = startTime.split(':').map(Number);
-              const [endHour] = endTime.split(':').map(Number);
-              slots = generateTimeSlots(startHour, endHour);
-            }
-
-            weeklyAvailability[data.dayOfWeek] = slots;
-          }
-        });
-
-        // Convert weekly pattern to 14-day format
-        const next14Days = generateNext14Days();
-        const updatedDays = next14Days.map(day => {
-          const dayOfWeek = getDayOfWeekFromYMD(day.date);
-          const hasAvailability = weeklyAvailability[dayOfWeek];
-
-          return {
-            ...day,
-            isAvailable: !!hasAvailability,
-            timeSlots: hasAvailability || []
-          };
-        });
-
-        console.log('🔄 Updating availability from real-time listener');
-        setAvailability(updatedDays);
-      });
-
-      return () => {
-        console.log('🔕 Cleaning up real-time listener');
-        unsubscribe();
-      };
-    }
-  }, [selectedBarber, modalVisible]);
+  // Real-time listener REMOVED to prevent state conflicts
+  // Admin changes are reflected immediately in local state
+  // Reload is only triggered by explicit user actions (save button)
 
   // ------- Day toggle (enable/disable entire date) -------
   const toggleDayAvailability = async (date: string) => {
@@ -318,11 +396,11 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
     if (!dayToToggle || !selectedBarber) return;
 
     const newAvailability = !dayToToggle.isAvailable;
-    
-    // Update local state immediately
-    setAvailability(prev => prev.map(day => 
-      day.date === date 
-        ? { ...day, isAvailable: newAvailability, timeSlots: [] }
+
+    // Update local state immediately (optimistic update)
+    setAvailability(prev => prev.map(day =>
+      day.date === date
+        ? { ...day, isAvailable: newAvailability, timeSlots: newAvailability ? generateTimeSlots(9, 17) : [] }
         : day
     ));
 
@@ -333,13 +411,14 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
       if (newAvailability) {
         // If making available, set default 9:00-17:00 schedule with 25-minute slots
         const defaultSlots = generateTimeSlots(9, 17);
-        console.log('✅ Creating default slots for date:', date, defaultSlots);
+        console.log('✅ Creating default slots for SPECIFIC DATE ONLY:', date, defaultSlots);
 
         const dayOfWeek = getDayOfWeekFromYMD(date);
 
         const docData = {
           barberId,
-          dayOfWeek, // Use dayOfWeek for now
+          date, // SPECIFIC DATE - only this date!
+          dayOfWeek, // Keep for reference
           startTime: '09:00',
           endTime: '17:00',
           availableSlots: defaultSlots, // Save exact slots
@@ -347,44 +426,64 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
           createdAt: new Date()
         };
 
-        // Delete existing record for this dayOfWeek first
-        const existingQuery = query(collection(db, 'availability'),
+        // Delete existing record for this SPECIFIC DATE first
+        const existingDailyQuery = query(collection(db, 'dailyAvailability'),
           where('barberId', '==', barberId),
-          where('dayOfWeek', '==', dayOfWeek));
-        const existingDocs = await getDocs(existingQuery);
-        await Promise.all(existingDocs.docs.map(doc => deleteDoc(doc.ref)));
-        console.log('🗑️ Deleted existing records for dayOfWeek:', dayOfWeek);
+          where('date', '==', date));
+        const existingDailyDocs = await getDocs(existingDailyQuery);
+        await Promise.all(existingDailyDocs.docs.map(doc => deleteDoc(doc.ref)));
+        console.log('🗑️ Deleted existing records for SPECIFIC DATE:', date);
 
-        // Add new record
-        await setDoc(doc(collection(db, 'availability')), docData);
-        console.log('💾 Saved new availability record:', docData);
-
-        // Update local state with default slots
-        setAvailability(prev => prev.map(day =>
-          day.date === date
-            ? { ...day, isAvailable: true, timeSlots: defaultSlots }
-            : day
-        ));
+        // Add new record to dailyAvailability ONLY
+        await setDoc(doc(collection(db, 'dailyAvailability')), docData);
+        console.log('💾 Saved availability for SPECIFIC DATE ONLY (no weekly update):', docData);
 
         showToast('יום הופעל עם שעות ברירת מחדל (09:00-17:00)', 'success');
       } else {
-        // If making unavailable, delete the record for this dayOfWeek
+        // If making unavailable, CREATE a record with isAvailable: false
+        // This explicitly marks the day as unavailable and overrides weekly availability
+        console.log('🚫 Disabling SPECIFIC DATE:', date);
+
         const dayOfWeek = getDayOfWeekFromYMD(date);
-        const existingQuery = query(collection(db, 'availability'),
+        console.log('🔍 DEBUG: Calculated dayOfWeek for', date, '=', dayOfWeek, '(type:', typeof dayOfWeek, ')');
+
+        const docData = {
+          barberId,
+          date, // SPECIFIC DATE
+          dayOfWeek: dayOfWeek, // Explicitly set (handles 0 for Sunday)
+          isAvailable: false, // ← KEY: Explicitly mark as unavailable
+          availableSlots: [],
+          createdAt: new Date()
+        };
+
+        console.log('🔍 DEBUG: Document to save:', JSON.stringify(docData, null, 2));
+
+        // Delete existing records first
+        const existingDailyQuery = query(collection(db, 'dailyAvailability'),
           where('barberId', '==', barberId),
-          where('dayOfWeek', '==', dayOfWeek));
-        const existingDocs = await getDocs(existingQuery);
-        await Promise.all(existingDocs.docs.map(doc => deleteDoc(doc.ref)));
+          where('date', '==', date));
+        const existingDailyDocs = await getDocs(existingDailyQuery);
+        console.log('🔍 DEBUG: Found', existingDailyDocs.docs.length, 'existing records to delete');
+        await Promise.all(existingDailyDocs.docs.map(doc => deleteDoc(doc.ref)));
+
+        // Add explicit unavailable record
+        await setDoc(doc(collection(db, 'dailyAvailability')), docData);
+        console.log('🚫 Created explicit unavailable record for:', date, 'with dayOfWeek:', dayOfWeek);
 
         showToast('יום בוטל בהצלחה', 'success');
       }
+
+      // CRITICAL FIX: Reload from Firebase after saving to ensure consistency
+      console.log('🔄 Reloading availability after save...');
+      await loadBarberAvailability(barberId);
+      console.log('✅ Availability reloaded from Firebase');
     } catch (error) {
       console.error('Error updating day availability:', error);
       showToast('שגיאה בעדכון זמינות', 'error');
-      
+
       // Revert local state on error
-      setAvailability(prev => prev.map(day => 
-        day.date === date 
+      setAvailability(prev => prev.map(day =>
+        day.date === date
           ? { ...day, isAvailable: !newAvailability, timeSlots: dayToToggle.timeSlots }
           : day
       ));
@@ -469,9 +568,7 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
       }
 
       console.log('📊 Full updatedAvailability:', updatedAvailability);
-      console.log('🗓️ ADMIN SAVING - TODAY\'S DATE:', new Date().toLocaleDateString());
-      const todayDayOfWeek = new Date().getDay();
-      console.log('🗓️ ADMIN SAVING - TODAY\'S DAY OF WEEK:', todayDayOfWeek);
+      console.log('🗓️ ADMIN SAVING - SPECIFIC DATE:', date);
 
       // Get updated slots for this specific date
       const updatedDay = updatedAvailability.find(day => day.date === date);
@@ -482,21 +579,18 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
 
       const currentSlots = updatedDay.timeSlots || [];
       const dayOfWeek = getDayOfWeekFromYMD(date);
-      console.log('🔍 ADMIN DAYOFWEEK CALC: date=' + date + ', dayOfWeek=' + dayOfWeek);
+      console.log('🔍 ADMIN DATE-SPECIFIC SAVE: date=' + date + ', dayOfWeek=' + dayOfWeek);
 
-      console.log('📅 Updated slots for', date, ':', currentSlots);
-      if (dayOfWeek === todayDayOfWeek) {
-        console.log('🎯 ADMIN SAVING TODAY: Will save these slots for today:', currentSlots);
-      }
+      console.log('📅 Updated slots for SPECIFIC date', date, ':', currentSlots);
 
       if (currentSlots.length === 0) {
-        // No slots selected, delete the availability record for this dayOfWeek
-        const existingQuery = query(collection(db, 'availability'),
+        // No slots selected, delete ONLY the availability record for this SPECIFIC DATE
+        const existingQuery = query(collection(db, 'dailyAvailability'),
           where('barberId', '==', barberId),
-          where('dayOfWeek', '==', dayOfWeek));
+          where('date', '==', date));
         const existingDocs = await getDocs(existingQuery);
         await Promise.all(existingDocs.docs.map(doc => deleteDoc(doc.ref)));
-        console.log('🗑️ Deleted availability for dayOfWeek:', dayOfWeek);
+        console.log('🗑️ Deleted availability for SPECIFIC DATE ONLY (weekly unchanged):', date);
 
         // Update local state to mark day as unavailable
         setAvailability(prev => prev.map(day =>
@@ -505,7 +599,7 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
             : day
         ));
       } else {
-        // Save the exact slots array for this specific date
+        // Save the exact slots array for this SPECIFIC DATE
         const sortedSlots = [...currentSlots].sort((a, b) => toMin(a) - toMin(b));
 
         const startTime = sortedSlots[0];
@@ -520,7 +614,8 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
 
         const docData = {
           barberId,
-          dayOfWeek, // Use dayOfWeek for now
+          date, // SPECIFIC DATE - this is the key fix!
+          dayOfWeek, // Keep for reference
           startTime,
           endTime: finalEndTime,
           availableSlots: sortedSlots, // Save the exact slots - MUST BE ARRAY
@@ -528,26 +623,21 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
           createdAt: new Date()
         };
 
-        console.log('💾 Saving weekly availability with validation:', docData);
+        console.log('💾 Saving DATE-SPECIFIC availability:', docData);
         console.log('🔍 availableSlots type:', typeof docData.availableSlots, 'length:', docData.availableSlots.length);
-        console.log('🎯 EXACT ADMIN SAVE: barberId=' + barberId + ', dayOfWeek=' + dayOfWeek + ', date=' + date);
+        console.log('🎯 EXACT ADMIN SAVE: barberId=' + barberId + ', DATE=' + date + ', dayOfWeek=' + dayOfWeek);
         console.log('🎯 EXACT ADMIN SAVE: availableSlots=' + JSON.stringify(docData.availableSlots));
-        console.log('🎯 CUSTOMER SHOULD SEE: barberId=' + barberId + ', dayOfWeek=' + dayOfWeek + ', exactSlots=' + JSON.stringify(docData.availableSlots));
-        if (dayOfWeek === todayDayOfWeek) {
-          console.log('🎯 ADMIN SAVED TODAY: Final availableSlots for today:', docData.availableSlots);
-          console.log('🎯 ADMIN SAVED TODAY: Customer should see exactly these slots:', docData.availableSlots);
-        }
 
-        // Delete existing record for this dayOfWeek first
-        const existingQuery = query(collection(db, 'availability'),
+        // Delete existing record for this SPECIFIC DATE first
+        const existingDailyQuery = query(collection(db, 'dailyAvailability'),
           where('barberId', '==', barberId),
-          where('dayOfWeek', '==', dayOfWeek));
-        const existingDocs = await getDocs(existingQuery);
-        await Promise.all(existingDocs.docs.map(doc => deleteDoc(doc.ref)));
+          where('date', '==', date));
+        const existingDailyDocs = await getDocs(existingDailyQuery);
+        await Promise.all(existingDailyDocs.docs.map(doc => deleteDoc(doc.ref)));
 
-        // Add updated record
-        await setDoc(doc(collection(db, 'availability')), docData);
-        console.log('✅ Saved availability for dayOfWeek:', dayOfWeek);
+        // Add updated record to dailyAvailability ONLY
+        await setDoc(doc(collection(db, 'dailyAvailability')), docData);
+        console.log('✅ Saved availability for SPECIFIC DATE ONLY (no weekly update):', date);
       }
     } catch (error) {
       console.error('Error updating time slot:', error);
@@ -564,14 +654,14 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
 
       const barberId = selectedBarber?.id || '';
 
-      // Delete existing weekly availability records for this barber
-      console.log('🗑️ Deleting existing weekly availability records...');
+      // CRITICAL: Delete ALL existing weekly availability records (we don't use them anymore!)
+      console.log('🗑️ Deleting ALL weekly availability records (moving to daily-only model)...');
       const existingQuery = query(collection(db, 'availability'), where('barberId', '==', barberId));
       const existingDocs = await getDocs(existingQuery);
       console.log('🗑️ Found', existingDocs.docs.length, 'existing weekly records to delete');
       await Promise.all(existingDocs.docs.map(doc => deleteDoc(doc.ref)));
 
-      // Delete existing daily-specific availability records for this barber
+      // Delete existing daily-specific availability records for this barber (will recreate)
       console.log('🗑️ Deleting existing daily availability records...');
       const existingDailyQuery = query(collection(db, 'dailyAvailability'), where('barberId', '==', barberId));
       const existingDailyDocs = await getDocs(existingDailyQuery);
@@ -616,53 +706,11 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
         }
       });
 
-      // Also save weekly pattern as fallback (for days beyond the 14-day window)
-      console.log('💾 Saving weekly availability pattern as fallback...');
-      const weeklyPattern: {[key: number]: string[]} = {};
-
-      availability.forEach(day => {
-        const dayOfWeek = getDayOfWeekFromYMD(day.date);
-        if (day.isAvailable && day.timeSlots && day.timeSlots.length > 0) {
-          if (!weeklyPattern[dayOfWeek] || day.timeSlots.length > weeklyPattern[dayOfWeek].length) {
-            weeklyPattern[dayOfWeek] = [...day.timeSlots].sort((a, b) => toMin(a) - toMin(b));
-          }
-        }
-      });
-
-      console.log('📊 Weekly pattern to save:', weeklyPattern);
-
-      Object.keys(weeklyPattern).forEach(dayOfWeekStr => {
-        const dayOfWeek = parseInt(dayOfWeekStr);
-        const slots = weeklyPattern[dayOfWeek];
-
-        if (slots && slots.length > 0) {
-          const sortedSlots = [...slots].sort((a, b) => toMin(a) - toMin(b));
-
-          if (!Array.isArray(sortedSlots) || sortedSlots.length === 0) {
-            console.error(`❌ CRITICAL ERROR: Invalid slots for dayOfWeek ${dayOfWeek}:`, sortedSlots);
-            return;
-          }
-
-          const startTime = sortedSlots[0];
-          const finalEndTime = addMinutesSafe(sortedSlots[sortedSlots.length - 1], SLOT_SIZE_MINUTES);
-
-          const docData = {
-            barberId,
-            dayOfWeek,
-            startTime,
-            endTime: finalEndTime,
-            availableSlots: sortedSlots,
-            isAvailable: true,
-            createdAt: new Date()
-          };
-
-          console.log(`💾 Saving weekly availability for dayOfWeek ${dayOfWeek}:`, docData);
-          savePromises.push(setDoc(doc(collection(db, 'availability')), docData));
-        }
-      });
-
+      // NO MORE WEEKLY PATTERN SAVING!
+      // Each day is completely independent now
+      
       await Promise.all(savePromises);
-      console.log('✅ All daily and weekly availability records saved successfully');
+      console.log('✅ All daily availability records saved successfully (NO weekly pattern)');
 
       // Update barber's available status in barbers collection
       const hasAnyAvailability = availability.some(d => d.isAvailable && (d.timeSlots?.length || 0) > 0);

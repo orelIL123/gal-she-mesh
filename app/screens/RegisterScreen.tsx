@@ -58,7 +58,9 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       const result = await sendSMSVerification(phone);
+      console.log('📱 Received verificationId:', result.verificationId);
       setVerificationId(result.verificationId);
+      console.log('📱 Set verificationId in state:', result.verificationId);
       setStep('verification');
       Alert.alert('הצלחה', 'קוד אימות נשלח לטלפון שלך');
     } catch (error: any) {
@@ -74,6 +76,14 @@ export default function RegisterScreen() {
       Alert.alert('שגיאה', 'אנא הזן קוד אימות');
       return;
     }
+
+    console.log('🔐 Attempting verification with:', {
+      verificationId,
+      verificationCode,
+      verificationCodeType: typeof verificationCode,
+      phone,
+      fullName
+    });
 
     setLoading(true);
     try {
@@ -98,7 +108,25 @@ export default function RegisterScreen() {
       ]);
     } catch (error: any) {
       console.error('Registration error:', error);
-      Alert.alert('שגיאה', 'קוד האימות שגוי או שגיאה בהרשמה');
+      console.error('Full error details:', JSON.stringify(error, null, 2));
+
+      let errorMessage = 'שגיאה בהרשמה';
+
+      if (error.message) {
+        if (error.message.includes('Invalid verification code')) {
+          errorMessage = 'קוד האימות שגוי. אנא נסה שוב.';
+        } else if (error.message.includes('Verification ID not found')) {
+          errorMessage = 'פג תוקף הקוד. אנא שלח קוד חדש.';
+        } else if (error.message.includes('Verification code expired')) {
+          errorMessage = 'פג תוקף הקוד. אנא שלח קוד חדש.';
+        } else if (error.message.includes('email-already-in-use')) {
+          errorMessage = 'כבר קיים חשבון עם מספר הטלפון הזה.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+
+      Alert.alert('שגיאה', errorMessage);
     } finally {
       setLoading(false);
     }

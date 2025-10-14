@@ -16,7 +16,10 @@
       "Bash(npm uninstall:*)",
       "Bash(git push:*)",
       "Bash(npx expo:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(cat:*)",
+      "Bash(eas update:*)",
+      "Bash(npx ts-node:*)"
     ],
     "deny": []
   }

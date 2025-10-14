@@ -16,7 +16,6 @@ import {
   addDoc,
   collection,
   deleteDoc,
-  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -36,6 +35,7 @@ import { isValidDuration, SLOT_SIZE_MINUTES } from '../app/constants/scheduling'
 import { auth, db, storage } from '../config/firebase';
 import { AuthStorageService } from './authStorage';
 import { CacheUtils } from './cache';
+import { cancelAppointmentReminders as cancelLocalAppointmentReminders, cleanupNotificationsOnLogout, scheduleAppointmentReminders as scheduleLocalAppointmentReminders } from './notifications';
 // Removed ImageOptimizer import - using simple upload only
 
 // Export db for use in other components
@@ -295,35 +295,24 @@ export const registerUser = async (email: string, password: string, displayName:
 export const logoutUser = async () => {
   try {
     const user = auth.currentUser;
-    
-    // Remove push token from user profile before logout
-    if (user) {
-      console.log('🔄 Removing push token for user:', user.uid);
-      try {
-        // Use deleteField to completely remove the pushToken field
-        const docRef = doc(db, 'users', user.uid);
-        await updateDoc(docRef, {
-          pushToken: deleteField()
-        });
-        console.log('✅ Push token completely removed from user profile');
-      } catch (tokenError) {
-        console.error('⚠️ Error removing push token (continuing with logout):', tokenError);
-        // Continue with logout even if token removal fails
-      }
+
+    if (!user) {
+      console.log('⚠️ No user to logout');
+      return;
     }
-    
-    // Clear all local notifications from device
-    try {
-      await Notifications.dismissAllNotificationsAsync();
-      console.log('✅ All local notifications cleared');
-    } catch (notifError) {
-      console.error('⚠️ Error clearing notifications:', notifError);
-      // Continue with logout even if notification clearing fails
-    }
-    
+
+    console.log('🚪 Starting logout process for user:', user.uid);
+
+    // Use the comprehensive notification cleanup function
+    // This handles: token revocation, canceling scheduled notifications, dismissing presented notifications
+    await cleanupNotificationsOnLogout(user.uid);
+
     // Clear stored auth data - מסונן לפי prefix
-    await AuthStorageService.clearAuthData(); // מסונן לפי prefix
-    
+    await AuthStorageService.clearAuthData();
+
+    // Clear cache
+    await CacheUtils.invalidateAuthCaches();
+
     // Sign out from Firebase
     await signOut(auth);
     console.log('✅ User logged out successfully');
@@ -413,6 +402,9 @@ export const sendSMSVerification = async (phoneNumber: string) => {
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
     const verificationId = `sms4free_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+    console.log('🔐 Generated verification code:', verificationCode);
+    console.log('🆔 Generated verification ID:', verificationId);
+
     // Use SMS4Free service
     const { MessagingService } = await import('../app/services/messaging/service');
     const { messagingConfig } = await import('../app/config/messaging');
@@ -432,7 +424,7 @@ export const sendSMSVerification = async (phoneNumber: string) => {
       // Store verification code in AsyncStorage
       const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       const verificationData = {
-        code: verificationCode,
+        code: String(verificationCode), // Ensure code is stored as string
         phone: formattedPhone,
         timestamp: Date.now()
       };
@@ -440,6 +432,7 @@ export const sendSMSVerification = async (phoneNumber: string) => {
       await AsyncStorage.setItem(`verification_${verificationId}`, JSON.stringify(verificationData));
       console.log('💾 Verification data stored for ID:', verificationId);
       console.log('💾 Stored data:', verificationData);
+      console.log('💾 Code type:', typeof verificationData.code, '| Value:', verificationData.code);
 
       return { verificationId };
     } else {
@@ -454,6 +447,12 @@ export const sendSMSVerification = async (phoneNumber: string) => {
 
 export const verifySMSCode = async (verificationId: string, verificationCode: string) => {
   try {
+    console.log('🔐 verifySMSCode called with:', { verificationId, verificationCode, codeType: typeof verificationCode });
+
+    // Normalize code (trim, digits-only) to be robust against pasted spaces/dashes
+    const normalizedCode = String(verificationCode || '').trim().replace(/\D/g, '');
+    console.log('🔐 Normalized code:', { original: verificationCode, normalized: normalizedCode, normalizedType: typeof normalizedCode });
+
     // Handle SMS4Free verification
     if (verificationId.startsWith('sms4free_')) {
       console.log('🔧 Verifying SMS4Free code for ID:', verificationId);
@@ -481,9 +480,23 @@ export const verifySMSCode = async (verificationId: string, verificationCode: st
         phone: verificationData.phone
       });
 
-      // Check if verification code matches
-      if (verificationData.code !== verificationCode) {
-        console.error('❌ Code mismatch:', { stored: verificationData.code, entered: verificationCode });
+      // Check if verification code matches (normalize stored too just in case)
+      const storedCode = String(verificationData.code || '').trim().replace(/\D/g, '');
+      console.log('🔍 Code comparison:', {
+        storedCode: storedCode,
+        normalizedCode: normalizedCode,
+        storedRaw: verificationData.code,
+        enteredRaw: verificationCode,
+        match: storedCode === normalizedCode
+      });
+
+      if (storedCode !== normalizedCode) {
+        console.error('❌ Code mismatch:', {
+          stored: verificationData.code,
+          storedNormalized: storedCode,
+          entered: verificationCode,
+          enteredNormalized: normalizedCode
+        });
         throw new Error('Invalid verification code');
       }
 
@@ -739,10 +752,10 @@ export const findUserByPhoneNumber = async (phoneNumber: string): Promise<UserPr
 };
 
 // New function to check if phone user exists and has password
-export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exists: boolean; hasPassword: boolean; uid?: string }> => {
+export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exists: boolean; hasPassword: boolean; uid?: string; isAdmin?: boolean; email?: string }> => {
   try {
     console.log(`🔍 Checking if user exists for phone: ${phoneNumber}`);
-    
+
     // Generate all possible phone formats
     const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
     const possiblePhones = [
@@ -752,28 +765,30 @@ export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exist
       `0${cleanPhone.startsWith('972') ? cleanPhone.substring(3) : cleanPhone}`, // 0 format
       cleanPhone // Just numbers
     ];
-    
+
     console.log(`🔍 Trying phone formats:`, possiblePhones);
-    
+
     const usersRef = collection(db, 'users');
-    
+
     // Try each phone format
     for (const phoneFormat of possiblePhones) {
       try {
         console.log(`🔍 Searching for phone format: ${phoneFormat}`);
         const q = query(usersRef, where('phone', '==', phoneFormat));
         const querySnapshot = await getDocs(q);
-        
+
         if (!querySnapshot.empty) {
           const userDoc = querySnapshot.docs[0];
           const userData = userDoc.data();
-          
-          console.log(`✅ User found with phone format: ${phoneFormat}, hasPassword: ${userData.hasPassword || false}, UID: ${userDoc.id}`);
-          
+
+          console.log(`✅ User found with phone format: ${phoneFormat}, email: ${userData.email}, hasPassword: ${userData.hasPassword || false}, isAdmin: ${userData.isAdmin || false}, UID: ${userDoc.id}`);
+
           return {
             exists: true,
             hasPassword: userData.hasPassword || false,
-            uid: userDoc.id
+            uid: userDoc.id,
+            isAdmin: userData.isAdmin || false,
+            email: userData.email // Return the actual email stored in Firestore
           };
         }
       } catch (error) {
@@ -789,6 +804,8 @@ export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exist
       `${cleanPhone}@ronbarber.app`,
       `${cleanPhone}@sms.barbershop.local`, // New SMS format
       `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@sms.barbershop.local`,
+      `${cleanPhone}@phonesign.local`,
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@phonesign.local`,
       `${cleanPhone}@temp.turgi.com`, // Alternative format
       `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@temp.turgi.com`
     ];
@@ -804,13 +821,14 @@ export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exist
         if (!querySnapshot.empty) {
           const userDoc = querySnapshot.docs[0];
           const userData = userDoc.data();
-          
+
           console.log(`✅ User found with email format: ${emailFormat}, hasPassword: ${userData.hasPassword || false}, UID: ${userDoc.id}`);
-          
+
           return {
             exists: true,
             hasPassword: userData.hasPassword || false,
-            uid: userDoc.id
+            uid: userDoc.id,
+            email: userData.email // Return the stored email
           };
         }
       } catch (error) {
@@ -882,58 +900,102 @@ export const setPasswordForSMSUser = async (phoneNumber: string, password: strin
 // Simple function to login with phone + password
 export const loginWithPhoneAndPassword = async (phoneNumber: string, password: string) => {
   try {
-    console.log(`🔐 Attempting login with phone: ${phoneNumber}`);
-    
+    console.log(`🔐 ===== LOGIN ATTEMPT =====`);
+    console.log(`🔐 Phone number: ${phoneNumber}`);
+    console.log(`🔐 Password length: ${password.length}`);
+
     // First, check if user exists in database
     const userCheck = await checkPhoneUserExists(phoneNumber);
-    console.log(`📞 User check result:`, userCheck);
-    
+    console.log(`📞 User check result:`, JSON.stringify(userCheck, null, 2));
+
     if (!userCheck.exists) {
       console.log(`❌ User not found in database for phone: ${phoneNumber}`);
+      console.log(`❌ This means the user document does not exist in Firestore`);
       throw new Error('משתמש לא נמצא במערכת. אנא הירשם תחילה.');
     }
-    
+
+    console.log(`✅ User exists in Firestore!`);
+    console.log(`   - UID: ${userCheck.uid}`);
+    console.log(`   - Has password: ${userCheck.hasPassword}`);
+    console.log(`   - Is admin: ${userCheck.isAdmin}`);
+
     if (!userCheck.hasPassword) {
       console.log(`❌ User exists but has no password set for phone: ${phoneNumber}`);
-      throw new Error('לא הוגדרה סיסמה לחשבון זה. אנא הירשם מחדש או השתמש בהתחברות עם SMS.');
+      console.log(`❌ This means hasPassword is false in Firestore`);
+      throw new Error('לא הוגדרה סיסמה לחשבון זה. אנא הירשם מחדש.');
     }
-    
-    // Try different email formats based on how the user was registered
-    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
-    const possibleEmails = [
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@ronbarber.app`, // Most common format
-      `${cleanPhone}@ronbarber.app`,
-      `${cleanPhone}@sms.barbershop.local`, // New SMS format
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@sms.barbershop.local`,
-      `${cleanPhone}@temp.turgi.com`, // Alternative format
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@temp.turgi.com`
-    ];
-    
-    console.log(`🔍 Trying email formats for login:`, possibleEmails);
-    
-    // Try each possible email format
-    let lastError: any = null;
-    for (const email of possibleEmails) {
+
+    // CRITICAL FIX: Use the ACTUAL email stored in Firestore, not guessing!
+    if (userCheck.email) {
+      console.log(`🎯 Using stored email from Firestore: ${userCheck.email}`);
       try {
-        console.log(`🔐 Trying email format: ${email} with password length: ${password.length}`);
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        console.log(`✅ Login successful with email: ${email}`);
+        const userCredential = await signInWithEmailAndPassword(auth, userCheck.email, password);
+        console.log(`✅ Login successful with stored email: ${userCheck.email}`);
 
         // Save auth data for persistence
         await saveAuthDataAfterLogin(userCredential.user);
 
         return userCredential.user;
       } catch (error: any) {
+        console.error(`❌ Login failed with stored email ${userCheck.email}:`, error.code, error.message);
+
+        // Provide specific error messages
+        if (error.code === 'auth/wrong-password') {
+          throw new Error('הסיסמה שגויה. אנא נסה שוב.');
+        } else if (error.code === 'auth/user-not-found') {
+          throw new Error('משתמש לא נמצא ב-Firebase Auth. אנא פנה לתמיכה.');
+        } else if (error.code === 'auth/invalid-credential') {
+          throw new Error('פרטי הכניסה שגויים. אנא נסה שוב.');
+        }
+        throw error;
+      }
+    }
+
+    // Fallback: If no email in Firestore, try common formats (for old users)
+    console.log(`⚠️ No email stored in Firestore, trying common formats (fallback for old users)`);
+    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+    const possibleEmails = [
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@ronbarber.app`, // Most common format
+      `${cleanPhone}@ronbarber.app`,
+      `${cleanPhone}@sms.barbershop.local`,
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@sms.barbershop.local`,
+      `${cleanPhone}@phonesign.local`,
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@phonesign.local`,
+      `${cleanPhone}@temp.turgi.com`,
+      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@temp.turgi.com`
+    ];
+
+    console.log(`🔍 Trying email formats for login:`, possibleEmails);
+
+    let lastError: any = null;
+    for (const email of possibleEmails) {
+      try {
+        console.log(`🔐 Trying email format: ${email}`);
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        console.log(`✅ Login successful with email: ${email}`);
+
+        // Save auth data for persistence
+        await saveAuthDataAfterLogin(userCredential.user);
+
+        // Update Firestore with the correct email for next time
+        try {
+          await updateDoc(doc(db, 'users', userCheck.uid!), { email: email });
+          console.log(`💾 Updated Firestore with correct email: ${email}`);
+        } catch (updateError) {
+          console.error(`⚠️ Could not update email in Firestore:`, updateError);
+        }
+
+        return userCredential.user;
+      } catch (error: any) {
         lastError = error;
-        console.log(`❌ Failed with email: ${email}`, error.code, error.message);
+        console.log(`❌ Failed with email: ${email}`, error.code);
         continue;
       }
     }
-    
+
     console.log(`❌ All email formats failed for phone: ${phoneNumber}`);
     console.log(`❌ Last error:`, lastError?.code, lastError?.message);
-    
-    // Provide more specific error message based on the last error
+
     if (lastError?.code === 'auth/wrong-password') {
       throw new Error('הסיסמה שגויה. אנא נסה שוב.');
     } else if (lastError?.code === 'auth/user-not-found') {
@@ -941,7 +1003,7 @@ export const loginWithPhoneAndPassword = async (phoneNumber: string, password: s
     } else if (lastError?.code === 'auth/invalid-credential') {
       throw new Error('פרטי הכניסה שגויים. אנא נסה שוב.');
     }
-    
+
     throw new Error('פרטי הכניסה שגויים. בדוק את הטלפון והסיסמה.');
     
   } catch (error: any) {
@@ -1060,6 +1122,102 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
   } catch (error) {
     console.error('Error getting users:', error);
     return [];
+  }
+};
+
+// Delete customer - removes from Firestore database
+// Note: Firebase Client SDK doesn't allow deleting other users from Authentication
+// This function only removes the user document from Firestore
+// To completely remove from Authentication, you would need Firebase Admin SDK (Cloud Functions)
+export const deleteCustomer = async (userId: string): Promise<{ success: boolean; message: string }> => {
+  try {
+    console.log(`🗑️ Attempting to delete customer: ${userId}`);
+
+    // Check if user exists
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (!userDoc.exists()) {
+      return {
+        success: false,
+        message: 'משתמש לא נמצא במערכת.'
+      };
+    }
+
+    const userData = userDoc.data() as UserProfile;
+
+    // Prevent deleting admin users
+    if (userData.isAdmin) {
+      console.log(`❌ Cannot delete admin user: ${userId}`);
+      return {
+        success: false,
+        message: 'לא ניתן למחוק משתמש אדמין.'
+      };
+    }
+
+    console.log(`📋 Deleting customer data for: ${userData.displayName} (${userData.phone})`);
+
+    // 1. Delete all user's appointments
+    console.log('  📅 Deleting appointments...');
+    const appointmentsQuery = query(collection(db, 'appointments'), where('userId', '==', userId));
+    const appointmentsSnapshot = await getDocs(appointmentsQuery);
+
+    const batch = writeBatch(db);
+    appointmentsSnapshot.docs.forEach((appointmentDoc) => {
+      batch.delete(appointmentDoc.ref);
+    });
+    await batch.commit();
+    console.log(`  ✅ Deleted ${appointmentsSnapshot.size} appointments`);
+
+    // 2. Delete push notification tokens
+    console.log('  🔔 Deleting push tokens...');
+    const tokensQuery = query(collection(db, 'pushTokens'), where('userId', '==', userId));
+    const tokensSnapshot = await getDocs(tokensQuery);
+
+    const tokensBatch = writeBatch(db);
+    tokensSnapshot.docs.forEach((tokenDoc) => {
+      tokensBatch.delete(tokenDoc.ref);
+    });
+    await tokensBatch.commit();
+    console.log(`  ✅ Deleted ${tokensSnapshot.size} push tokens`);
+
+    // 3. Delete scheduled reminders
+    console.log('  ⏰ Deleting scheduled reminders...');
+    const remindersQuery = query(collection(db, 'scheduledReminders'), where('userId', '==', userId));
+    const remindersSnapshot = await getDocs(remindersQuery);
+
+    const remindersBatch = writeBatch(db);
+    remindersSnapshot.docs.forEach((reminderDoc) => {
+      remindersBatch.delete(reminderDoc.ref);
+    });
+    await remindersBatch.commit();
+    console.log(`  ✅ Deleted ${remindersSnapshot.size} scheduled reminders`);
+
+    // 4. Delete user document from Firestore
+    console.log('  💾 Deleting user document from Firestore...');
+    await deleteDoc(doc(db, 'users', userId));
+    console.log('  ✅ User document deleted from Firestore');
+
+    // Note: Firebase Authentication deletion requires Admin SDK or Cloud Functions
+    // The user can still exist in Authentication but won't be able to access the app
+    // as their Firestore user document is deleted
+    console.log(`⚠️  Note: User may still exist in Firebase Authentication`);
+    console.log(`   To fully delete, go to Firebase Console > Authentication and delete manually`);
+    console.log(`   or use Cloud Functions with Admin SDK`);
+
+    console.log(`✅ Successfully deleted customer ${userId} completely`);
+    console.log(`   - ${appointmentsSnapshot.size} appointments`);
+    console.log(`   - ${tokensSnapshot.size} push tokens`);
+    console.log(`   - ${remindersSnapshot.size} scheduled reminders`);
+
+    return {
+      success: true,
+      message: `הלקוח נמחק בהצלחה!\n\nנמחקו:\n• ${appointmentsSnapshot.size} תורים\n• ${tokensSnapshot.size} tokens\n• ${remindersSnapshot.size} תזכורות\n\n⚠️ יש למחוק גם מ-Firebase Authentication ידנית`
+    };
+  } catch (error: any) {
+    console.error('❌ Error deleting customer:', error);
+    return {
+      success: false,
+      message: `שגיאה במחיקת הלקוח: ${error.message || 'אנא נסה שוב'}`
+    };
   }
 };
 
@@ -1221,15 +1379,19 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
       console.log('❌ Failed to send admin notification:', adminNotificationError);
     }
     
-    // Schedule reminder notifications for the appointment (CUSTOMERS ONLY)
+    // Schedule LOCAL notification reminders ONLY (removed Firestore-based reminders to avoid duplicates)
     try {
-      console.log('📅 Scheduling appointment reminders for customer only...');
-      await scheduleAppointmentReminders(docRef.id, appointmentData);
-      console.log('✅ Appointment reminders scheduled successfully');
-    } catch (scheduleError) {
-      console.log('❌ Failed to schedule appointment reminders:', scheduleError);
+      console.log('📱 Scheduling LOCAL appointment reminders...');
+      const appointmentDate = appointmentData.date.toDate();
+      await scheduleLocalAppointmentReminders({
+        id: docRef.id,
+        startsAt: appointmentDate.toISOString(),
+      });
+      console.log('✅ LOCAL appointment reminders scheduled successfully');
+    } catch (localScheduleError) {
+      console.log('❌ Failed to schedule LOCAL appointment reminders:', localScheduleError);
     }
-    
+
     return docRef.id;
   } catch (error) {
     throw error;
@@ -1274,16 +1436,16 @@ export const updateAppointment = async (appointmentId: string, updates: Partial<
   try {
     const docRef = doc(db, 'appointments', appointmentId);
     await updateDoc(docRef, updates);
-    
+
     // Send notification about appointment update
     try {
       const appointmentDoc = await getDoc(docRef);
       if (appointmentDoc.exists()) {
         const appointmentData = appointmentDoc.data() as Appointment;
-        
+
         let notificationTitle = 'התור שלך עודכן! 📅';
         let notificationBody = 'התור שלך עודכן בהצלחה.';
-        
+
         if (updates.status) {
           switch (updates.status) {
             case 'confirmed':
@@ -1305,14 +1467,40 @@ export const updateAppointment = async (appointmentId: string, updates: Partial<
               } catch (adminNotificationError) {
                 console.log('Failed to send appointment completion to admin:', adminNotificationError);
               }
+              // Cancel local reminders when completed
+              try {
+                await cancelLocalAppointmentReminders(appointmentId);
+              } catch (reminderError) {
+                console.log('Failed to cancel local reminders:', reminderError);
+              }
               break;
             case 'cancelled':
               notificationTitle = 'התור בוטל! ❌';
               notificationBody = 'התור שלך בוטל.';
+              // Cancel local reminders when cancelled
+              try {
+                await cancelLocalAppointmentReminders(appointmentId);
+              } catch (reminderError) {
+                console.log('Failed to cancel local reminders:', reminderError);
+              }
               break;
           }
         }
-        
+
+        // If date/time was updated, reschedule local reminders
+        if (updates.date && updates.status !== 'cancelled' && updates.status !== 'completed') {
+          try {
+            const appointmentDate = updates.date.toDate();
+            await scheduleLocalAppointmentReminders({
+              id: appointmentId,
+              startsAt: appointmentDate.toISOString(),
+            });
+            console.log('✅ Local reminders rescheduled after date update');
+          } catch (rescheduleError) {
+            console.log('❌ Failed to reschedule local reminders:', rescheduleError);
+          }
+        }
+
         await sendNotificationToUser(
           appointmentData.userId,
           notificationTitle,
@@ -1374,6 +1562,15 @@ export const cancelAppointment = async (appointmentId: string) => {
       console.log('❌ Failed to send cancellation notification to admin:', notificationError);
     }
     
+    // Cancel local notification reminders
+    try {
+      console.log('🔔 Cancelling local notification reminders...');
+      await cancelLocalAppointmentReminders(appointmentId);
+      console.log('✅ Local notification reminders cancelled');
+    } catch (reminderError) {
+      console.log('❌ Failed to cancel local notification reminders:', reminderError);
+    }
+
     console.log('Appointment cancelled successfully');
     return true;
   } catch (error) {
@@ -1388,7 +1585,7 @@ export const deleteAppointment = async (appointmentId: string) => {
     const appointmentDoc = await getDoc(doc(db, 'appointments', appointmentId));
     if (appointmentDoc.exists()) {
       const appointmentData = appointmentDoc.data() as Appointment;
-      
+
       // Send notification to user about appointment cancellation
       try {
         await sendNotificationToUser(
@@ -1400,7 +1597,7 @@ export const deleteAppointment = async (appointmentId: string) => {
       } catch (notificationError) {
         console.log('Failed to send cancellation notification:', notificationError);
       }
-      
+
       // Send notification to admin about appointment cancellation
       try {
         await sendNotificationToAdmin(
@@ -1411,8 +1608,16 @@ export const deleteAppointment = async (appointmentId: string) => {
       } catch (adminNotificationError) {
         console.log('Failed to send admin cancellation notification:', adminNotificationError);
       }
+
+      // Cancel local notification reminders
+      try {
+        await cancelLocalAppointmentReminders(appointmentId);
+        console.log('✅ Local reminders cancelled on delete');
+      } catch (reminderError) {
+        console.log('❌ Failed to cancel local reminders on delete:', reminderError);
+      }
     }
-    
+
     await deleteDoc(doc(db, 'appointments', appointmentId));
   } catch (error) {
     throw error;
@@ -1830,112 +2035,78 @@ export const getBarberAvailableSlots = async (barberId: string, date: string): P
   try {
     console.log('🔍 Getting available slots for barber:', barberId, 'date:', date);
 
-    // Get the day of week (0 = Sunday, 1 = Monday, etc.)
-    // Use same method as admin to avoid timezone issues
-    const [Y, M, D] = date.split('-').map(Number);
-    const dayOfWeek = new Date(Y, M - 1, D).getDay();
-
-    console.log('📅 Day of week:', dayOfWeek);
-    console.log('🔍 CUSTOMER DAYOFWEEK CALC: dateString=' + date + ', dayOfWeek=' + dayOfWeek);
-    console.log('🔍 CUSTOMER QUERY: barberId=' + barberId + ', dayOfWeek=' + dayOfWeek + ', date=' + date);
-
-    // Query the availability collection
-    const q = query(
-      collection(db, 'availability'),
+    // NEW: Query dailyAvailability collection by SPECIFIC DATE
+    const dailyQuery = query(
+      collection(db, 'dailyAvailability'),
       where('barberId', '==', barberId),
-      where('dayOfWeek', '==', dayOfWeek),
-      where('isAvailable', '==', true)
+      where('date', '==', date) // SPECIFIC DATE!
     );
 
-    const snap = await getDocs(q);
-    console.log('📊 Found availability documents:', snap.docs.length);
+    const dailySnap = await getDocs(dailyQuery);
+    console.log('📊 Found dailyAvailability documents:', dailySnap.docs.length);
 
-    if (snap.empty) {
-      console.log('❌ No availability found for this day');
+    if (dailySnap.empty) {
+      console.log('❌ No dailyAvailability found for this specific date');
       return [];
     }
 
-    // Should be exactly ONE record per barberId+dayOfWeek
-    if (snap.docs.length > 1) {
-      console.warn('⚠️ Multiple availability records found for same barberId+dayOfWeek:', snap.docs.length);
-    }
-
-    // Use the FIRST (and should be ONLY) record
-    const doc = snap.docs[0];
+    // Get the first (and should be only) record for this date
+    const doc = dailySnap.docs[0];
     const data = doc.data();
-    console.log('📄 Using availability doc:', doc.id, data);
+    console.log('📄 Using dailyAvailability doc:', doc.id, data);
 
-    if (!data.isAvailable) {
-      console.log('❌ Document marked as not available');
+    // Check if explicitly unavailable
+    if (data.isAvailable === false) {
+      console.log('🚫 Date explicitly marked as UNAVAILABLE');
       return [];
     }
 
-    let slots = [];
-
-    // Use exact slots - this is what admin set
+    // Return the exact slots
     if (data.availableSlots && Array.isArray(data.availableSlots)) {
-      slots = data.availableSlots;
-      console.log('✅ Customer using EXACT admin slots:', slots);
-    } else if (data.startTime && data.endTime) {
-      console.error('❌ CRITICAL: No availableSlots found - admin save failed!');
-      console.error('❌ Document data:', data);
-      return []; // Don't use fallback - it causes wrong slots
+      console.log('✅ Customer using EXACT date-specific slots:', data.availableSlots.length, 'slots');
+      return data.availableSlots;
     }
 
-    console.log('✅ Final customer slots:', slots);
-    return slots;
+    console.log('⚠️ No availableSlots in document');
+    return [];
   } catch (error) {
     console.error('Error getting barber available slots:', error);
     return [];
   }
 };
 
-// Real-time listener for availability changes
+// Real-time listener for availability changes (NOW USING dailyAvailability ONLY!)
 export const subscribeToAvailabilityChanges = (barberId: string, callback: (weeklySlots: {[key: number]: string[]}) => void) => {
-  console.log('🔔 Subscribing to availability changes for barber:', barberId);
-  const todayDayOfWeek = new Date().getDay();
-  console.log('🗓️ REAL-TIME LISTENER - TODAY\'S DAY OF WEEK:', todayDayOfWeek);
+  console.log('🔔 Subscribing to dailyAvailability changes for barber:', barberId);
   
+  // NEW: Listen to dailyAvailability collection
   const q = query(
-    collection(db, 'availability'), 
-    where('barberId', '==', barberId),
-    where('isAvailable', '==', true)
+    collection(db, 'dailyAvailability'), 
+    where('barberId', '==', barberId)
   );
   
   return onSnapshot(q, (snapshot) => {
-    console.log('📡 Availability changed, updating slots...');
+    console.log('📡 Daily availability changed, updating slots...');
+    console.log('📊 Total dailyAvailability docs:', snapshot.docs.length);
     
-    // Group slots by day of week
+    // For backwards compatibility, build a weeklySlots object
+    // But each date is independent!
     const weeklySlots: {[key: number]: string[]} = {};
     
     snapshot.docs.forEach(doc => {
       const data = doc.data();
       const dayOfWeek = data.dayOfWeek;
-      console.log('📡 REAL-TIME QUERY RESULT: docId=' + doc.id + ', dayOfWeek=' + dayOfWeek);
-      console.log('📡 REAL-TIME QUERY RESULT: data=' + JSON.stringify(data));
+      const date = data.date;
+      
+      console.log(`📡 REAL-TIME: docId=${doc.id}, date=${date}, dayOfWeek=${dayOfWeek}, isAvailable=${data.isAvailable}`);
 
-      if (data.isAvailable) {
-        let slots: string[] = [];
-
-        // Use exact availableSlots if available (matches admin's exact selections)
-        if (data.availableSlots && Array.isArray(data.availableSlots)) {
-          slots = data.availableSlots;
-        } else if (data.startTime && data.endTime) {
-          // DO NOT USE FALLBACK - This causes sync issues!
-          console.error('❌ CRITICAL SYNC ISSUE: availableSlots missing in subscribeToAvailabilityChanges');
-          console.error('❌ Document data:', data);
-          console.error('❌ Admin slots will not match customer view - using empty slots');
-          slots = []; // Force empty to prevent wrong slots
-        }
-
-        if (slots.length > 0) {
-          // CRITICAL FIX: Replace slots instead of adding them (same as BookingScreen fix)
-          weeklySlots[dayOfWeek] = [...slots];
-          console.log('🔄 Real-time: Set exact slots for dayOfWeek', dayOfWeek, ':', slots);
-          if (dayOfWeek === todayDayOfWeek) {
-            console.log('🎯 REAL-TIME TODAY: Customer gets these slots for today via live update:', slots);
-          }
-        }
+      if (data.isAvailable === true && data.availableSlots && Array.isArray(data.availableSlots)) {
+        // NOTE: If there are multiple days with same dayOfWeek but different slots,
+        // last one wins. This is OK because generateAvailableDates checks specific dates.
+        weeklySlots[dayOfWeek] = [...data.availableSlots];
+        console.log(`✅ Real-time: date ${date} (${dayOfWeek}) has ${data.availableSlots.length} slots`);
+      } else if (data.isAvailable === false) {
+        console.log(`🚫 Real-time: date ${date} (${dayOfWeek}) explicitly UNAVAILABLE`);
       }
     });
     
@@ -1944,13 +2115,7 @@ export const subscribeToAvailabilityChanges = (barberId: string, callback: (week
       weeklySlots[parseInt(day)] = [...new Set(weeklySlots[parseInt(day)])].sort();
     });
     
-    console.log('✅ Updated weekly availability:', weeklySlots);
-    const today = new Date();
-    const todayYMD = today.toISOString().split('T')[0];
-    const [Y, M, D] = todayYMD.split('-').map(Number);
-    const realTimeTodayDayOfWeek = new Date(Y, M - 1, D).getDay();
-    console.log('🎯 REAL-TIME TODAY SYNC: Today is ' + todayYMD + ' dayOfWeek=' + realTimeTodayDayOfWeek);
-    console.log('🎯 REAL-TIME TODAY SYNC: Sending slots for today: ' + JSON.stringify(weeklySlots[realTimeTodayDayOfWeek] || []));
+    console.log('✅ Updated availability (from dailyAvailability):', weeklySlots);
     callback(weeklySlots);
   }, (error) => {
     console.error('❌ Error listening to availability changes:', error);
@@ -3344,6 +3509,12 @@ export const getAdminNotificationSettings = async (): Promise<{
     tenMinutesBefore: boolean;
     whenStarting: boolean;
   };
+  customerReminderSettings?: {
+    enabled: boolean;
+    t24hEnabled: boolean;
+    t1hEnabled: boolean;
+    t0Enabled: boolean;
+  };
 }> => {
   try {
     console.log('🔧 Getting admin notification settings...');
@@ -3367,8 +3538,14 @@ export const getAdminNotificationSettings = async (): Promise<{
           tenMinutesBefore: data.reminderTimings?.tenMinutesBefore ?? true,
           whenStarting: data.reminderTimings?.whenStarting ?? false,
         },
+        customerReminderSettings: {
+          enabled: data.customerReminderSettings?.enabled ?? true,
+          t24hEnabled: data.customerReminderSettings?.t24hEnabled ?? true,
+          t1hEnabled: data.customerReminderSettings?.t1hEnabled ?? true,
+          t0Enabled: data.customerReminderSettings?.t0Enabled ?? true,
+        },
       };
-      
+
       console.log('✅ Processed admin notification settings:', settings);
       return settings;
     }
@@ -3385,8 +3562,14 @@ export const getAdminNotificationSettings = async (): Promise<{
         tenMinutesBefore: true,
         whenStarting: false,
       },
+      customerReminderSettings: {
+        enabled: true,
+        t24hEnabled: true,
+        t1hEnabled: true,
+        t0Enabled: true,
+      },
     };
-    
+
     console.log('✅ Using default admin notification settings:', defaultSettings);
     return defaultSettings;
   } catch (error) {
@@ -3402,8 +3585,14 @@ export const getAdminNotificationSettings = async (): Promise<{
         tenMinutesBefore: true,
         whenStarting: false,
       },
+      customerReminderSettings: {
+        enabled: true,
+        t24hEnabled: true,
+        t1hEnabled: true,
+        t0Enabled: true,
+      },
     };
-    
+
     console.log('✅ Using default admin notification settings due to error:', defaultSettings);
     return defaultSettings;
   }

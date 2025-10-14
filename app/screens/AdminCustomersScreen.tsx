@@ -11,7 +11,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { checkIsAdmin, getAllUsers, sendNotificationToUser } from '../../services/firebase';
+import { checkIsAdmin, deleteCustomer, getAllUsers, sendNotificationToUser } from '../../services/firebase';
 import TopNav from '../components/TopNav';
 import { colors } from '../constants/colors';
 
@@ -127,14 +127,14 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
       `שלח התראה ל${customer.displayName}`,
       [
         { text: 'ביטול', style: 'cancel' },
-        { 
-          text: 'שלח', 
+        {
+          text: 'שלח',
           onPress: async (message) => {
             if (!message || !message.trim()) {
               Alert.alert('שגיאה', 'נא להזין הודעה');
               return;
             }
-            
+
             try {
               setSendingNotification(customer.uid);
               await sendNotificationToUser(customer.uid, 'הודעה מהמספרה', message);
@@ -149,6 +149,36 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
         }
       ],
       'plain-text'
+    );
+  };
+
+  const handleDeleteCustomer = async (customer: Customer) => {
+    Alert.alert(
+      'מחיקת לקוח',
+      `האם אתה בטוח שברצונך למחוק את ${customer.displayName}?\n\nפעולה זו תמחק גם את כל התורים של הלקוח ולא ניתן לבטלה!`,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'מחק',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await deleteCustomer(customer.uid);
+
+              if (result.success) {
+                Alert.alert('הצלחה', result.message);
+                // Reload customers list
+                await loadCustomers();
+              } else {
+                Alert.alert('שגיאה', result.message);
+              }
+            } catch (error) {
+              console.error('Error deleting customer:', error);
+              Alert.alert('שגיאה', 'שגיאה במחיקת הלקוח');
+            }
+          }
+        }
+      ]
     );
   };
 
@@ -237,15 +267,15 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
               </View>
               
               <View style={styles.customerActions}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.actionButton, styles.callButton]}
                   onPress={() => handleCall(customer.phone)}
                 >
                   <Ionicons name="call" size={16} color="#fff" />
                   <Text style={styles.actionButtonText}>התקשר</Text>
                 </TouchableOpacity>
-                
-                <TouchableOpacity 
+
+                <TouchableOpacity
                   style={[styles.actionButton, styles.notificationButton]}
                   onPress={() => handleSendNotification(customer)}
                   disabled={sendingNotification === customer.uid}
@@ -254,6 +284,14 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
                   <Text style={styles.actionButtonText}>
                     {sendingNotification === customer.uid ? 'שולח...' : 'התראה'}
                   </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.deleteButton]}
+                  onPress={() => handleDeleteCustomer(customer)}
+                >
+                  <Ionicons name="trash" size={16} color="#fff" />
+                  <Text style={styles.actionButtonText}>מחק</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -404,6 +442,9 @@ const styles = StyleSheet.create({
   },
   notificationButton: {
     backgroundColor: '#ffc107',
+  },
+  deleteButton: {
+    backgroundColor: '#dc3545',
   },
   actionButtonText: {
     color: '#fff',

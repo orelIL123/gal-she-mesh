@@ -7,6 +7,7 @@ import {
   Dimensions,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   SafeAreaView,
@@ -129,26 +130,75 @@ export default function LoginScreen() {
         { text: 'אישור', onPress: () => router.replace('/(tabs)') }
       ]);
     } catch (error: any) {
-      console.error('Login error:', error);
+      console.error('❌ Login error:', error);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Full error:', JSON.stringify(error, null, 2));
 
       let errorMessage = 'פרטי הכניסה שגויים';
+      let errorTitle = 'שגיאה';
 
       if (error.message.includes('משתמש לא נמצא במערכת')) {
-        errorMessage = 'מצטערים, משתמש לא נמצא. אנא הירשם תחילה.';
+        errorTitle = 'משתמש לא קיים';
+        errorMessage = 'לא נמצא חשבון עם הפרטים שהזנת.\nאנא הירשם תחילה.';
       } else if (error.message.includes('משתמש לא נמצא')) {
-        errorMessage = 'מצטערים, משתמש לא נמצא. אנא הירשם תחילה.';
-      } else if (error.message.includes('סיסמה שגויה')) {
+        errorTitle = 'משתמש לא קיים';
+        errorMessage = 'לא נמצא חשבון עם הפרטים שהזנת.\nאנא הירשם תחילה.';
+      } else if (error.message.includes('auth/user-not-found')) {
+        errorTitle = 'משתמש לא קיים';
+        errorMessage = 'לא נמצא חשבון עם הפרטים שהזנת.\nאנא הירשם תחילה.';
+      } else if (error.message.includes('סיסמה שגויה') || error.message.includes('auth/wrong-password')) {
+        errorTitle = 'סיסמה שגויה';
         errorMessage = 'הסיסמה שגויה. אנא נסה שוב.';
+      } else if (error.message.includes('auth/invalid-credential')) {
+        errorTitle = 'פרטי כניסה שגויים';
+        errorMessage = 'שם משתמש או סיסמה שגויים.\nאנא בדוק את הפרטים ונסה שוב.';
       } else if (error.message.includes('פרטי הכניסה שגויים')) {
-        errorMessage = 'פרטי הכניסה שגויים. בדוק את הטלפון והסיסמה.';
+        errorTitle = 'פרטי כניסה שגויים';
+        errorMessage = 'שם משתמש או סיסמה שגויים.\nאנא בדוק את הפרטים ונסה שוב.';
       } else if (error.message.includes('לא הוגדרה סיסמה')) {
-        errorMessage = 'לא הוגדרה סיסמה לחשבון זה. אנא הירשם מחדש או השתמש בהתחברות עם SMS.';
+        errorTitle = 'אין סיסמה לחשבון';
+        errorMessage = 'לא הוגדרה סיסמה לחשבון זה.\nאנא הירשם מחדש.';
+      } else if (error.message.includes('auth/invalid-email')) {
+        errorTitle = 'אימייל לא תקין';
+        errorMessage = 'האימייל שהזנת אינו תקין.\nאנא בדוק ונסה שוב.';
+      } else if (error.message.includes('auth/too-many-requests')) {
+        errorTitle = 'יותר מדי ניסיונות';
+        errorMessage = 'חשבון זה נחסם זמנית עקב ניסיונות כניסה כושלים רבים.\nאנא נסה שוב מאוחר יותר.';
+      } else if (error.message) {
+        errorMessage = error.message;
       }
 
-      Alert.alert('שגיאה', errorMessage);
+      console.error(`❌ Showing error to user: ${errorTitle} - ${errorMessage}`);
+
+      Alert.alert(errorTitle, errorMessage);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleForgotPassword = () => {
+    Alert.alert(
+      'שכחת סיסמה?',
+      'לאיפוס סיסמה, אנא פנה לרון בוואטסאפ',
+      [
+        {
+          text: 'פתח וואטסאפ',
+          onPress: () => {
+            const phoneNumber = '972542280222'; // מספר הטלפון של רון
+            const message = 'היי רון, שכחתי את הסיסמה שלי לאפליקציה. תוכל לעזור?';
+            const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
+            Linking.openURL(whatsappUrl).catch(() => {
+              Alert.alert('שגיאה', 'לא ניתן לפתוח את וואטסאפ. אנא וודא שהאפליקציה מותקנת.');
+            });
+          }
+        },
+        {
+          text: 'ביטול',
+          style: 'cancel'
+        }
+      ]
+    );
   };
 
   const handleBack = () => {
@@ -237,6 +287,9 @@ export default function LoginScreen() {
                 )}
               </TouchableOpacity>
 
+              <TouchableOpacity onPress={handleForgotPassword} style={{ marginBottom: 10 }}>
+                <Text style={styles.forgotPasswordText}>שכחתי סיסמה?</Text>
+              </TouchableOpacity>
 
               <TouchableOpacity onPress={() => router.push('/register')}>
                 <Text style={styles.linkText}>אין לך חשבון? הירשם</Text>
@@ -538,5 +591,11 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontWeight: '600',
     marginLeft: 8,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    color: colors.primary,
+    textAlign: 'center',
+    textDecorationLine: 'underline',
   },
 });

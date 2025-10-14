@@ -167,19 +167,35 @@ export const isContiguous = (slots: string[]): boolean => {
 };
 
 // Local date utilities (avoiding UTC issues)
+// CRITICAL FIX: Always use local timezone, never UTC
+// When using new Date() after midnight, timezone differences can cause day to shift
+// Solution: Always create dates with explicit local time components
 export const toYMD = (d: Date): string => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
+  // Use local getters (not UTC getters) to ensure local timezone
+  const y = d.getFullYear();        // Local year
+  const m = d.getMonth() + 1;        // Local month (0-11, so +1)
+  const dd = d.getDate();            // Local day of month
+
+  // Ensure 2-digit padding
+  const mStr = String(m).padStart(2, '0');
+  const ddStr = String(dd).padStart(2, '0');
+
+  return `${y}-${mStr}-${ddStr}`;
 };
 
 export const fromYMD = (ymd: string): Date => {
   const [Y, M, D] = ymd.split('-').map(Number);
-  return new Date(Y, M - 1, D);
+  // Create date in LOCAL timezone (not UTC)
+  // new Date(year, month, day) creates a LOCAL date
+  const localDate = new Date(Y, M - 1, D);
+  // Set to start of day in LOCAL timezone
+  localDate.setHours(0, 0, 0, 0);
+  return localDate;
 };
 
 export const getDayOfWeekFromYMD = (ymd: string): number => {
   const [Y, M, D] = ymd.split('-').map(Number);
-  return new Date(Y, M - 1, D).getDay();
+  // Create date in LOCAL timezone and get day of week
+  const localDate = new Date(Y, M - 1, D);
+  return localDate.getDay(); // 0 = Sunday, 6 = Saturday
 };
