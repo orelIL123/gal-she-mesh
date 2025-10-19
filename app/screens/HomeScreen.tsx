@@ -5,20 +5,20 @@ import { collection, doc, getDoc, getDocs, getFirestore, query, where } from 'fi
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Alert,
-  Animated,
-  Dimensions,
-  Image,
-  ImageBackground,
-  InteractionManager,
-  Linking,
-  Modal,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Animated,
+    Dimensions,
+    Image,
+    ImageBackground,
+    InteractionManager,
+    Linking,
+    Modal,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import NotificationPanel from '../components/NotificationPanel';
 import SideMenu from '../components/SideMenu';
@@ -189,8 +189,20 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
     InteractionManager.runAfterInteractions(() => {
       fetchImages();
       fetchDynamicContent();
+      cleanupOldWaitlistData();
     });
   }, []);
+
+  // Cleanup old waitlist entries (runs automatically on app start)
+  const cleanupOldWaitlistData = async () => {
+    try {
+      const { cleanupOldWaitlistEntries } = await import('../../services/firebase');
+      await cleanupOldWaitlistEntries();
+      console.log('✅ Old waitlist entries cleaned up automatically');
+    } catch (error) {
+      console.error('❌ Error cleaning up old waitlist entries:', error);
+    }
+  };
 
   // Fetch dynamic content from Firebase
   const fetchDynamicContent = async () => {

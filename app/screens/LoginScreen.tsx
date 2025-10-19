@@ -90,13 +90,29 @@ export default function LoginScreen() {
       const isEmail = emailOrPhone.includes('@');
       console.log(`🔍 LoginScreen: Input "${emailOrPhone}" detected as ${isEmail ? 'EMAIL' : 'PHONE'}`);
 
+      // CRITICAL FIX: Normalize phone number format before saving/login
+      let normalizedInput = emailOrPhone;
+      if (!isEmail) {
+        // Remove all non-digit characters from phone
+        const cleanPhone = emailOrPhone.replace(/[^0-9]/g, '');
+        // Normalize to +972 format
+        if (cleanPhone.startsWith('0')) {
+          normalizedInput = `+972${cleanPhone.substring(1)}`;
+        } else if (cleanPhone.startsWith('972')) {
+          normalizedInput = `+${cleanPhone}`;
+        } else {
+          normalizedInput = `+972${cleanPhone}`;
+        }
+        console.log(`📱 LoginScreen: Normalized phone from "${emailOrPhone}" to "${normalizedInput}"`);
+      }
+
       // Save credentials using AuthManager if "remember me" is checked
       if (rememberMe) {
         try {
           console.log('💾 LoginScreen: Saving credentials...');
           await authManager.saveLoginCredentials(
-            isEmail ? emailOrPhone : undefined,
-            isEmail ? undefined : emailOrPhone,
+            isEmail ? normalizedInput : undefined,
+            isEmail ? undefined : normalizedInput,
             password,
             true
           );
@@ -107,11 +123,11 @@ export default function LoginScreen() {
       }
 
       if (isEmail) {
-        console.log('🔐 LoginScreen: Attempting email login with:', emailOrPhone);
-        await loginUser(emailOrPhone, password);
+        console.log('🔐 LoginScreen: Attempting email login with:', normalizedInput);
+        await loginUser(normalizedInput, password);
       } else {
-        console.log('📱 LoginScreen: Attempting phone login with:', emailOrPhone);
-        await loginWithPhoneAndPassword(emailOrPhone, password);
+        console.log('📱 LoginScreen: Attempting phone login with:', normalizedInput);
+        await loginWithPhoneAndPassword(normalizedInput, password);
       }
 
       // Register for push notifications after successful login

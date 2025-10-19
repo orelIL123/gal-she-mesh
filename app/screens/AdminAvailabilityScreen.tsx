@@ -146,6 +146,10 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
     try {
       console.log('🔍 Loading availability for barber:', barberId);
 
+      // CRITICAL FIX: Ensure dailyAvailability exists for next 14 days
+      // This prevents customers from seeing "all unavailable" when docs are missing
+      await convertWeeklyToDailyAvailability(barberId);
+
       // Load DAILY availability first (has priority)
       const dailyQuery = query(collection(db, 'dailyAvailability'), where('barberId', '==', barberId));
       const dailySnap = await getDocs(dailyQuery);

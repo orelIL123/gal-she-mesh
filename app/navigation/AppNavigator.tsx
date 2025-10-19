@@ -8,13 +8,14 @@ import AdminNotificationSettingsScreen from '../screens/AdminNotificationSetting
 import AdminSettingsScreen from '../screens/AdminSettingsScreen';
 import AdminTeamScreen from '../screens/AdminTeamScreen';
 import AdminTreatmentsScreen from '../screens/AdminTreatmentsScreen';
+import AdminWaitlistScreen from '../screens/AdminWaitlistScreen';
 import BookingScreen from '../screens/BookingScreen';
 import HomeScreen from '../screens/HomeScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import TeamScreen from '../screens/TeamScreen';
 
-export type Screen = 'home' | 'profile' | 'team' | 'booking' | 'settings' | 'admin-home' | 'admin-appointments' | 'admin-treatments' | 'admin-team' | 'admin-gallery' | 'admin-availability' | 'admin-settings' | 'admin-notification-settings';
+export type Screen = 'home' | 'profile' | 'team' | 'booking' | 'settings' | 'admin-home' | 'admin-appointments' | 'admin-treatments' | 'admin-team' | 'admin-gallery' | 'admin-availability' | 'admin-settings' | 'admin-notification-settings' | 'admin-waitlist';
 
 export const AppNavigator: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
@@ -22,12 +23,14 @@ export const AppNavigator: React.FC = () => {
   const [navigationParams, setNavigationParams] = useState<any>({});
 
   const handleNavigate = (screen: string, params?: any) => {
+    console.log('🔀 Navigation requested:', screen, 'from:', currentScreen);
     setPreviousScreen(currentScreen);
     setCurrentScreen(screen as Screen);
     setNavigationParams(params || {});
   };
 
   const renderScreen = () => {
+    console.log('🔄 AppNavigator rendering screen:', currentScreen);
     switch (currentScreen) {
       case 'home':
         return <HomeScreen onNavigate={handleNavigate} />;
@@ -92,6 +95,11 @@ export const AppNavigator: React.FC = () => {
         return <AdminNotificationSettingsScreen 
           onNavigate={handleNavigate}
           onBack={() => handleNavigate('admin-settings')}
+        />;
+      case 'admin-waitlist':
+        return <AdminWaitlistScreen 
+          onNavigate={handleNavigate}
+          onBack={() => handleNavigate('admin-home')}
         />;
       default:
         return <HomeScreen onNavigate={handleNavigate} />;

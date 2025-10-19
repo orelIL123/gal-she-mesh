@@ -13,6 +13,7 @@ interface TopNavProps {
   onBackPress?: () => void;
   showCloseButton?: boolean;
   onClosePress?: () => void;
+  customBellIcon?: React.ReactNode;
 }
 
 const TopNav: React.FC<TopNavProps> = ({ 
@@ -22,7 +23,8 @@ const TopNav: React.FC<TopNavProps> = ({
   showBackButton = false, 
   onBackPress, 
   showCloseButton = false, 
-  onClosePress 
+  onClosePress,
+  customBellIcon
 }) => {
   const [fontsLoaded] = useFonts({
     PlayfairDisplay_700Bold,
@@ -58,10 +60,12 @@ const TopNav: React.FC<TopNavProps> = ({
       
       <Text style={[styles.title, { fontFamily: 'PlayfairDisplay_700Bold', textTransform: 'uppercase' }]}>{title}</Text>
       
-      {/* Right icon - shows close button, notification, or empty space */}
+      {/* Right icon - shows close button, custom icon, notification, or empty space */}
       <TouchableOpacity style={styles.iconRight} onPress={showCloseButton ? onClosePress : onBellPress}>
         {showCloseButton ? (
           <Ionicons name="close" size={28} color="#fff" />
+        ) : customBellIcon ? (
+          customBellIcon
         ) : (
           <Ionicons name="notifications-outline" size={28} color="#fff" />
         )}

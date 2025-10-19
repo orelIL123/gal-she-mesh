@@ -215,6 +215,13 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
       color: '#17a2b8'
     },
     {
+      title: 'רשימת המתנה',
+      subtitle: 'צפה ברשימת המתנה ל-7 ימים הקרובים',
+      icon: 'list',
+      screen: 'admin-waitlist',
+      color: '#ff6b6b'
+    },
+    {
       title: 'הגדרות מנהל',
       subtitle: 'עריכת הודעות ברכה, טקסטים ושליחת הודעות',
       icon: 'settings',

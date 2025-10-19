@@ -40,6 +40,9 @@ export default function AdminHomeTab() {
       case 'admin-customers':
         router.replace('/admin-customers');
         break;
+      case 'admin-waitlist':
+        router.replace('/admin-waitlist');
+        break;
       case 'settings':
         router.replace('/settings');
         break;

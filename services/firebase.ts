@@ -30,9 +30,10 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { deleteObject, getDownloadURL, listAll, ref, uploadBytes } from 'firebase/storage';
 import { isValidDuration, SLOT_SIZE_MINUTES } from '../app/constants/scheduling';
-import { auth, db, storage } from '../config/firebase';
+import { auth, db, functions, storage } from '../config/firebase';
 import { AuthStorageService } from './authStorage';
 import { CacheUtils } from './cache';
 import { cancelAppointmentReminders as cancelLocalAppointmentReminders, cleanupNotificationsOnLogout, scheduleAppointmentReminders as scheduleLocalAppointmentReminders } from './notifications';
@@ -199,6 +200,18 @@ export interface Appointment {
   notes?: string;
   createdAt: Timestamp;
   duration: number; // משך טיפול בדקות
+}
+
+export interface WaitlistEntry {
+  id: string;
+  userId: string;
+  barberId: string;
+  date: string; // YYYY-MM-DD format
+  preferredTimeStart: string; // HH:MM format (e.g., "14:00")
+  preferredTimeEnd: string; // HH:MM format (e.g., "16:00")
+  createdAt: Timestamp;
+  userDisplayName?: string;
+  userPhone?: string;
 }
 
 export interface GalleryImage {
@@ -585,8 +598,18 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
     if (verificationId.startsWith('sms4free_')) {
       console.log('🔧 Using SMS4Free phone registration');
 
-      // Create a temporary email for Firebase Auth (since Anonymous is not enabled)
+      // CRITICAL FIX: Normalize phone number to consistent +972 format
       const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+      let normalizedPhone = phoneNumber;
+      if (cleanPhone.startsWith('0')) {
+        normalizedPhone = `+972${cleanPhone.substring(1)}`;
+      } else if (cleanPhone.startsWith('972')) {
+        normalizedPhone = `+${cleanPhone}`;
+      } else if (!phoneNumber.startsWith('+')) {
+        normalizedPhone = `+972${cleanPhone}`;
+      }
+      console.log(`📱 Normalized phone from "${phoneNumber}" to "${normalizedPhone}"`);
+
       // Use consistent format: 972523985505@ronbarber.app
       const tempEmail = `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@ronbarber.app`;
       // Use the password chosen by the user, not a temporary one
@@ -604,19 +627,19 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
       });
 
       // Check if this is the admin phone number
-      const isAdminPhone = phoneNumber === '+972523985505' || phoneNumber === '+972542280222';
+      const isAdminPhone = normalizedPhone === '+972542280222';
 
       const userProfile: UserProfile = {
         uid: user.uid,  // Use Firebase Auth UID
         email: tempEmail, // Store the temporary email
         displayName: displayName,
-        phone: phoneNumber,
+        phone: normalizedPhone, // CRITICAL FIX: Store normalized phone
         isAdmin: isAdminPhone,
         hasPassword: true, // Has a temporary password
         createdAt: Timestamp.now()
       };
 
-      console.log('💾 Saving user profile with phone:', phoneNumber);
+      console.log('💾 Saving user profile with phone:', normalizedPhone);
       console.log('💾 Saving user profile with email:', tempEmail);
       await setDoc(doc(db, 'users', user.uid), userProfile);
 
@@ -652,7 +675,7 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
       console.log('🔧 Using mock phone registration');
 
       const mockUserId = `mock_user_${Date.now()}`;
-      const isAdminPhone = phoneNumber === '+972542280222';
+      const isAdminPhone = phoneNumber === '+972542280222'; // Only this number is auto-admin
 
       const userProfile: UserProfile = {
         uid: mockUserId,
@@ -1155,6 +1178,9 @@ export const deleteCustomer = async (userId: string): Promise<{ success: boolean
 
     console.log(`📋 Deleting customer data for: ${userData.displayName} (${userData.phone})`);
 
+    // Store auth identifier for the success message
+    const authIdentifier = userData.email || userData.phone || userId;
+
     // 1. Delete all user's appointments
     console.log('  📅 Deleting appointments...');
     const appointmentsQuery = query(collection(db, 'appointments'), where('userId', '==', userId));
@@ -1196,21 +1222,30 @@ export const deleteCustomer = async (userId: string): Promise<{ success: boolean
     await deleteDoc(doc(db, 'users', userId));
     console.log('  ✅ User document deleted from Firestore');
 
-    // Note: Firebase Authentication deletion requires Admin SDK or Cloud Functions
-    // The user can still exist in Authentication but won't be able to access the app
-    // as their Firestore user document is deleted
-    console.log(`⚠️  Note: User may still exist in Firebase Authentication`);
-    console.log(`   To fully delete, go to Firebase Console > Authentication and delete manually`);
-    console.log(`   or use Cloud Functions with Admin SDK`);
+    // 5. Delete user from Firebase Authentication using Cloud Function
+    console.log('  🔐 Deleting user from Firebase Authentication...');
+    try {
+      const deleteUserAuth = httpsCallable(functions, 'deleteUserAuth');
+      const result = await deleteUserAuth({ userId });
+      console.log('  ✅ User deleted from Authentication:', result.data);
+    } catch (authError: any) {
+      console.error('  ⚠️  Error deleting from Authentication:', authError);
+      // Continue even if auth deletion fails - user data is already removed
+      if (authError.code === 'functions/not-found') {
+        console.log('  ⚠️  Cloud Function not found - user remains in Authentication');
+      }
+    }
 
     console.log(`✅ Successfully deleted customer ${userId} completely`);
     console.log(`   - ${appointmentsSnapshot.size} appointments`);
     console.log(`   - ${tokensSnapshot.size} push tokens`);
     console.log(`   - ${remindersSnapshot.size} scheduled reminders`);
+    console.log(`   - User document from Firestore`);
+    console.log(`   - User from Firebase Authentication`);
 
     return {
       success: true,
-      message: `הלקוח נמחק בהצלחה!\n\nנמחקו:\n• ${appointmentsSnapshot.size} תורים\n• ${tokensSnapshot.size} tokens\n• ${remindersSnapshot.size} תזכורות\n\n⚠️ יש למחוק גם מ-Firebase Authentication ידנית`
+      message: `הלקוח נמחק בהצלחה!\n\nנמחקו:\n• ${appointmentsSnapshot.size} תורים\n• ${tokensSnapshot.size} tokens\n• ${remindersSnapshot.size} תזכורות\n• מסמך המשתמש\n• משתמש מ-Authentication\n\n✅ המשתמש נמחק לחלוטין מהמערכת!`
     };
   } catch (error: any) {
     console.error('❌ Error deleting customer:', error);
@@ -1615,6 +1650,15 @@ export const deleteAppointment = async (appointmentId: string) => {
         console.log('✅ Local reminders cancelled on delete');
       } catch (reminderError) {
         console.log('❌ Failed to cancel local reminders on delete:', reminderError);
+      }
+
+      // Notify waitlist users that a slot is now available
+      try {
+        const appointmentDate = appointmentData.date.toDate();
+        await notifyWaitlistOnCancellation(appointmentData.barberId, appointmentDate);
+        console.log('✅ Waitlist users notified about available slot');
+      } catch (waitlistError) {
+        console.log('❌ Failed to notify waitlist users:', waitlistError);
       }
     }
 
@@ -4256,5 +4300,210 @@ export const createTestNotification = async (userId: string, type: 'appointment'
   } catch (error) {
     console.error('Error creating test notification:', error);
     return false;
+  }
+};
+
+// ========== WAITLIST FUNCTIONS ==========
+
+// Create a waitlist entry
+export const createWaitlistEntry = async (waitlistData: Omit<WaitlistEntry, 'id' | 'createdAt'>) => {
+  try {
+    console.log('Creating waitlist entry:', waitlistData);
+    
+    // Check if user already on waitlist for this date
+    const existingQuery = query(
+      collection(db, 'waitlist'),
+      where('userId', '==', waitlistData.userId),
+      where('barberId', '==', waitlistData.barberId),
+      where('date', '==', waitlistData.date)
+    );
+    const existingSnapshot = await getDocs(existingQuery);
+    
+    if (!existingSnapshot.empty) {
+      // Update existing entry instead of creating duplicate
+      const existingDoc = existingSnapshot.docs[0];
+      await updateDoc(existingDoc.ref, {
+        preferredTimeStart: waitlistData.preferredTimeStart,
+        preferredTimeEnd: waitlistData.preferredTimeEnd,
+        userDisplayName: waitlistData.userDisplayName,
+        userPhone: waitlistData.userPhone,
+      });
+      console.log('Updated existing waitlist entry:', existingDoc.id);
+      return existingDoc.id;
+    }
+    
+    const entry = {
+      ...waitlistData,
+      createdAt: Timestamp.now()
+    };
+    
+    const docRef = await addDoc(collection(db, 'waitlist'), entry);
+    console.log('Waitlist entry created with ID:', docRef.id);
+    
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating waitlist entry:', error);
+    throw error;
+  }
+};
+
+// Get waitlist entries for a specific date
+export const getWaitlistEntriesForDate = async (barberId: string, date: string): Promise<WaitlistEntry[]> => {
+  try {
+    const waitlistQuery = query(
+      collection(db, 'waitlist'),
+      where('barberId', '==', barberId),
+      where('date', '==', date),
+      orderBy('createdAt', 'asc')
+    );
+    
+    const snapshot = await getDocs(waitlistQuery);
+    const entries: WaitlistEntry[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as WaitlistEntry));
+    
+    console.log(`Found ${entries.length} waitlist entries for date ${date}`);
+    return entries;
+  } catch (error) {
+    console.error('Error getting waitlist entries:', error);
+    return [];
+  }
+};
+
+// Get all waitlist entries for next 7 days (for admin view)
+export const getWaitlistEntriesForWeek = async (barberId: string): Promise<{[date: string]: WaitlistEntry[]}> => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const entriesByDate: {[date: string]: WaitlistEntry[]} = {};
+    
+    // Get next 7 days
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+      
+      const entries = await getWaitlistEntriesForDate(barberId, dateStr);
+      if (entries.length > 0) {
+        entriesByDate[dateStr] = entries;
+      }
+    }
+    
+    console.log(`Found waitlist entries for ${Object.keys(entriesByDate).length} days`);
+    return entriesByDate;
+  } catch (error) {
+    console.error('Error getting waitlist entries for week:', error);
+    return {};
+  }
+};
+
+// Delete a waitlist entry
+export const deleteWaitlistEntry = async (entryId: string) => {
+  try {
+    await deleteDoc(doc(db, 'waitlist', entryId));
+    console.log('Waitlist entry deleted:', entryId);
+  } catch (error) {
+    console.error('Error deleting waitlist entry:', error);
+    throw error;
+  }
+};
+
+// Get user's waitlist entries
+export const getUserWaitlistEntries = async (userId: string): Promise<WaitlistEntry[]> => {
+  try {
+    const waitlistQuery = query(
+      collection(db, 'waitlist'),
+      where('userId', '==', userId),
+      orderBy('date', 'asc')
+    );
+    
+    const snapshot = await getDocs(waitlistQuery);
+    const entries: WaitlistEntry[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as WaitlistEntry));
+    
+    console.log(`Found ${entries.length} waitlist entries for user ${userId}`);
+    return entries;
+  } catch (error) {
+    console.error('Error getting user waitlist entries:', error);
+    return [];
+  }
+};
+
+// Clean up old waitlist entries (called automatically)
+export const cleanupOldWaitlistEntries = async () => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split('T')[0];
+    
+    const waitlistRef = collection(db, 'waitlist');
+    const snapshot = await getDocs(waitlistRef);
+    
+    const batch = writeBatch(db);
+    let deletedCount = 0;
+    
+    snapshot.docs.forEach((docSnapshot) => {
+      const data = docSnapshot.data();
+      if (data.date < todayStr) {
+        batch.delete(docSnapshot.ref);
+        deletedCount++;
+      }
+    });
+    
+    await batch.commit();
+    console.log(`Cleaned up ${deletedCount} old waitlist entries`);
+    return deletedCount;
+  } catch (error) {
+    console.error('Error cleaning up old waitlist entries:', error);
+    return 0;
+  }
+};
+
+// Notify waitlist users when appointment is cancelled
+export const notifyWaitlistOnCancellation = async (barberId: string, appointmentDate: Date) => {
+  try {
+    const dateStr = appointmentDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    const timeStr = appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    const displayDate = appointmentDate.toLocaleDateString('he-IL');
+    
+    console.log(`Notifying waitlist for barber ${barberId}, date ${dateStr}, time ${timeStr}`);
+    
+    // Get all waitlist entries for this date
+    const entries = await getWaitlistEntriesForDate(barberId, dateStr);
+    
+    if (entries.length === 0) {
+      console.log('No waitlist entries found for this date');
+      return;
+    }
+    
+    console.log(`Found ${entries.length} waitlist entries to notify`);
+    
+    // Send notification to each user on the waitlist
+    for (const entry of entries) {
+      try {
+        await sendNotificationToUser(
+          entry.userId,
+          'הזדרז! תור התפנה! 🎉',
+          `מישהו ביטל תור לתאריך ${displayDate} בשעה ${timeStr}. מהר להזמין!`,
+          { 
+            type: 'waitlist_slot_available',
+            barberId: barberId,
+            date: dateStr,
+            time: timeStr
+          }
+        );
+        console.log(`Notification sent to user ${entry.userId}`);
+      } catch (notifError) {
+        console.error(`Failed to send notification to user ${entry.userId}:`, notifError);
+      }
+    }
+    
+    console.log('Finished notifying waitlist users');
+  } catch (error) {
+    console.error('Error notifying waitlist on cancellation:', error);
   }
 };

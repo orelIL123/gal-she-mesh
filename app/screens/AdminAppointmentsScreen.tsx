@@ -19,6 +19,8 @@ import {
     createAppointment,
     deleteAppointment,
     getAllUsers,
+    getBarberAppointmentsForDay,
+    getBarberAvailableSlots,
     getBarbers,
     getCurrentMonthAppointments,
     getTreatments,
@@ -28,7 +30,7 @@ import {
 } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
-import { generateTimeSlots, isOnGrid, isValidDuration, SLOT_SIZE_MINUTES, slotFitsInDay } from '../constants/scheduling';
+import { isOnGrid, isValidDuration, SLOT_SIZE_MINUTES, slotFitsInDay, toYMD } from '../constants/scheduling';
 
 interface AdminAppointmentsScreenProps {
   onNavigate: (screen: string) => void;
@@ -58,10 +60,44 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
   const [inputMethod, setInputMethod] = useState<'existing' | 'manual'>('manual');
   const [manualClientName, setManualClientName] = useState<string>('');
   const [manualClientPhone, setManualClientPhone] = useState<string>('');
+  const [dayAppointments, setDayAppointments] = useState<Appointment[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Load appointments for selected date and barber
+  useEffect(() => {
+    if (selectedBarber && selectedDate) {
+      loadDayAppointments();
+    }
+  }, [selectedBarber, selectedDate]);
+
+  const loadDayAppointments = async () => {
+    if (!selectedBarber || !selectedDate) {
+      setDayAppointments([]);
+      setAvailableSlots([]);
+      return;
+    }
+    
+    try {
+      // Load appointments for the day
+      const appointments = await getBarberAppointmentsForDay(selectedBarber, selectedDate);
+      setDayAppointments(appointments);
+      console.log(`📅 Loaded ${appointments.length} appointments for ${selectedDate.toDateString()}`);
+
+      // Load available slots for the barber on this date
+      const dateStr = toYMD(selectedDate);
+      const slots = await getBarberAvailableSlots(selectedBarber, dateStr);
+      setAvailableSlots(slots);
+      console.log(`🕐 Loaded ${slots.length} available slots for ${dateStr}:`, slots);
+    } catch (error) {
+      console.error('Error loading day appointments:', error);
+      setDayAppointments([]);
+      setAvailableSlots([]);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -203,9 +239,56 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
     return dates;
   };
 
-  // Generate time slots (9:00 AM to 8:00 PM) using 25-minute grid
+  // Return available slots for the barber on selected date
   const generateTimeSlotsForAdmin = () => {
-    return generateTimeSlots(9, 20);
+    // If no barber or date selected, return empty
+    if (!selectedBarber || !selectedDate) {
+      return [];
+    }
+    
+    // Return the actual available slots from the barber's availability
+    return availableSlots;
+  };
+
+  // Check if a slot is occupied
+  const isSlotOccupied = (slotTime: string): boolean => {
+    if (!dayAppointments || dayAppointments.length === 0) return false;
+    if (!selectedTreatment) return false;
+
+    const selectedTreatmentObj = treatments.find(t => t.id === selectedTreatment);
+    if (!selectedTreatmentObj) return false;
+
+    const [hour, minute] = slotTime.split(':').map(Number);
+    const slotStart = new Date(selectedDate);
+    slotStart.setHours(hour, minute, 0, 0);
+    const slotEnd = new Date(slotStart.getTime() + selectedTreatmentObj.duration * 60000);
+
+    for (const appt of dayAppointments) {
+      try {
+        let apptStart: Date;
+        if (appt.date && typeof appt.date.toDate === 'function') {
+          apptStart = appt.date.toDate();
+        } else if (appt.date) {
+          apptStart = new Date(appt.date);
+        } else {
+          continue;
+        }
+
+        const apptDuration = appt.duration || 25;
+        const apptEnd = new Date(apptStart.getTime() + apptDuration * 60000);
+
+        // Check for overlap
+        const hasOverlap = slotStart < apptEnd && slotEnd > apptStart;
+        if (hasOverlap) {
+          return true;
+        }
+      } catch (error) {
+        console.error('Error checking slot:', error);
+        continue;
+      }
+    }
+
+    return false;
   };
 
   const resetForm = () => {
@@ -224,6 +307,12 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
     // Validate required fields based on input method
     if (!selectedDate || !selectedTime || !selectedBarber || !selectedTreatment) {
       showToast('אנא מלא את כל השדות החובה', 'error');
+      return;
+    }
+
+    // Double-check if slot is occupied
+    if (isSlotOccupied(selectedTime)) {
+      showToast('⚠️ Slot זה כבר תפוס - אנא בחר שעה אחרת', 'error');
       return;
     }
 
@@ -285,6 +374,7 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
       
       // Reload appointments
       await loadData();
+      await loadDayAppointments(); // Refresh day appointments to update slots
       
       showToast('התור נוסף בהצלחה');
       setAddModalVisible(false);
@@ -323,6 +413,7 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
             try {
               await deleteAppointment(appointmentId);
               setAppointments(prev => prev.filter(apt => apt.id !== appointmentId));
+              await loadDayAppointments(); // Refresh day appointments to update slots
               showToast('התור נמחק בהצלחה');
               setModalVisible(false);
             } catch (error) {
@@ -767,26 +858,63 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
               </ScrollView>
 
               {/* Time Selection */}
-              <Text style={styles.formLabel}>בחר שעה *</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeContainer}>
-                {generateTimeSlotsForAdmin().map((time, index) => (
-                  <TouchableOpacity
-                    key={`time-${time}`}
-                    style={[
-                      styles.timeButton,
-                      selectedTime === time && styles.selectedTimeButton
-                    ]}
-                    onPress={() => setSelectedTime(time)}
-                  >
-                    <Text style={[
-                      styles.timeButtonText,
-                      selectedTime === time && styles.selectedTimeButtonText
-                    ]}>
-                      {time}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <Text style={styles.formLabel}>
+                בחר שעה * 
+                {selectedTreatment && selectedBarber && availableSlots.length > 0 && (
+                  <Text style={styles.formHint}> (אדום = תפוס, לבן = פנוי)</Text>
+                )}
+              </Text>
+              {!selectedBarber || !selectedDate ? (
+                <View style={styles.placeholderContainer}>
+                  <Text style={styles.placeholderText}>
+                    🔹 בחר תאריך וספר קודם כדי לראות שעות זמינות
+                  </Text>
+                </View>
+              ) : availableSlots.length === 0 ? (
+                <View style={styles.placeholderContainer}>
+                  <Text style={styles.placeholderText}>
+                    ⚠️ אין זמינות מוגדרת ליום זה
+                  </Text>
+                  <Text style={styles.placeholderSubtext}>
+                    יש להגדיר זמינות במסך "ניהול זמינות"
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeContainer}>
+                  {generateTimeSlotsForAdmin().map((time, index) => {
+                    const occupied = isSlotOccupied(time);
+                    return (
+                      <TouchableOpacity
+                        key={`time-${time}`}
+                        style={[
+                          styles.timeButton,
+                          selectedTime === time && styles.selectedTimeButton,
+                          occupied && styles.occupiedTimeButton
+                        ]}
+                        onPress={() => {
+                          if (occupied) {
+                            showToast('⚠️ Slot זה תפוס - בחר שעה אחרת', 'error');
+                          } else {
+                            setSelectedTime(time);
+                          }
+                        }}
+                        disabled={occupied}
+                      >
+                        <Text style={[
+                          styles.timeButtonText,
+                          selectedTime === time && styles.selectedTimeButtonText,
+                          occupied && styles.occupiedTimeButtonText
+                        ]}>
+                          {time}
+                        </Text>
+                        {occupied && (
+                          <Text style={styles.occupiedBadge}>✕</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
 
               {/* Client Input Method Toggle */}
               <Text style={styles.formLabel}>פרטי לקוח *</Text>
@@ -1263,6 +1391,11 @@ const styles = StyleSheet.create({
   selectedTimeButton: {
     backgroundColor: '#007bff',
   },
+  occupiedTimeButton: {
+    backgroundColor: '#ffebee',
+    borderColor: '#f44336',
+    opacity: 0.6,
+  },
   timeButtonText: {
     fontSize: 14,
     color: '#666',
@@ -1270,6 +1403,51 @@ const styles = StyleSheet.create({
   },
   selectedTimeButtonText: {
     color: '#fff',
+  },
+  occupiedTimeButtonText: {
+    color: '#f44336',
+    textDecorationLine: 'line-through',
+  },
+  occupiedBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#f44336',
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  formHint: {
+    fontSize: 12,
+    color: '#999',
+    fontWeight: 'normal',
+  },
+  placeholderContainer: {
+    padding: 20,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'dashed',
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  placeholderText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  placeholderSubtext: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 4,
   },
   selectionContainer: {
     maxHeight: 150,

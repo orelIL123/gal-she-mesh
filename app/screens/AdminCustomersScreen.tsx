@@ -8,6 +8,7 @@ import {
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
@@ -38,6 +39,9 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [sendingNotification, setSendingNotification] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showAllUsers, setShowAllUsers] = useState(false);
 
   useEffect(() => {
     checkAdminStatus();
@@ -65,14 +69,31 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
     }
   };
 
-  const loadCustomers = async () => {
+  const loadCustomers = async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      
       const users = await getAllUsers();
+      console.log(`📊 Total users fetched: ${users.length}`);
+      
+      // Log all users for debugging
+      users.forEach(user => {
+        console.log(`👤 User: ${user.displayName || user.phone} - isAdmin: ${user.isAdmin} - phone: ${user.phone}`);
+      });
       
       // Filter out admin users and get only regular customers
       const customerUsers = users
-        .filter(user => !user.isAdmin)
+        .filter(user => {
+          const isNotAdmin = !user.isAdmin;
+          if (!isNotAdmin) {
+            console.log(`⚠️ Filtered out admin: ${user.displayName || user.phone}`);
+          }
+          return isNotAdmin;
+        })
         .map(user => ({
           uid: user.uid,
           displayName: user.displayName || 'ללא שם',
@@ -89,12 +110,16 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
         });
       
       setCustomers(customerUsers);
-      console.log(`📋 Loaded ${customerUsers.length} customers`);
+      console.log(`📋 Loaded ${customerUsers.length} customers (filtered from ${users.length} total users)`);
     } catch (error) {
       console.error('Error loading customers:', error);
       Alert.alert('שגיאה', 'שגיאה בטעינת רשימת הלקוחות');
     } finally {
-      setLoading(false);
+      if (isRefresh) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
@@ -168,7 +193,7 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
               if (result.success) {
                 Alert.alert('הצלחה', result.message);
                 // Reload customers list
-                await loadCustomers();
+                await loadCustomers(true);
               } else {
                 Alert.alert('שגיאה', result.message);
               }
@@ -190,6 +215,17 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
     }
   };
 
+  // Filter customers based on search query
+  const filteredCustomers = customers.filter(customer => {
+    if (!searchQuery.trim()) return true;
+    
+    const query = searchQuery.toLowerCase().trim();
+    const name = customer.displayName.toLowerCase();
+    const phone = customer.phone.toLowerCase();
+    
+    return name.includes(query) || phone.includes(query);
+  });
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -199,6 +235,13 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
           onMenuPress={() => {}}
           showBackButton={true}
           onBackPress={handleBack}
+          customBellIcon={
+            <Ionicons 
+              name="refresh" 
+              size={28} 
+              color="#999" 
+            />
+          }
         />
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>טוען לקוחות...</Text>
@@ -216,6 +259,13 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
           onMenuPress={() => {}}
           showBackButton={true}
           onBackPress={handleBack}
+          customBellIcon={
+            <Ionicons 
+              name="refresh" 
+              size={28} 
+              color="#999" 
+            />
+          }
         />
         <View style={styles.errorContainer}>
           <Ionicons name="warning" size={64} color="#dc3545" />
@@ -229,31 +279,50 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
     <SafeAreaView style={styles.container}>
       <TopNav 
         title="Admin Customers" 
-        onBellPress={() => {}} 
+        onBellPress={() => loadCustomers(true)} 
         onMenuPress={() => {}}
         showBackButton={true}
         onBackPress={handleBack}
+        customBellIcon={
+          <Ionicons 
+            name="refresh" 
+            size={28} 
+            color={refreshing ? "#999" : "#fff"} 
+          />
+        }
       />
       
       <ScrollView style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>לקוחות ({customers.length})</Text>
-          <TouchableOpacity 
-            style={styles.refreshButton}
-            onPress={loadCustomers}
-          >
-            <Ionicons name="refresh" size={20} color="#007bff" />
-            <Text style={styles.refreshButtonText}>רענן</Text>
-          </TouchableOpacity>
         </View>
 
-        {customers.length === 0 ? (
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="חפש לפי שם או טלפון..."
+            placeholderTextColor="#999"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
+              <Ionicons name="close-circle" size={20} color="#999" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {filteredCustomers.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Ionicons name="people-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>אין לקוחות רשומים</Text>
+            <Ionicons name={searchQuery ? "search-outline" : "people-outline"} size={64} color="#ccc" />
+            <Text style={styles.emptyText}>
+              {searchQuery ? 'לא נמצאו לקוחות התואמים לחיפוש' : 'אין לקוחות רשומים'}
+            </Text>
           </View>
         ) : (
-          customers.map((customer, index) => (
+          filteredCustomers.map((customer, index) => (
             <View key={customer.uid} style={styles.customerCard}>
               <View style={styles.customerHeader}>
                 <View style={styles.customerNumber}>
@@ -338,7 +407,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   headerTitle: {
     fontSize: 24,
@@ -346,19 +415,59 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: 'Heebo-Bold',
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  searchIcon: {
+    marginLeft: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.text,
+    fontFamily: 'Heebo-Regular',
+    textAlign: 'right',
+  },
+  clearButton: {
+    padding: 4,
+  },
   refreshButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f8f9fa',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#007bff',
+  },
+  refreshButtonDisabled: {
+    backgroundColor: '#f0f0f0',
+    borderColor: '#ccc',
   },
   refreshButtonText: {
-    marginLeft: 4,
+    marginLeft: 6,
     color: '#007bff',
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '600',
     fontFamily: 'Heebo-Medium',
+  },
+  refreshButtonTextDisabled: {
+    color: '#999',
+  },
+  spinning: {
+    transform: [{ rotate: '180deg' }],
   },
   emptyContainer: {
     flex: 1,

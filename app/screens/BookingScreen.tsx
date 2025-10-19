@@ -18,11 +18,13 @@ import {
 import {
   Barber,
   createAppointment,
+  createWaitlistEntry,
   getBarberAppointmentsForDay,
   getBarberAvailableSlots,
   getBarbers,
   getCurrentUser,
   getTreatments,
+  getUserProfile,
   subscribeToTreatmentsChanges,
   Treatment
 } from '../../services/firebase';
@@ -98,6 +100,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
   const [detailsBarber, setDetailsBarber] = useState<Barber | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [showWaitlistModal, setShowWaitlistModal] = useState(false);
+  const [waitlistTimeStart, setWaitlistTimeStart] = useState('09:00');
+  const [waitlistTimeEnd, setWaitlistTimeEnd] = useState('18:00');
 
   const preSelectedBarberId = route?.params?.barberId;
 
@@ -645,6 +650,48 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
     setShowConfirmModal(true);
   };
 
+  const handleWaitlistSubmit = async () => {
+    const user = getCurrentUser();
+    if (!user) {
+      Alert.alert('נדרש כניסה', 'יש להתחבר כדי להירשם לרשימת המתנה');
+      setShowWaitlistModal(false);
+      onNavigate('profile');
+      return;
+    }
+
+    if (!selectedBarber || !selectedDate) {
+      Alert.alert('שגיאה', 'נא לבחור ספר ותאריך');
+      return;
+    }
+
+    try {
+      // Get user profile for display name and phone
+      const userProfile = await getUserProfile(user.uid);
+      
+      const dateStr = toYMD(selectedDate);
+      
+      await createWaitlistEntry({
+        userId: user.uid,
+        barberId: selectedBarber.id,
+        date: dateStr,
+        preferredTimeStart: waitlistTimeStart,
+        preferredTimeEnd: waitlistTimeEnd,
+        userDisplayName: userProfile?.displayName || user.displayName || 'אורח',
+        userPhone: userProfile?.phone || '',
+      });
+
+      setShowWaitlistModal(false);
+      Alert.alert(
+        'נרשמת בהצלחה! ✅',
+        `נרשמת לרשימת המתנה ליום ${selectedDate.toLocaleDateString('he-IL')} בין השעות ${waitlistTimeStart}-${waitlistTimeEnd}. נודיע לך ברגע שיתפנה תור!`,
+        [{ text: 'אישור', style: 'default' }]
+      );
+    } catch (error) {
+      console.error('Error adding to waitlist:', error);
+      Alert.alert('שגיאה', 'לא ניתן להירשם לרשימת המתנה כרגע');
+    }
+  };
+
   const handleConfirmBooking = async () => {
     const user = getCurrentUser();
     if (!user) {
@@ -1068,27 +1115,55 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
               </TouchableOpacity>
             </View>
             
-            <View style={styles.timesContainer}>
-              {availableTimes.map((time, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.timeCard,
-                    selectedTime === time && styles.selectedCard
-                  ]}
-                  onPress={() => handleTimeSelect(time)}
-                >
-                  <LinearGradient
-                    colors={['#1a1a1a', '#000000', '#1a1a1a']}
-                    style={styles.timeGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
+            {availableTimes.length === 0 ? (
+              <View style={styles.noSlotsContainer}>
+                <Text style={styles.noSlotsEmoji}>😔</Text>
+                <Text style={styles.noSlotsTitle}>נתפסו כל התורים!</Text>
+                <Text style={styles.noSlotsSubtitle}>אין שעות פנויות ביום זה</Text>
+                <Text style={styles.noSlotsHint}>נסה לבחור תאריך אחר</Text>
+              </View>
+            ) : (
+              <View style={styles.timesContainer}>
+                {availableTimes.map((time, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.timeCard,
+                      selectedTime === time && styles.selectedCard
+                    ]}
+                    onPress={() => handleTimeSelect(time)}
                   >
-                    <Text style={styles.timeText}>{time}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ))}
-            </View>
+                    <LinearGradient
+                      colors={['#1a1a1a', '#000000', '#1a1a1a']}
+                      style={styles.timeGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Text style={styles.timeText}>{time}</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            
+            {/* Waitlist Box */}
+            {selectedDate && (
+              <TouchableOpacity 
+                style={styles.waitlistBox}
+                onPress={() => setShowWaitlistModal(true)}
+              >
+                <LinearGradient
+                  colors={['#FF6B6B', '#EE5A6F', '#FF6B6B']}
+                  style={styles.waitlistGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Text style={styles.waitlistBoxTitle}>לא מצאת תור לזמן שלך? 🕐</Text>
+                  <Text style={styles.waitlistBoxSubtitle}>כנס לרשימת המתנה</Text>
+                  <Text style={styles.waitlistBoxHint}>נודיע לך ברגע שיתפנה תור!</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -1236,6 +1311,103 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
           onNavigate('profile');
         }}
       />
+
+      {/* Waitlist Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showWaitlistModal}
+        onRequestClose={() => setShowWaitlistModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>רשימת המתנה 📋</Text>
+            
+            <View style={styles.waitlistModalContent}>
+              <Text style={styles.waitlistModalSubtitle}>
+                ליום: {selectedDate?.toLocaleDateString('he-IL')}
+              </Text>
+              
+              <Text style={styles.waitlistLabel}>לאיזה שעה תעדיף?</Text>
+              <Text style={styles.waitlistHint}>אנא כתוב טווח שעות רצוי</Text>
+              
+              <View style={styles.timeRangeContainer}>
+                <View style={styles.timeInputContainer}>
+                  <Text style={styles.timeLabel}>משעה:</Text>
+                  <ScrollView 
+                    style={styles.timePicker}
+                    showsVerticalScrollIndicator={true}
+                  >
+                    {generateTimeSlots(8, 20).map((time) => (
+                      <TouchableOpacity
+                        key={time}
+                        style={[
+                          styles.timeOption,
+                          waitlistTimeStart === time && styles.selectedTimeOption
+                        ]}
+                        onPress={() => setWaitlistTimeStart(time)}
+                      >
+                        <Text style={[
+                          styles.timeOptionText,
+                          waitlistTimeStart === time && styles.selectedTimeOptionText
+                        ]}>
+                          {time}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+                
+                <View style={styles.timeInputContainer}>
+                  <Text style={styles.timeLabel}>עד שעה:</Text>
+                  <ScrollView 
+                    style={styles.timePicker}
+                    showsVerticalScrollIndicator={true}
+                  >
+                    {generateTimeSlots(8, 20).map((time) => (
+                      <TouchableOpacity
+                        key={time}
+                        style={[
+                          styles.timeOption,
+                          waitlistTimeEnd === time && styles.selectedTimeOption
+                        ]}
+                        onPress={() => setWaitlistTimeEnd(time)}
+                      >
+                        <Text style={[
+                          styles.timeOptionText,
+                          waitlistTimeEnd === time && styles.selectedTimeOptionText
+                        ]}>
+                          {time}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </View>
+              
+              <Text style={styles.waitlistSummary}>
+                טווח שעות מבוקש: {waitlistTimeStart} - {waitlistTimeEnd}
+              </Text>
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={handleWaitlistSubmit}
+              >
+                <Text style={styles.confirmButtonText}>הירשם לרשימת המתנה</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowWaitlistModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>ביטול</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1660,6 +1832,142 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  noSlotsContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    marginTop: 40,
+  },
+  noSlotsEmoji: {
+    fontSize: 60,
+    marginBottom: 20,
+  },
+  noSlotsTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  noSlotsSubtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  noSlotsHint: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  waitlistBox: {
+    marginTop: 24,
+    marginHorizontal: 16,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  waitlistGradient: {
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  waitlistBoxTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  waitlistBoxSubtitle: {
+    fontSize: 16,
+    color: '#fff',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  waitlistBoxHint: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+  },
+  waitlistModalContent: {
+    marginVertical: 20,
+  },
+  waitlistModalSubtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  waitlistLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  waitlistHint: {
+    fontSize: 14,
+    color: '#999',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  timeRangeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  timeInputContainer: {
+    flex: 1,
+    marginHorizontal: 8,
+  },
+  timeLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  timePicker: {
+    maxHeight: 150,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 12,
+    backgroundColor: '#f8f9fa',
+  },
+  timeOption: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
+    alignItems: 'center',
+  },
+  selectedTimeOption: {
+    backgroundColor: '#007bff',
+  },
+  timeOptionText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  selectedTimeOptionText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  waitlistSummary: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#007bff',
+    textAlign: 'center',
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#e7f3ff',
+    borderRadius: 12,
   },
 });
 
