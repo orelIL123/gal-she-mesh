@@ -257,22 +257,63 @@ const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigat
 
   const clearAllData = () => {
     Alert.alert(
-      'ניקוי נתונים',
-      'האם אתה בטוח שברצונך לאפס את כל הנתונים? פעולה זו אינה הפיכה!',
+      'ניקוי נתונים ישנים',
+      'האם אתה בטוח שברצונך למחוק תורים ישנים (שהושלמו או בוטלו מלפני 30 יום)?\n\nפעולה זו תסייע לשמור על ביצועים טובים של המערכת.',
       [
         { text: 'ביטול', style: 'cancel' },
         { 
-          text: 'אפס נתונים', 
+          text: 'מחק תורים ישנים', 
           style: 'destructive',
           onPress: async () => {
             try {
-              // Here you would implement the actual data clearing logic
-              // For now, we'll just show a confirmation
-              Alert.alert('נתונים אופסו', 'כל הנתונים אופסו בהצלחה');
-              loadStatistics(); // Reload to show empty stats
+              setLoading(true);
+              
+              // Get all appointments
+              const appointments = await getAllAppointments();
+              const thirtyDaysAgo = new Date();
+              thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+              
+              let deletedCount = 0;
+              
+              // Filter and delete old completed/cancelled appointments
+              for (const appointment of appointments) {
+                try {
+                  const dateValue = appointment.date as any;
+                  let appointmentDate: Date;
+                  
+                  if (dateValue && typeof dateValue.toDate === 'function') {
+                    appointmentDate = dateValue.toDate();
+                  } else if (dateValue) {
+                    appointmentDate = new Date(dateValue);
+                  } else {
+                    continue;
+                  }
+                  
+                  // Only delete completed or cancelled appointments older than 30 days
+                  if (
+                    (appointment.status === 'completed' || appointment.status === 'cancelled') &&
+                    appointmentDate < thirtyDaysAgo
+                  ) {
+                    const { deleteDoc, doc } = await import('firebase/firestore');
+                    const { db } = await import('../../config/firebase');
+                    await deleteDoc(doc(db, 'appointments', appointment.id));
+                    deletedCount++;
+                  }
+                } catch (error) {
+                  console.error('Error deleting appointment:', error);
+                }
+              }
+              
+              Alert.alert(
+                'הצלחה', 
+                `נמחקו ${deletedCount} תורים ישנים בהצלחה!\n\nהמערכת נקייה ומוכנה לפעולה מיטבית.`
+              );
+              loadStatistics(); // Reload to show updated stats
             } catch (error) {
               console.error('Error clearing data:', error);
-              Alert.alert('שגיאה', 'לא ניתן לאפס את הנתונים');
+              Alert.alert('שגיאה', 'לא ניתן למחוק את הנתונים. אנא נסה שוב מאוחר יותר.');
+            } finally {
+              setLoading(false);
             }
           }
         }

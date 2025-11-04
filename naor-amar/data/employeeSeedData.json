@@ -1,0 +1,18 @@
+{
+  "businessName": "Naor Amar",
+  "totalEmployees": 1,
+  "employees": [
+    {
+      "name": "Naor Amar",
+      "phone": "+9720532706369",
+      "specialization": "תספורת גברים",
+      "experience": "10",
+      "isMainBarber": true,
+      "available": true,
+      "barberId": "barber_naor_amar_1",
+      "userId": "user_naor_amar_barber_1",
+      "phoneE164": "+9720532706369"
+    }
+  ]
+}
+

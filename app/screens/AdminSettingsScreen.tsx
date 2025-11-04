@@ -26,7 +26,7 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
   const [cleanupLoading, setCleanupLoading] = useState(false);
   
   // Settings states
-  const [welcomeMessage, setWelcomeMessage] = useState('שלום, ברוכים הבאים');
+  const [welcomeMessage, setWelcomeMessage] = useState('שלום, ברוכים הבאים ל-naor amar');
   const [subtitleMessage, setSubtitleMessage] = useState('ל-TURGI ברברשופ');
   const [aboutUsText, setAboutUsText] = useState('ברוכים הבאים למספרה של רון תורג׳מן! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. רון, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
   const [popupMessage, setPopupMessage] = useState('');
@@ -85,12 +85,12 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
       const welcomeDoc = await getDoc(doc(db, 'settings', 'homeMessages'));
       if (welcomeDoc.exists()) {
         const data = welcomeDoc.data();
-        setWelcomeMessage(data.welcome || 'שלום, ברוכים הבאים');
+        setWelcomeMessage(data.welcome || 'שלום, ברוכים הבאים ל-naor amar');
         setSubtitleMessage(data.subtitle || 'ל-TURGI ברברשופ');
       } else {
         // Create default if doesn't exist
         await setDoc(doc(db, 'settings', 'homeMessages'), {
-          welcome: 'שלום, ברוכים הבאים',
+          welcome: 'שלום, ברוכים הבאים ל-naor amar',
           subtitle: 'ל-TURGI ברברשופ',
           createdAt: new Date()
         });
@@ -214,7 +214,7 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
               style={styles.textInput}
               value={welcomeMessage}
               onChangeText={setWelcomeMessage}
-              placeholder="שלום, ברוכים הבאים"
+              placeholder="שלום, ברוכים הבאים ל-naor amar"
               textAlign="right"
               multiline
             />

@@ -47,7 +47,7 @@ export default function AuthChoiceScreen() {
             style={styles.logo}
             resizeMode="cover"
           />
-          <Text style={styles.appName}>רון תורגמן</Text>
+          <Text style={styles.appName}>נאור עמר</Text>
           <Text style={styles.tagline}>המספרה המקצועית שלך</Text>
         </View>
 
@@ -194,13 +194,13 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   loginButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#8b4513',
     height: 56,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: '#3b82f6',
+    shadowColor: '#8b4513',
     shadowOffset: {
       width: 0,
       height: 4,
@@ -221,11 +221,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#3b82f6',
+    borderColor: '#8b4513',
     marginBottom: 32,
   },
   registerButtonText: {
-    color: '#3b82f6',
+    color: '#8b4513',
     fontSize: 18,
     fontWeight: '600',
   },
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   termsLink: {
-    color: '#3b82f6',
+    color: '#8b4513',
     textDecorationLine: 'underline',
   },
   modalOverlay: {
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
   subsectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#3b82f6',
+    color: '#8b4513',
     marginBottom: 5,
   },
   contactInfo: {
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   modalCloseButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#8b4513',
     height: 50,
     borderRadius: 10,
     justifyContent: 'center',

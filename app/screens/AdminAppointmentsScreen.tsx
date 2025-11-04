@@ -329,9 +329,9 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
     }
 
     try {
-      // Validate that the selected time is on the 25-minute grid
+      // Validate that the selected time is on the 20-minute grid
       if (!isOnGrid(selectedTime)) {
-        showToast(`זמן חייב להיות על גריד של ${SLOT_SIZE_MINUTES} דקות (HH:00, HH:25, HH:50, HH+1:15)`, 'error');
+        showToast(`זמן חייב להיות על גריד של ${SLOT_SIZE_MINUTES} דקות (HH:00, HH:20, HH:40)`, 'error');
         return;
       }
 

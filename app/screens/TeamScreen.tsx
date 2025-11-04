@@ -252,7 +252,7 @@ const TeamScreen: React.FC<TeamScreenProps> = ({ onNavigate, onBack }) => {
             <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 6 }}>{detailsBarber?.name}</Text>
             <Text style={{ fontSize: 16, color: '#666', marginBottom: 8 }}>{detailsBarber?.experience}</Text>
             {detailsBarber?.phone && (
-              <Text style={{ fontSize: 16, color: '#3b82f6', marginBottom: 8 }}>טלפון: {detailsBarber.phone}</Text>
+              <Text style={{ fontSize: 16, color: '#8b4513', marginBottom: 8 }}>טלפון: {detailsBarber.phone}</Text>
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
               {/* אייקון וואטסאפ */}
@@ -261,7 +261,7 @@ const TeamScreen: React.FC<TeamScreenProps> = ({ onNavigate, onBack }) => {
               </View>
             </View>
             <TouchableOpacity onPress={() => setDetailsBarber(null)} style={{ marginTop: 18 }}>
-              <Text style={{ color: '#3b82f6', fontWeight: 'bold' }}>סגור</Text>
+              <Text style={{ color: '#8b4513', fontWeight: 'bold' }}>סגור</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -564,7 +564,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   detailsButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#8b4513',
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 16,

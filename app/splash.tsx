@@ -95,7 +95,7 @@ export default function SplashScreen() {
         ]}
       >
         <Image
-          source={require('../assets/images/TURGI.png')}
+          source={require('../assets/images/naoramar.png')}
           style={styles.image}
           resizeMode="cover"
         />

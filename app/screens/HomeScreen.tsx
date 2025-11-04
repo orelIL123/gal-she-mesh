@@ -522,7 +522,7 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
   return (
     <SafeAreaView style={styles.container}>
       <TopNav 
-        title="ron turgeman"
+        title="naor amar "
         onBellPress={() => setNotificationPanelVisible(true)} 
         onMenuPress={() => setSideMenuVisible(true)} 
       />
@@ -589,7 +589,7 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
             ]}
           >
             <LinearGradient
-              colors={['rgba(59, 130, 246, 0.1)', 'rgba(59, 130, 246, 0.05)', 'rgba(3, 3, 3, 0.95)']}
+              colors={['rgba(139, 69, 19, 0.1)', 'rgba(139, 69, 19, 0.05)', 'rgba(3, 3, 3, 0.95)']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.cardGradient}

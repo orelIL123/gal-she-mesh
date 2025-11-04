@@ -1,6 +1,6 @@
 {
   "name": "ExpoImage",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "summary": "A cross-platform, performant image component for React Native and Expo with Web support",
   "description": "A cross-platform, performant image component for React Native and Expo with Web support",
   "license": "MIT",

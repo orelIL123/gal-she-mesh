@@ -82,9 +82,9 @@ const generateNext14Days = () => {
   return days;
 };
 
-// Simple time slots from 07:00 to 24:00 in 25-minute increments
+// Simple time slots from 07:00 to 24:00 in 20-minute increments
 const getTimeSlots = () => {
-  return generateTimeSlots(7, 24); // 7:00 → 24:00 (exclusive) = 07:00, 07:25, 07:50, 08:00, ... 23:35
+  return generateTimeSlots(7, 24); // 7:00 → 24:00 (exclusive) = 07:00, 07:20, 07:40, 08:00, ... 23:40
 };
 
 // Helper: for TODAY, prevent enabling past slots
@@ -413,7 +413,7 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
       const barberId = selectedBarber.id;
 
       if (newAvailability) {
-        // If making available, set default 9:00-17:00 schedule with 25-minute slots
+        // If making available, set default 9:00-17:00 schedule with 20-minute slots
         const defaultSlots = generateTimeSlots(9, 17);
         console.log('✅ Creating default slots for SPECIFIC DATE ONLY:', date, defaultSlots);
 
@@ -503,10 +503,10 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
       return;
     }
 
-    // Validate that the time is on the 25-minute grid
+    // Validate that the time is on the 20-minute grid
     if (!isOnGrid(time)) {
       console.log('❌ Time not on grid:', time);
-      showToast(`זמן חייב להיות על גריד של ${SLOT_SIZE_MINUTES} דקות (HH:00, HH:25, HH:50)`, 'error');
+      showToast(`זמן חייב להיות על גריד של ${SLOT_SIZE_MINUTES} דקות (HH:00, HH:20, HH:40)`, 'error');
       return;
     }
 
@@ -828,7 +828,7 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
                 שליטה מלאה על זמינות {selectedBarber?.name}
               </Text>
               <Text style={styles.subInstructionText}>
-                כל סלוט הוא 25 דקות. ברירת מחדל: ימי שישי ושבת לא זמינים, שעות 09:00-17:00 כשמפעילים יום.
+                כל סלוט הוא 20 דקות. ברירת מחדל: ימי שישי ושבת לא זמינים, שעות 09:00-17:00 כשמפעילים יום.
               </Text>
 
               <Text style={styles.debugText}>

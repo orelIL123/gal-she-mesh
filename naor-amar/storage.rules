@@ -1,0 +1,86 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return request.auth != null &&
+             firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    
+    function isBarber() {
+      return request.auth != null &&
+             firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.isBarber == true;
+    }
+    
+    function isValidImage() {
+      return request.resource.size < 5 * 1024 * 1024 // 5MB
+             && request.resource.contentType.matches('image/.*');
+    }
+    
+    // Profile images
+    match /profiles/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn() 
+                      && request.auth.uid == userId 
+                      && isValidImage();
+    }
+    
+    // Gallery images
+    match /gallery/{allPaths=**} {
+      allow read: if true;
+      allow write: if (isBarber() || isAdmin()) && isValidImage();
+    }
+    
+    // Barber/Worker images
+    match /barbers/{allPaths=**} {
+      allow read: if true;
+      allow write: if (isBarber() || isAdmin()) && isValidImage();
+    }
+    
+    match /workers/{allPaths=**} {
+      allow read: if true;
+      allow write: if (isBarber() || isAdmin()) && isValidImage();
+    }
+    
+    // Backgrounds
+    match /backgrounds/{allPaths=**} {
+      allow read: if true;
+      allow write: if (isBarber() || isAdmin()) && isValidImage();
+    }
+    
+    // Splash screens
+    match /splash/{allPaths=**} {
+      allow read: if true;
+      allow write: if (isBarber() || isAdmin()) && isValidImage();
+    }
+    
+    // About Us images
+    match /aboutus/{allPaths=**} {
+      allow read: if true;
+      allow write: if (isBarber() || isAdmin()) && isValidImage();
+    }
+    
+    // Shop images
+    match /shop/{allPaths=**} {
+      allow read: if true;
+      allow write: if (isBarber() || isAdmin()) && isValidImage();
+    }
+    
+    // Treatment images
+    match /treatments/{allPaths=**} {
+      allow read: if true;
+      allow write: if (isBarber() || isAdmin()) && isValidImage();
+    }
+    
+    // Business assets
+    match /business/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidImage();
+    }
+  }
+}
+

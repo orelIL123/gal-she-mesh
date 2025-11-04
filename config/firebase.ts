@@ -7,13 +7,12 @@ import { getStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBiDFQNbnExTE03YS_6xoNE6_RrX4HBN4Q",
-  authDomain: "barber-app-template.firebaseapp.com",
-  projectId: "barber-app-template",
-  storageBucket: "barber-app-template.firebasestorage.app",
-  messagingSenderId: "246646930767",
-  appId: "1:246646930767:web:d1bdd3b156eda443f2193a",
-  measurementId: "G-S6VSPNP5LH"
+  apiKey: "AIzaSyBKq7PdSIhnBfAwBo1kHZNTwp_TqRIZKe4",
+  authDomain: "naor-amar.firebaseapp.com",
+  projectId: "naor-amar",
+  storageBucket: "naor-amar.firebasestorage.app",
+  messagingSenderId: "9527955029",
+  appId: "1:9527955029:ios:86a2878d06221e119d4edc"
 };
 
 // Initialize Firebase App

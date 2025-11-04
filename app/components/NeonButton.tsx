@@ -61,10 +61,10 @@ export const NeonButton: React.FC<NeonButtonProps> = ({
           alignItems: 'center',
           justifyContent: 'center',
           shadowColor: getGradientColors()[0],
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.3,
-          shadowRadius: 8,
-          elevation: 8,
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.6,
+          shadowRadius: 16,
+          elevation: 12,
         }}
       >
         <Text

@@ -7,12 +7,12 @@ export class SMS4FreeProvider implements MessageProvider {
   private pass: string;
   private sender: string;
   private enabled: boolean;
-  private endpoint = 'https://api.sms4free.co.il/ApiSMS/v2/SendSMS';
+  private endpoint = 'https://www.sms4free.co.il/ApiSMS/v2/SendSMS';
 
   constructor(cfg: { apiKey: string; user: string; pass: string; sender: string; enabled: boolean }) {
     // Use exact ToriX credentials or fallback to config
     this.apiKey = cfg.apiKey || 'mgfwkoRBI';
-    this.user = cfg.user || '0523985505';  // Connection number
+    this.user = cfg.user || '+972532706369';  // Connection number
     this.pass = cfg.pass || '73960779';
     this.sender = cfg.sender || 'ToriX';  // Brand name
     this.enabled = cfg.enabled;
@@ -47,7 +47,8 @@ export class SMS4FreeProvider implements MessageProvider {
         msg: message,
       };
 
-      console.log(`📱 ToriX SMS: Sending SMS to ${params.to} via ${this.sender}`);
+      console.log(`📱 ToriX SMS: Sending SMS to ${params.to} (formatted: ${recipient}) via ${this.sender}`);
+      console.log(`📱 Request body:`, JSON.stringify(body, null, 2));
 
       const resp = await fetch(this.endpoint, {
         method: 'POST',
@@ -57,8 +58,17 @@ export class SMS4FreeProvider implements MessageProvider {
         body: JSON.stringify(body),
       });
 
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const out = await resp.json(); // {status:number, message:string}
+      console.log(`📱 Response status: ${resp.status}`);
+      
+      const responseText = await resp.text();
+      console.log(`📱 Response body:`, responseText);
+
+      if (!resp.ok) {
+        console.error(`❌ HTTP Error ${resp.status}: ${responseText}`);
+        throw new Error(`HTTP ${resp.status}: ${responseText}`);
+      }
+      
+      const out = JSON.parse(responseText); // {status:number, message:string}
 
       console.log('📱 ToriX SMS Response:', out);
 

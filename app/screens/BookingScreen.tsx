@@ -496,18 +496,18 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
         
         // Check if slot + treatment duration fits within the time slot
         const slotEnd = new Date(slotStart.getTime() + treatmentDuration * 60000);
-        const nextSlotStart = new Date(slotStart.getTime() + SLOT_SIZE_MINUTES * 60000); // Next 25-min slot
+        const nextSlotStart = new Date(slotStart.getTime() + SLOT_SIZE_MINUTES * 60000); // Next 20-min slot
         
-        // For treatments longer than 25 minutes, we need to check if there are enough consecutive slots
+        // For treatments longer than 20 minutes, we need to check if there are enough consecutive slots
         if (treatmentDuration > SLOT_SIZE_MINUTES) {
-          // Check if we have enough consecutive 25-minute slots for the treatment
+          // Check if we have enough consecutive 20-minute slots for the treatment
           const requiredSlots = getSlotsNeeded(treatmentDuration);
           let hasEnoughSlots = true;
 
           for (let i = 0; i < requiredSlots; i++) {
             const checkSlotStart = new Date(slotStart.getTime() + (i * SLOT_SIZE_MINUTES * 60000));
 
-            // Check if this 25-minute slot is available
+            // Check if this 20-minute slot is available
             if (!isSlotAvailable(checkSlotStart, SLOT_SIZE_MINUTES, appointments)) {
               hasEnoughSlots = false;
               break;
@@ -518,7 +518,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
             slots.push(slotStart);
           }
         } else {
-          // For treatments 25 minutes or less, use the original logic
+          // For treatments 20 minutes or less, use the original logic
           if (slotEnd <= nextSlotStart && isSlotAvailable(slotStart, treatmentDuration, appointments)) {
             slots.push(slotStart);
           }
@@ -1277,7 +1277,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
             <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 6 }}>{detailsBarber?.name}</Text>
             <Text style={{ fontSize: 16, color: '#666', marginBottom: 8 }}>{detailsBarber?.experience}</Text>
             {detailsBarber?.phone && (
-              <Text style={{ fontSize: 16, color: '#3b82f6', marginBottom: 8 }}>{t('profile.phone')} {detailsBarber.phone}</Text>
+              <Text style={{ fontSize: 16, color: '#8b4513', marginBottom: 8 }}>{t('profile.phone')} {detailsBarber.phone}</Text>
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
               {/* אייקון וואטסאפ */}
@@ -1286,7 +1286,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
               </View>
             </View>
             <TouchableOpacity onPress={() => setDetailsBarber(null)} style={{ marginTop: 18 }}>
-              <Text style={{ color: '#3b82f6', fontWeight: 'bold' }}>{t('common.close')}</Text>
+              <Text style={{ color: '#8b4513', fontWeight: 'bold' }}>{t('common.close')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1797,7 +1797,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   detailsButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#8b4513',
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 16,

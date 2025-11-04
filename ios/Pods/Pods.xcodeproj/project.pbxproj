@@ -4031,8 +4031,8 @@
 		46EB2E0002C290 /* RNCWebViewModule.h in Headers */ = {isa = PBXBuildFile; fileRef = 46EB2E00015400 /* RNCWebViewModule.h */; settings = {ATTRIBUTES = (Project, ); }; };
 		46EB2E0002C2A0 /* RNCWKProcessPoolManager.h in Headers */ = {isa = PBXBuildFile; fileRef = 46EB2E00015420 /* RNCWKProcessPoolManager.h */; settings = {ATTRIBUTES = (Project, ); }; };
 		46EB2E0002C300 /* react-native-webview-dummy.m in Sources */ = {isa = PBXBuildFile; fileRef = 46EB2E0002C2F0 /* react-native-webview-dummy.m */; };
-		46EB2E0002C3E0 /* Pods-RonTurgeman-umbrella.h in Headers */ = {isa = PBXBuildFile; fileRef = 46EB2E0002C3D0 /* Pods-RonTurgeman-umbrella.h */; settings = {ATTRIBUTES = (Project, ); }; };
-		46EB2E0002C440 /* Pods-RonTurgeman-dummy.m in Sources */ = {isa = PBXBuildFile; fileRef = 46EB2E0002C430 /* Pods-RonTurgeman-dummy.m */; };
+		46EB2E0002C3E0 /* Pods-NAORAMAR-umbrella.h in Headers */ = {isa = PBXBuildFile; fileRef = 46EB2E0002C3D0 /* Pods-NAORAMAR-umbrella.h */; settings = {ATTRIBUTES = (Project, ); }; };
+		46EB2E0002C440 /* Pods-NAORAMAR-dummy.m in Sources */ = {isa = PBXBuildFile; fileRef = 46EB2E0002C430 /* Pods-NAORAMAR-dummy.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -10489,6 +10489,7 @@
 		1381503C42FFF460E946860A32A6F981 /* React-RuntimeApple */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = "React-RuntimeApple"; path = "libReact-RuntimeApple.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		178DE81B4D5424C480EC2B1B64A6412D /* ExpoFileSystem-ExpoFileSystem_privacy */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "ExpoFileSystem-ExpoFileSystem_privacy"; path = ExpoFileSystem_privacy.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		18C507260835155D52978B1729EDA89B /* ExpoImage */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = ExpoImage; path = libExpoImage.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		190ECAB61A65C0F0CC48FABAAB6C5E33 /* Pods-NAORAMAR */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = "Pods-NAORAMAR"; path = "libPods-NAORAMAR.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		1936453FF2A7E3A13063C4917C4D5598 /* RCT-Folly */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = "RCT-Folly"; path = "libRCT-Folly.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		193DBE46DE315DBF00EA187D59180A81 /* EXStructuredHeaders */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = EXStructuredHeaders; path = libEXStructuredHeaders.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A90121ACD9156C61CEF34DBEE1BC470 /* ExpoSystemUI-ExpoSystemUI_privacy */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "ExpoSystemUI-ExpoSystemUI_privacy"; path = ExpoSystemUI_privacy.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -16262,15 +16263,15 @@
 		46EB2E0002C2D0 /* react-native-webview.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = "react-native-webview.release.xcconfig"; sourceTree = "<group>"; };
 		46EB2E0002C2E0 /* react-native-webview-prefix.pch */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "react-native-webview-prefix.pch"; sourceTree = "<group>"; };
 		46EB2E0002C2F0 /* react-native-webview-dummy.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = "react-native-webview-dummy.m"; sourceTree = "<group>"; };
-		46EB2E0002C3A0 /* Pods-RonTurgeman.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = "Pods-RonTurgeman.release.xcconfig"; sourceTree = "<group>"; };
-		46EB2E0002C3B0 /* Pods-RonTurgeman.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = "Pods-RonTurgeman.debug.xcconfig"; sourceTree = "<group>"; };
-		46EB2E0002C3C0 /* Pods-RonTurgeman.modulemap */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.module; path = "Pods-RonTurgeman.modulemap"; sourceTree = "<group>"; };
-		46EB2E0002C3D0 /* Pods-RonTurgeman-umbrella.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "Pods-RonTurgeman-umbrella.h"; sourceTree = "<group>"; };
-		46EB2E0002C3F0 /* Pods-RonTurgeman-frameworks.sh */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.script.sh; path = "Pods-RonTurgeman-frameworks.sh"; sourceTree = "<group>"; };
-		46EB2E0002C400 /* Pods-RonTurgeman-resources.sh */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.script.sh; path = "Pods-RonTurgeman-resources.sh"; sourceTree = "<group>"; };
-		46EB2E0002C410 /* Pods-RonTurgeman-acknowledgements.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Pods-RonTurgeman-acknowledgements.plist"; sourceTree = "<group>"; };
-		46EB2E0002C420 /* Pods-RonTurgeman-acknowledgements.markdown */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; path = "Pods-RonTurgeman-acknowledgements.markdown"; sourceTree = "<group>"; };
-		46EB2E0002C430 /* Pods-RonTurgeman-dummy.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = "Pods-RonTurgeman-dummy.m"; sourceTree = "<group>"; };
+		46EB2E0002C3A0 /* Pods-NAORAMAR.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = "Pods-NAORAMAR.release.xcconfig"; sourceTree = "<group>"; };
+		46EB2E0002C3B0 /* Pods-NAORAMAR.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = "Pods-NAORAMAR.debug.xcconfig"; sourceTree = "<group>"; };
+		46EB2E0002C3C0 /* Pods-NAORAMAR.modulemap */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.module; path = "Pods-NAORAMAR.modulemap"; sourceTree = "<group>"; };
+		46EB2E0002C3D0 /* Pods-NAORAMAR-umbrella.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "Pods-NAORAMAR-umbrella.h"; sourceTree = "<group>"; };
+		46EB2E0002C3F0 /* Pods-NAORAMAR-frameworks.sh */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.script.sh; path = "Pods-NAORAMAR-frameworks.sh"; sourceTree = "<group>"; };
+		46EB2E0002C400 /* Pods-NAORAMAR-resources.sh */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.script.sh; path = "Pods-NAORAMAR-resources.sh"; sourceTree = "<group>"; };
+		46EB2E0002C410 /* Pods-NAORAMAR-acknowledgements.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Pods-NAORAMAR-acknowledgements.plist"; sourceTree = "<group>"; };
+		46EB2E0002C420 /* Pods-NAORAMAR-acknowledgements.markdown */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; path = "Pods-NAORAMAR-acknowledgements.markdown"; sourceTree = "<group>"; };
+		46EB2E0002C430 /* Pods-NAORAMAR-dummy.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = "Pods-NAORAMAR-dummy.m"; sourceTree = "<group>"; };
 		494E934B4070A029E1A8D42C9BDF4646 /* EXImageLoader */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = EXImageLoader; path = libEXImageLoader.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		4BDAA6F307D9CC47CB110B4B08707C84 /* ExpoHaptics */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = ExpoHaptics; path = libExpoHaptics.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F3E9C98444FA55E416B857143C48013 /* React-RuntimeHermes */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = "React-RuntimeHermes"; path = "libReact-RuntimeHermes.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -16332,7 +16333,6 @@
 		CF1281E58AA1045D4B7F33FC56691C42 /* SDWebImage-SDWebImage */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "SDWebImage-SDWebImage"; path = SDWebImage.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		D097506274EC2BE06FC8A4B80E7DCD87 /* EXManifests */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = EXManifests; path = libEXManifests.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		D22EED118A762A7D7BC88A4ADBB7026E /* React-RuntimeCore */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = "React-RuntimeCore"; path = "libReact-RuntimeCore.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		D523EB301814968A231150C745A84182 /* Pods-RonTurgeman */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = "Pods-RonTurgeman"; path = "libPods-RonTurgeman.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D5C775614AC76D44CECB6BE08B022F1F /* ReactCommon */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = ReactCommon; path = libReactCommon.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		D9F334F2E90E3EE462FC4192AF5C03BD /* React-jsi */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = "React-jsi"; path = "libReact-jsi.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA7ABB6DD8AEACED51D63B2C774E3A63 /* React-RCTFabric */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; name = "React-RCTFabric"; path = "libReact-RCTFabric.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -17271,7 +17271,7 @@
 				26F8BC6A69875CD65DC03BA1AAFE3979 /* libavif */,
 				4FF2FCDFBCAFE7F136863E085432F805 /* libdav1d */,
 				5E4674603A5D5B9215FFA0F8E69F8B71 /* libwebp */,
-				D523EB301814968A231150C745A84182 /* Pods-RonTurgeman */,
+				190ECAB61A65C0F0CC48FABAAB6C5E33 /* Pods-NAORAMAR */,
 				1936453FF2A7E3A13063C4917C4D5598 /* RCT-Folly */,
 				BA6198501C8FE4824D863DC9EF32C614 /* RCT-Folly-RCT-Folly_privacy */,
 				33EEBF1D210254B5452CE560F81C9D38 /* RCTDeprecation */,
@@ -17361,7 +17361,7 @@
 		46EB2E00000070 /* Targets Support Files */ = {
 			isa = PBXGroup;
 			children = (
-				46EB2E0002C390 /* Pods-RonTurgeman */,
+				46EB2E0002C390 /* Pods-NAORAMAR */,
 			);
 			name = "Targets Support Files";
 			sourceTree = "<group>";
@@ -28551,21 +28551,21 @@
 			path = "../../ios/Pods/Target Support Files/react-native-webview";
 			sourceTree = "<group>";
 		};
-		46EB2E0002C390 /* Pods-RonTurgeman */ = {
+		46EB2E0002C390 /* Pods-NAORAMAR */ = {
 			isa = PBXGroup;
 			children = (
-				46EB2E0002C3C0 /* Pods-RonTurgeman.modulemap */,
-				46EB2E0002C420 /* Pods-RonTurgeman-acknowledgements.markdown */,
-				46EB2E0002C410 /* Pods-RonTurgeman-acknowledgements.plist */,
-				46EB2E0002C430 /* Pods-RonTurgeman-dummy.m */,
-				46EB2E0002C3F0 /* Pods-RonTurgeman-frameworks.sh */,
-				46EB2E0002C400 /* Pods-RonTurgeman-resources.sh */,
-				46EB2E0002C3D0 /* Pods-RonTurgeman-umbrella.h */,
-				46EB2E0002C3B0 /* Pods-RonTurgeman.debug.xcconfig */,
-				46EB2E0002C3A0 /* Pods-RonTurgeman.release.xcconfig */,
+				46EB2E0002C3C0 /* Pods-NAORAMAR.modulemap */,
+				46EB2E0002C420 /* Pods-NAORAMAR-acknowledgements.markdown */,
+				46EB2E0002C410 /* Pods-NAORAMAR-acknowledgements.plist */,
+				46EB2E0002C430 /* Pods-NAORAMAR-dummy.m */,
+				46EB2E0002C3F0 /* Pods-NAORAMAR-frameworks.sh */,
+				46EB2E0002C400 /* Pods-NAORAMAR-resources.sh */,
+				46EB2E0002C3D0 /* Pods-NAORAMAR-umbrella.h */,
+				46EB2E0002C3B0 /* Pods-NAORAMAR.debug.xcconfig */,
+				46EB2E0002C3A0 /* Pods-NAORAMAR.release.xcconfig */,
 			);
-			name = "Pods-RonTurgeman";
-			path = "Target Support Files/Pods-RonTurgeman";
+			name = "Pods-NAORAMAR";
+			path = "Target Support Files/Pods-NAORAMAR";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -31408,7 +31408,7 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				46EB2E0002C3E0 /* Pods-RonTurgeman-umbrella.h in Headers */,
+				46EB2E0002C3E0 /* Pods-NAORAMAR-umbrella.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -32244,9 +32244,88 @@
 			productReference = 2279FA17021BAED5E637313F05A115AA /* React-RCTRuntime */;
 			productType = "com.apple.product-type.library.static";
 		};
-		3FFA526C125D91C7F2DB08881D23F491 /* Pods-RonTurgeman */ = {
+		425004FC843DA24ADB8CED23384EC72F /* React-RCTFBReactNativeSpec */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 46EB2E0002C320 /* Build configuration list for PBXNativeTarget "Pods-RonTurgeman" */;
+			buildConfigurationList = 46EB2E000236D0 /* Build configuration list for PBXNativeTarget "React-RCTFBReactNativeSpec" */;
+			buildPhases = (
+				46EB2E00023710 /* Headers */,
+				46EB2E0002C490 /* [CP-User] [RN]Check FBReactNativeSpec */,
+				46EB2E00023720 /* Sources */,
+				46EB2E00023730 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				46EB2E00030760 /* PBXTargetDependency */,
+				46EB2E00030780 /* PBXTargetDependency */,
+				46EB2E000307A0 /* PBXTargetDependency */,
+				46EB2E000307C0 /* PBXTargetDependency */,
+				46EB2E000307E0 /* PBXTargetDependency */,
+				46EB2E00030840 /* PBXTargetDependency */,
+				46EB2E00030720 /* PBXTargetDependency */,
+				46EB2E00030740 /* PBXTargetDependency */,
+				46EB2E00030800 /* PBXTargetDependency */,
+				46EB2E00030820 /* PBXTargetDependency */,
+			);
+			name = "React-RCTFBReactNativeSpec";
+			productName = "React-RCTFBReactNativeSpec";
+			productReference = 35C3D0A253BFD77715619C419AC17056 /* React-RCTFBReactNativeSpec */;
+			productType = "com.apple.product-type.library.static";
+		};
+		463F41A7E8B252F8AC5024DA1F4AF6DA /* React-cxxreact */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 46EB2E00025090 /* Build configuration list for PBXNativeTarget "React-cxxreact" */;
+			buildPhases = (
+				46EB2E000250D0 /* Headers */,
+				46EB2E000250E0 /* Sources */,
+				46EB2E000250F0 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				46EB2E000317A0 /* PBXTargetDependency */,
+				46EB2E00031800 /* PBXTargetDependency */,
+				46EB2E00031880 /* PBXTargetDependency */,
+				46EB2E00031760 /* PBXTargetDependency */,
+				46EB2E00031920 /* PBXTargetDependency */,
+				46EB2E000318E0 /* PBXTargetDependency */,
+				46EB2E00031840 /* PBXTargetDependency */,
+				46EB2E00031860 /* PBXTargetDependency */,
+				46EB2E00031900 /* PBXTargetDependency */,
+				46EB2E000318C0 /* PBXTargetDependency */,
+				46EB2E000318A0 /* PBXTargetDependency */,
+				46EB2E00031940 /* PBXTargetDependency */,
+				46EB2E00031780 /* PBXTargetDependency */,
+				46EB2E000317C0 /* PBXTargetDependency */,
+				46EB2E000317E0 /* PBXTargetDependency */,
+				46EB2E00031820 /* PBXTargetDependency */,
+				46EB2E00031960 /* PBXTargetDependency */,
+			);
+			name = "React-cxxreact";
+			productName = "React-cxxreact";
+			productReference = 37592FDAD45752511010F4B06AC57355 /* React-cxxreact */;
+			productType = "com.apple.product-type.library.static";
+		};
+		47D2E85A78C25869BB13521D8561A638 /* libwebp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 46EB2E0002B2B0 /* Build configuration list for PBXNativeTarget "libwebp" */;
+			buildPhases = (
+				46EB2E0002B2F0 /* Headers */,
+				46EB2E0002B300 /* Sources */,
+				46EB2E0002B310 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = libwebp;
+			productName = libwebp;
+			productReference = 5E4674603A5D5B9215FFA0F8E69F8B71 /* libwebp */;
+			productType = "com.apple.product-type.library.static";
+		};
+		48D0F3F8AFA22D393D88F05EAF4BACDC /* Pods-NAORAMAR */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 46EB2E0002C320 /* Build configuration list for PBXNativeTarget "Pods-NAORAMAR" */;
 			buildPhases = (
 				46EB2E0002C360 /* Headers */,
 				46EB2E0002C370 /* Sources */,
@@ -32371,88 +32450,9 @@
 				46EB2E0002D300 /* PBXTargetDependency */,
 				46EB2E0002D320 /* PBXTargetDependency */,
 			);
-			name = "Pods-RonTurgeman";
-			productName = "Pods-RonTurgeman";
-			productReference = D523EB301814968A231150C745A84182 /* Pods-RonTurgeman */;
-			productType = "com.apple.product-type.library.static";
-		};
-		425004FC843DA24ADB8CED23384EC72F /* React-RCTFBReactNativeSpec */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 46EB2E000236D0 /* Build configuration list for PBXNativeTarget "React-RCTFBReactNativeSpec" */;
-			buildPhases = (
-				46EB2E00023710 /* Headers */,
-				46EB2E0002C490 /* [CP-User] [RN]Check FBReactNativeSpec */,
-				46EB2E00023720 /* Sources */,
-				46EB2E00023730 /* Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				46EB2E00030760 /* PBXTargetDependency */,
-				46EB2E00030780 /* PBXTargetDependency */,
-				46EB2E000307A0 /* PBXTargetDependency */,
-				46EB2E000307C0 /* PBXTargetDependency */,
-				46EB2E000307E0 /* PBXTargetDependency */,
-				46EB2E00030840 /* PBXTargetDependency */,
-				46EB2E00030720 /* PBXTargetDependency */,
-				46EB2E00030740 /* PBXTargetDependency */,
-				46EB2E00030800 /* PBXTargetDependency */,
-				46EB2E00030820 /* PBXTargetDependency */,
-			);
-			name = "React-RCTFBReactNativeSpec";
-			productName = "React-RCTFBReactNativeSpec";
-			productReference = 35C3D0A253BFD77715619C419AC17056 /* React-RCTFBReactNativeSpec */;
-			productType = "com.apple.product-type.library.static";
-		};
-		463F41A7E8B252F8AC5024DA1F4AF6DA /* React-cxxreact */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 46EB2E00025090 /* Build configuration list for PBXNativeTarget "React-cxxreact" */;
-			buildPhases = (
-				46EB2E000250D0 /* Headers */,
-				46EB2E000250E0 /* Sources */,
-				46EB2E000250F0 /* Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				46EB2E000317A0 /* PBXTargetDependency */,
-				46EB2E00031800 /* PBXTargetDependency */,
-				46EB2E00031880 /* PBXTargetDependency */,
-				46EB2E00031760 /* PBXTargetDependency */,
-				46EB2E00031920 /* PBXTargetDependency */,
-				46EB2E000318E0 /* PBXTargetDependency */,
-				46EB2E00031840 /* PBXTargetDependency */,
-				46EB2E00031860 /* PBXTargetDependency */,
-				46EB2E00031900 /* PBXTargetDependency */,
-				46EB2E000318C0 /* PBXTargetDependency */,
-				46EB2E000318A0 /* PBXTargetDependency */,
-				46EB2E00031940 /* PBXTargetDependency */,
-				46EB2E00031780 /* PBXTargetDependency */,
-				46EB2E000317C0 /* PBXTargetDependency */,
-				46EB2E000317E0 /* PBXTargetDependency */,
-				46EB2E00031820 /* PBXTargetDependency */,
-				46EB2E00031960 /* PBXTargetDependency */,
-			);
-			name = "React-cxxreact";
-			productName = "React-cxxreact";
-			productReference = 37592FDAD45752511010F4B06AC57355 /* React-cxxreact */;
-			productType = "com.apple.product-type.library.static";
-		};
-		47D2E85A78C25869BB13521D8561A638 /* libwebp */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 46EB2E0002B2B0 /* Build configuration list for PBXNativeTarget "libwebp" */;
-			buildPhases = (
-				46EB2E0002B2F0 /* Headers */,
-				46EB2E0002B300 /* Sources */,
-				46EB2E0002B310 /* Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = libwebp;
-			productName = libwebp;
-			productReference = 5E4674603A5D5B9215FFA0F8E69F8B71 /* libwebp */;
+			name = "Pods-NAORAMAR";
+			productName = "Pods-NAORAMAR";
+			productReference = 190ECAB61A65C0F0CC48FABAAB6C5E33 /* Pods-NAORAMAR */;
 			productType = "com.apple.product-type.library.static";
 		};
 		4BDD270EACFE5730793AEF0B9BCCBA31 /* React-graphics */ = {
@@ -34484,7 +34484,7 @@
 				1A84CC8A6DF650C13DF5A8A8132BEF92 /* libavif */,
 				6198F4A00D2F03684C21DEE5666E1A1E /* libdav1d */,
 				47D2E85A78C25869BB13521D8561A638 /* libwebp */,
-				3FFA526C125D91C7F2DB08881D23F491 /* Pods-RonTurgeman */,
+				48D0F3F8AFA22D393D88F05EAF4BACDC /* Pods-NAORAMAR */,
 				EC55D52694092A9D0E6A78EB01207EB5 /* RCT-Folly */,
 				331AFAADB024F73370A9DC6FBD7A5A22 /* RCT-Folly-RCT-Folly_privacy */,
 				5211B5AB7B81060AA8E78614DD75D3AB /* RCTDeprecation */,
@@ -35450,7 +35450,7 @@
 			name = "[CP-User] [Hermes] Replace Hermes for the right configuration, if needed";
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "        . \"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"\n\n        CONFIG=\"Release\"\n        if echo $GCC_PREPROCESSOR_DEFINITIONS | grep -q \"DEBUG=1\"; then\n          CONFIG=\"Debug\"\n        fi\n\n        \"$NODE_BINARY\" \"$REACT_NATIVE_PATH/sdks/hermes-engine/utils/replace_hermes_version.js\" -c \"$CONFIG\" -r \"0.79.5\" -p \"$PODS_ROOT\"\n";
+			shellScript = "        . \"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"\n\n        CONFIG=\"Release\"\n        if echo $GCC_PREPROCESSOR_DEFINITIONS | grep -q \"DEBUG=1\"; then\n          CONFIG=\"Debug\"\n        fi\n\n        \"$NODE_BINARY\" \"$REACT_NATIVE_PATH/sdks/hermes-engine/utils/replace_hermes_version.js\" -c \"$CONFIG\" -r \"0.79.6\" -p \"$PODS_ROOT\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -38071,7 +38071,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				46EB2E0002C440 /* Pods-RonTurgeman-dummy.m in Sources */,
+				46EB2E0002C440 /* Pods-NAORAMAR-dummy.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -51964,7 +51964,7 @@
 		};
 		46EB2E0002C330 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 46EB2E0002C3A0 /* Pods-RonTurgeman.release.xcconfig */;
+			baseConfigurationReference = 46EB2E0002C3A0 /* Pods-NAORAMAR.release.xcconfig */;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
 				CLANG_ENABLE_OBJC_WEAK = NO;
@@ -51975,7 +51975,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				MACH_O_TYPE = staticlib;
-				MODULEMAP_FILE = "Target Support Files/Pods-RonTurgeman/Pods-RonTurgeman.modulemap";
+				MODULEMAP_FILE = "Target Support Files/Pods-NAORAMAR/Pods-NAORAMAR.modulemap";
 				OTHER_LDFLAGS = "";
 				OTHER_LIBTOOLFLAGS = "";
 				PODS_ROOT = "$(SRCROOT)";
@@ -51989,7 +51989,7 @@
 		};
 		46EB2E0002C340 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 46EB2E0002C3B0 /* Pods-RonTurgeman.debug.xcconfig */;
+			baseConfigurationReference = 46EB2E0002C3B0 /* Pods-NAORAMAR.debug.xcconfig */;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
 				CLANG_ENABLE_OBJC_WEAK = NO;
@@ -52000,7 +52000,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				MACH_O_TYPE = staticlib;
-				MODULEMAP_FILE = "Target Support Files/Pods-RonTurgeman/Pods-RonTurgeman.modulemap";
+				MODULEMAP_FILE = "Target Support Files/Pods-NAORAMAR/Pods-NAORAMAR.modulemap";
 				OTHER_LDFLAGS = "";
 				OTHER_LIBTOOLFLAGS = "";
 				PODS_ROOT = "$(SRCROOT)";
@@ -53211,7 +53211,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		46EB2E0002C320 /* Build configuration list for PBXNativeTarget "Pods-RonTurgeman" */ = {
+		46EB2E0002C320 /* Build configuration list for PBXNativeTarget "Pods-NAORAMAR" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				46EB2E0002C340 /* Debug */,

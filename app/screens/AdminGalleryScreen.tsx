@@ -36,7 +36,7 @@ const { width } = Dimensions.get('window');
 interface AdminGalleryScreenProps {
   onNavigate?: (screen: string) => void;
   onBack?: () => void;
-  initialTab?: 'gallery' | 'background' | 'splash' | 'aboutus' | 'shop';
+  initialTab?: 'gallery' | 'background' | 'splash' | 'aboutus' | 'shop' | 'treatments';
 }
 
 
@@ -48,25 +48,27 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     splash: string[];
     workers: string[];
     aboutus: string[];
+    treatments: string[];
   }>({
     gallery: [],
     backgrounds: [],
     splash: [],
     workers: [],
-    aboutus: []
+    aboutus: [],
+    treatments: []
   });
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [shopModalVisible, setShopModalVisible] = useState(false);
-  const [selectedTab, setSelectedTab] = useState<'gallery' | 'background' | 'splash' | 'aboutus' | 'shop'>(initialTab || 'gallery');
+  const [selectedTab, setSelectedTab] = useState<'gallery' | 'background' | 'splash' | 'aboutus' | 'shop' | 'treatments'>(initialTab || 'gallery');
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
   const [editingImage, setEditingImage] = useState<GalleryImage | null>(null);
 
   // Form states
   const [formData, setFormData] = useState({
     imageUrl: '',
-    type: 'gallery' as 'gallery' | 'background' | 'splash' | 'aboutus',
+    type: 'gallery' as 'gallery' | 'background' | 'splash' | 'aboutus' | 'treatments',
     order: '0'
   });
 
@@ -153,7 +155,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     setToast({ ...toast, visible: false });
   };
 
-  const openAddModal = (type: 'gallery' | 'background' | 'splash' | 'aboutus') => {
+  const openAddModal = (type: 'gallery' | 'background' | 'splash' | 'aboutus' | 'treatments') => {
     setEditingImage(null);
     setFormData({
       imageUrl: '',
@@ -435,6 +437,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
       case 'splash': return 'מסך טעינה';
       case 'aboutus': return 'אודותינו';
       case 'shop': return 'חנות';
+      case 'treatments': return 'טיפולים';
       default: return tab;
     }
   };
@@ -446,6 +449,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
       case 'splash': return 'phone-portrait';
       case 'aboutus': return 'information-circle';
       case 'shop': return 'cart';
+      case 'treatments': return 'cut';
       default: return 'image';
     }
   };
@@ -463,6 +467,8 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
         return storageImages.splash;
       case 'aboutus':
         return storageImages.aboutus;
+      case 'treatments':
+        return storageImages.treatments;
       // case 'shop':
       //   return storageImages.workers; // REMOVE THIS LINE
       default:
@@ -478,6 +484,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     { key: 'background', label: 'רקע', icon: 'image' },
     { key: 'splash', label: 'מסך טעינה', icon: 'phone-portrait' },
     { key: 'aboutus', label: 'אודותינו', icon: 'information-circle' },
+    { key: 'treatments', label: 'טיפולים', icon: 'cut' },
     { key: 'shop', label: 'חנות', icon: 'cart' },
   ];
 
@@ -604,9 +611,9 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     }
   };
 
-  // Fix openAddModal and getTabTitle calls to only use the original four tabs
-  const isImageTab = (tab: string): tab is 'gallery' | 'background' | 'splash' | 'aboutus' =>
-    tab === 'gallery' || tab === 'background' || tab === 'splash' || tab === 'aboutus';
+  // Fix openAddModal and getTabTitle calls to only use the original image tabs
+  const isImageTab = (tab: string): tab is 'gallery' | 'background' | 'splash' | 'aboutus' | 'treatments' =>
+    tab === 'gallery' || tab === 'background' || tab === 'splash' || tab === 'aboutus' || tab === 'treatments';
 
 
   return (

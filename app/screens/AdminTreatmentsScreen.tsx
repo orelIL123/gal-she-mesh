@@ -20,7 +20,8 @@ import {
     addTreatment,
     deleteTreatment,
     getTreatments,
-    updateTreatment
+    updateTreatment,
+    uploadImageToStorage
 } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
@@ -87,8 +88,9 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 1,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -99,6 +101,30 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
       showToast('שגיאה בבחירת התמונה', 'error');
     }
     return null;
+  };
+
+  const uploadImageFromDevice = async () => {
+    try {
+      const imageUri = await pickImageFromDevice();
+      if (!imageUri) return;
+
+      showToast('מעלה תמונה...', 'success');
+      
+      const fileName = `treatment_${Date.now()}.jpg`;
+      const folderPath = 'treatments';
+      
+      const downloadURL = await uploadImageToStorage(imageUri, folderPath, fileName);
+      
+      setFormData({
+        ...formData,
+        image: downloadURL
+      });
+      
+      showToast('התמונה הועלתה בהצלחה', 'success');
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      showToast('שגיאה בהעלאת התמונה', 'error');
+    }
   };
 
 
@@ -193,9 +219,9 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
 
     const duration = parseInt(formData.duration);
     
-    // Validate duration is a multiple of 25 minutes
+    // Validate duration is a multiple of 20 minutes
     if (!isValidDuration(duration)) {
-      showToast(`משך הטיפול חייב להיות כפולה של ${SLOT_SIZE_MINUTES} דקות (25, 50, 75, 100, וכו')`, 'error');
+      showToast(`משך הטיפול חייב להיות כפולה של ${SLOT_SIZE_MINUTES} דקות (20, 40, 60, 80, וכו')`, 'error');
       return;
     }
 
@@ -460,6 +486,34 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
               {/* תמונה */}
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>תמונה (אופציונלי)</Text>
+                
+                {/* כפתור העלאת תמונה */}
+                <TouchableOpacity 
+                  style={styles.uploadImageButton}
+                  onPress={uploadImageFromDevice}
+                >
+                  <Ionicons name="cloud-upload-outline" size={24} color="#007bff" />
+                  <Text style={styles.uploadImageText}>העלה תמונה מהמכשיר</Text>
+                </TouchableOpacity>
+
+                {/* תצוגה מקדימה של התמונה */}
+                {formData.image ? (
+                  <View style={styles.imagePreviewContainer}>
+                    <Image 
+                      source={{ uri: formData.image }}
+                      style={styles.imagePreview}
+                      resizeMode="cover"
+                    />
+                    <TouchableOpacity 
+                      style={styles.removeImageButton}
+                      onPress={() => setFormData({ ...formData, image: '' })}
+                    >
+                      <Ionicons name="close-circle" size={24} color="#dc3545" />
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                <Text style={styles.orDivider}>- או הדבק URL -</Text>
                 
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>קישור לתמונה</Text>
@@ -859,6 +913,54 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#007bff',
     fontWeight: 'bold',
+  },
+  uploadImageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0f8ff',
+    borderWidth: 2,
+    borderColor: '#007bff',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    gap: 8,
+  },
+  uploadImageText: {
+    fontSize: 16,
+    color: '#007bff',
+    fontWeight: '600',
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  imagePreview: {
+    width: 200,
+    height: 150,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  orDivider: {
+    textAlign: 'center',
+    color: '#999',
+    fontSize: 14,
+    marginVertical: 12,
   },
 });
 

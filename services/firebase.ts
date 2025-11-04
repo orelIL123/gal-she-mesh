@@ -217,7 +217,7 @@ export interface WaitlistEntry {
 export interface GalleryImage {
   id: string;
   imageUrl: string;
-  type: 'gallery' | 'background' | 'splash' | 'aboutus';
+  type: 'gallery' | 'background' | 'splash' | 'aboutus' | 'treatments';
   order: number;
   isActive: boolean;
   createdAt: Timestamp;
@@ -424,7 +424,7 @@ export const sendSMSVerification = async (phoneNumber: string) => {
 
     const messagingService = new MessagingService(messagingConfig);
 
-    const smsMessage = `קוד האימות שלך: ${verificationCode}\nתוקף 10 דקות\n- רון תורגמן מספרה`;
+    const smsMessage = `קוד האימות שלך: ${verificationCode}\nתוקף 10 דקות\n- נאור עמר מספרה`;
 
     const result = await messagingService.sendMessage({
       to: formattedPhone,
@@ -718,7 +718,7 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
     });
     
     // Check if this is the admin phone number
-    const isAdminPhone = phoneNumber === '+972523985505' || phoneNumber === '+972542280222';
+    const isAdminPhone = phoneNumber === '+972532706369' || phoneNumber === '+972542280222';
     
     const userProfile: UserProfile = {
       uid: user.uid,
@@ -1977,13 +1977,14 @@ export const getImageUrl = async (imagePath: string): Promise<string | null> => 
 
 export const getAllStorageImages = async () => {
   try {
-    const [galleryImages, backgroundImages, splashImages, workersImages, aboutusImages, shopImages] = await Promise.all([
+    const [galleryImages, backgroundImages, splashImages, workersImages, aboutusImages, shopImages, treatmentsImages] = await Promise.all([
       getStorageImages('gallery'),
       getStorageImages('backgrounds'), 
       getStorageImages('splash'),
       getStorageImages('workers'),
       getStorageImages('aboutus'),
-      getStorageImages('shop')
+      getStorageImages('shop'),
+      getStorageImages('treatments')
     ]);
     
     return {
@@ -1992,7 +1993,8 @@ export const getAllStorageImages = async () => {
       splash: splashImages,
       workers: workersImages,
       aboutus: aboutusImages,
-      shop: shopImages
+      shop: shopImages,
+      treatments: treatmentsImages
     };
   } catch (error) {
     console.error('Error getting all storage images:', error);
@@ -2002,7 +2004,8 @@ export const getAllStorageImages = async () => {
       splash: [],
       workers: [],
       aboutus: [],
-      shop: []
+      shop: [],
+      treatments: []
     };
   }
 };
@@ -2261,6 +2264,7 @@ export const listAllStorageImages = async () => {
     console.log('Workers folder:', storageImages.workers);
     console.log('About us folder:', storageImages.aboutus);
     console.log('Shop folder:', storageImages.shop);
+    console.log('Treatments folder:', storageImages.treatments);
     
     return storageImages;
   } catch (error) {
@@ -4308,7 +4312,7 @@ export const createTestNotification = async (userId: string, type: 'appointment'
 // Create a waitlist entry
 export const createWaitlistEntry = async (waitlistData: Omit<WaitlistEntry, 'id' | 'createdAt'>) => {
   try {
-    console.log('Creating waitlist entry:', waitlistData);
+    console.log('📝 Creating waitlist entry with data:', JSON.stringify(waitlistData, null, 2));
     
     // Check if user already on waitlist for this date
     const existingQuery = query(
@@ -4322,13 +4326,14 @@ export const createWaitlistEntry = async (waitlistData: Omit<WaitlistEntry, 'id'
     if (!existingSnapshot.empty) {
       // Update existing entry instead of creating duplicate
       const existingDoc = existingSnapshot.docs[0];
+      console.log('⚠️ User already on waitlist for this date - updating entry');
       await updateDoc(existingDoc.ref, {
         preferredTimeStart: waitlistData.preferredTimeStart,
         preferredTimeEnd: waitlistData.preferredTimeEnd,
         userDisplayName: waitlistData.userDisplayName,
         userPhone: waitlistData.userPhone,
       });
-      console.log('Updated existing waitlist entry:', existingDoc.id);
+      console.log('✅ Updated existing waitlist entry:', existingDoc.id);
       return existingDoc.id;
     }
     
@@ -4337,12 +4342,24 @@ export const createWaitlistEntry = async (waitlistData: Omit<WaitlistEntry, 'id'
       createdAt: Timestamp.now()
     };
     
+    console.log('💾 Saving to Firestore:', entry);
     const docRef = await addDoc(collection(db, 'waitlist'), entry);
-    console.log('Waitlist entry created with ID:', docRef.id);
+    console.log('✅ Waitlist entry created successfully with ID:', docRef.id);
+    
+    // Verify it was saved
+    const savedDoc = await getDoc(docRef);
+    if (savedDoc.exists()) {
+      console.log('✅ Verified: Document exists in Firestore:', savedDoc.data());
+    } else {
+      console.error('❌ WARNING: Document was not saved!');
+    }
     
     return docRef.id;
   } catch (error) {
-    console.error('Error creating waitlist entry:', error);
+    console.error('❌ Error creating waitlist entry:', error);
+    if ((error as any).code === 'permission-denied') {
+      console.error('🔒 PERMISSION DENIED - Check Firestore security rules!');
+    }
     throw error;
   }
 };
@@ -4350,6 +4367,8 @@ export const createWaitlistEntry = async (waitlistData: Omit<WaitlistEntry, 'id'
 // Get waitlist entries for a specific date
 export const getWaitlistEntriesForDate = async (barberId: string, date: string): Promise<WaitlistEntry[]> => {
   try {
+    console.log(`🔍 Fetching waitlist entries for barberId: ${barberId}, date: ${date}`);
+    
     const waitlistQuery = query(
       collection(db, 'waitlist'),
       where('barberId', '==', barberId),
@@ -4358,15 +4377,24 @@ export const getWaitlistEntriesForDate = async (barberId: string, date: string):
     );
     
     const snapshot = await getDocs(waitlistQuery);
-    const entries: WaitlistEntry[] = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    } as WaitlistEntry));
+    console.log(`📊 Raw snapshot size: ${snapshot.docs.length} documents`);
     
-    console.log(`Found ${entries.length} waitlist entries for date ${date}`);
+    const entries: WaitlistEntry[] = snapshot.docs.map(doc => {
+      const data = doc.data();
+      console.log(`  - Document ${doc.id}:`, data);
+      return {
+        id: doc.id,
+        ...data
+      } as WaitlistEntry;
+    });
+    
+    console.log(`✅ Found ${entries.length} waitlist entries for date ${date}`);
     return entries;
   } catch (error) {
-    console.error('Error getting waitlist entries:', error);
+    console.error('❌ Error getting waitlist entries:', error);
+    if ((error as any).code === 'failed-precondition') {
+      console.error('🔥 FIRESTORE INDEX MISSING! Check console for link to create it.');
+    }
     return [];
   }
 };

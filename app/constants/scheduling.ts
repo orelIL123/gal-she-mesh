@@ -4,31 +4,31 @@
  */
 
 // Global slot size in minutes - all scheduling is based on this grid
-export const SLOT_SIZE_MINUTES = 25;
+export const SLOT_SIZE_MINUTES = 20;
 
 // Time grid points (in minutes from start of hour)
-export const TIME_GRID_POINTS = [0, 25, 50]; // HH:00, HH:25, HH:50
+export const TIME_GRID_POINTS = [0, 20, 40]; // HH:00, HH:20, HH:40
 
-// Helper function to snap time to the nearest 25-minute grid point
+// Helper function to snap time to the nearest 20-minute grid point
 export const snapToGrid = (date: Date): Date => {
   const minutes = date.getMinutes();
   const hours = date.getHours();
   
-  // Find the closest grid point
+  // Find the closest grid point (0, 20, 40)
   let snappedMinutes = 0;
-  if (minutes <= 12) {
+  if (minutes <= 10) {
     snappedMinutes = 0;
-  } else if (minutes <= 37) {
-    snappedMinutes = 25;
-  } else if (minutes <= 62) {
-    snappedMinutes = 50;
+  } else if (minutes <= 30) {
+    snappedMinutes = 20;
+  } else if (minutes <= 50) {
+    snappedMinutes = 40;
   } else {
-    snappedMinutes = 75;
+    snappedMinutes = 60; // Next hour
   }
   
   const snappedDate = new Date(date);
-  if (snappedMinutes === 75) {
-    snappedDate.setHours(hours + 1, 15, 0, 0);
+  if (snappedMinutes === 60) {
+    snappedDate.setHours(hours + 1, 0, 0, 0);
   } else {
     snappedDate.setMinutes(snappedMinutes, 0, 0);
   }
@@ -36,7 +36,7 @@ export const snapToGrid = (date: Date): Date => {
   return snappedDate;
 };
 
-// Helper function to check if a duration is valid (multiple of 25 minutes)
+// Helper function to check if a duration is valid (multiple of 20 minutes)
 export const isValidDuration = (durationMinutes: number): boolean => {
   return durationMinutes > 0 && durationMinutes % SLOT_SIZE_MINUTES === 0;
 };
