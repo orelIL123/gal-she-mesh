@@ -1,6 +1,6 @@
 export const colors = {
   // Primary colors
-  primary: '#8b4513',
+  primary: '#FFD700', // Gold - זהב עיקרי
   secondary: '#16213e',
   accent: '#0f3460',
   
@@ -25,7 +25,7 @@ export const colors = {
   success: '#10b981',
   warning: '#f59e0b',
   error: '#ef4444',
-  info: '#8b4513',
+  info: '#FFD700', // Gold
   
   // Gradient colors
   gradientStart: '#667eea',
@@ -39,8 +39,11 @@ export const colors = {
   overlay: 'rgba(0, 0, 0, 0.5)',
   overlayDark: 'rgba(0, 0, 0, 0.8)',
   
-  // naor amar specific colors
-  barberGold: '#ffd700',
+  // gal shemesh specific colors - גווני זהב משופרים
+  barberGold: '#FFC700', // זהב עיקרי - יותר חם ועשיר
+  barberGoldLight: '#FFE066', // זהב בהיר למעברים
+  barberGoldDark: '#CC8800', // זהב כהה לעומק
+  barberGoldDeep: '#B8860B', // זהב עמוק לגרדיאנטים
   barberSilver: '#c0c0c0',
   barberBronze: '#cd7f32',
 }; 

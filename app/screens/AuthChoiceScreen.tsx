@@ -45,9 +45,9 @@ export default function AuthChoiceScreen() {
           <Image
             source={require('../../assets/images/icon.png')}
             style={styles.logo}
-            resizeMode="cover"
+            resizeMode="contain"
           />
-          <Text style={styles.appName}>נאור עמר</Text>
+          <Text style={styles.appName}>גל שמש</Text>
           <Text style={styles.tagline}>המספרה המקצועית שלך</Text>
         </View>
 
@@ -86,10 +86,10 @@ export default function AuthChoiceScreen() {
             <Text style={styles.modalTitle}>תנאי שימוש ומדיניות פרטיות</Text>
             <ScrollView style={styles.modalScrollView}>
               <Text style={styles.modalText}>
-                <Text style={styles.sectionTitle}>תנאי שימוש - רון תורגמן מספרה{'\n\n'}</Text>
+                <Text style={styles.sectionTitle}>תנאי שימוש - גל שמש מספרה{'\n\n'}</Text>
                 
                 <Text style={styles.subsectionTitle}>1. קבלת השירות{'\n'}</Text>
-                • השירות מיועד לקביעת תורים במספרה של רון תורגמן{'\n'}
+                • השירות מיועד לקביעת תורים במספרה של גל שמש{'\n'}
                 • יש לספק מידע מדויק ומלא בעת קביעת התור{'\n'}
                 • המספרה שומרת לעצמה את הזכות לסרב לתת שירות במקרים חריגים{'\n\n'}
                 
@@ -194,13 +194,13 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   loginButton: {
-    backgroundColor: '#8b4513',
+    backgroundColor: '#FFD700',
     height: 56,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: '#8b4513',
+    shadowColor: '#FFD700',
     shadowOffset: {
       width: 0,
       height: 4,
@@ -221,11 +221,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#8b4513',
+    borderColor: '#FFD700',
     marginBottom: 32,
   },
   registerButtonText: {
-    color: '#8b4513',
+    color: '#FFD700',
     fontSize: 18,
     fontWeight: '600',
   },
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   termsLink: {
-    color: '#8b4513',
+    color: '#FFD700',
     textDecorationLine: 'underline',
   },
   modalOverlay: {
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
   subsectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#8b4513',
+    color: '#FFD700',
     marginBottom: 5,
   },
   contactInfo: {
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   modalCloseButton: {
-    backgroundColor: '#8b4513',
+    backgroundColor: '#FFD700',
     height: 50,
     borderRadius: 10,
     justifyContent: 'center',

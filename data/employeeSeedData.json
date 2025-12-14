@@ -1,17 +1,17 @@
 {
-  "businessName": "naor amar",
+  "businessName": "gal shemesh",
   "totalEmployees": 1,
   "employees": [
     {
-      "name": "apiKey: \"AIzaSyATvhrRnzKXrww0ZuvrwcSei9C8Ik1zeAM\",",
-      "phone": "+9720532706369",
-      "specialization": "תספורת גברים",
-      "experience": "10",
+      "name": "Gal Shemesh",
+      "phone": "+972522210281",
+      "specialization": "תספורת כללית",
+      "experience": "לא צוין",
       "isMainBarber": true,
       "available": true,
       "barberId": "barber_1",
-      "userId": "user_naor_amar_barber_1",
-      "phoneE164": "+9720532706369"
+      "userId": "user_gal_shemesh_barber_1",
+      "phoneE164": "+972522210281"
     }
   ]
 }

@@ -1,9 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
-import { Animated, Dimensions, Image, StyleSheet, View } from 'react-native';
+import { Animated, Image, StyleSheet, View } from 'react-native';
 import { authManager } from '../services/authManager';
-
-const { width, height } = Dimensions.get('window');
 
 export default function SplashScreen() {
   const router = useRouter();
@@ -86,6 +84,7 @@ export default function SplashScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Main splash image in center */}
       <Animated.View
         style={[
           styles.imageContainer,
@@ -95,9 +94,9 @@ export default function SplashScreen() {
         ]}
       >
         <Image
-          source={require('../assets/images/naoramar.png')}
+          source={require('../assets/images/splash.png')}
           style={styles.image}
-          resizeMode="cover"
+          resizeMode="contain"
         />
       </Animated.View>
     </View>
@@ -106,18 +105,19 @@ export default function SplashScreen() {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageContainer: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#000',
-    zIndex: 9999, // Ensure it's above everything during splash
-  },
-  imageContainer: {
-    flex: 1,
     width: '100%',
     height: '100%',
     justifyContent: 'center',

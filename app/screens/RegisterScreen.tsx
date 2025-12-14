@@ -17,7 +17,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { registerForPushNotifications, registerUserWithPhone, sendSMSVerification } from '../../services/firebase';
+import { registerUserWithPhone, sendSMSVerification } from '../../services/firebase';
 import { colors } from '../constants/colors';
 import { CONTACT_INFO } from '../constants/contactInfo';
 
@@ -90,18 +90,8 @@ export default function RegisterScreen() {
       // Only call registerUserWithPhone - it will handle verification internally
       await registerUserWithPhone(phone, fullName, verificationId, verificationCode, password);
 
-      // Register for push notifications after successful registration
-      try {
-        const { getCurrentUser } = await import('../../services/firebase');
-        const user = getCurrentUser();
-        if (user) {
-          await registerForPushNotifications(user.uid);
-          console.log('✅ Push notifications registered for new user:', user.uid);
-        }
-      } catch (error) {
-        console.error('❌ Error registering for push notifications:', error);
-        // Don't fail registration if push registration fails
-      }
+      // Note: Push notifications are not registered automatically on registration
+      // User must explicitly enable notifications via settings or onboarding
 
       Alert.alert('הצלחה', 'נרשמת בהצלחה!', [
         { text: 'אישור', onPress: () => router.replace('/(tabs)') }
@@ -282,9 +272,9 @@ export default function RegisterScreen() {
             <Text style={styles.modalTitle}>תנאי שימוש ומדיניות פרטיות</Text>
             <ScrollView style={styles.modalScrollView}>
               <Text style={styles.modalText}>
-                <Text style={styles.sectionTitle}>תנאי שימוש - רון תורגמן מספרה{'\n\n'}</Text>
+                <Text style={styles.sectionTitle}>תנאי שימוש - גל שמש מספרה{'\n\n'}</Text>
                 <Text style={styles.subsectionTitle}>1. קבלת השירות{'\n'}</Text>
-                • השירות מיועד לקביעת תורים במספרה רון תורגמן{'\n'}
+                • השירות מיועד לקביעת תורים במספרת גל שמש{'\n'}
                 • יש לספק מידע מדויק ומלא בעת קביעת התור{'\n'}
                 • המספרה שומרת לעצמה את הזכות לסרב לתת שירות במקרים חריגים{'\n\n'}
                 

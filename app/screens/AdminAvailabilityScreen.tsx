@@ -1,39 +1,39 @@
 import { Ionicons } from '@expo/vector-icons';
 import {
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  getFirestore,
-  query,
-  setDoc,
-  where
+    collection,
+    deleteDoc,
+    doc,
+    getDocs,
+    getFirestore,
+    query,
+    setDoc,
+    where
 } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
-  Modal,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Modal,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import {
-  Barber,
-  getBarbers,
-  updateBarberProfile
+    Barber,
+    getBarbers,
+    updateBarberProfile
 } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
 import {
-  SLOT_SIZE_MINUTES,
-  generateTimeSlots,
-  getDayOfWeekFromYMD,
-  isOnGrid,
-  toMin,
-  toYMD
+    SLOT_SIZE_MINUTES,
+    generateTimeSlots,
+    getDayOfWeekFromYMD,
+    isOnGrid,
+    toMin,
+    toYMD
 } from '../constants/scheduling';
 
 interface AdminAvailabilityScreenProps {
@@ -82,9 +82,9 @@ const generateNext14Days = () => {
   return days;
 };
 
-// Simple time slots from 07:00 to 24:00 in 20-minute increments
+// Simple time slots from 07:00 to 24:00 in slot increments (5 minutes)
 const getTimeSlots = () => {
-  return generateTimeSlots(7, 24); // 7:00 → 24:00 (exclusive) = 07:00, 07:20, 07:40, 08:00, ... 23:40
+  return generateTimeSlots(7, 24); // 7:00 → 24:00 (exclusive) = 07:00, 07:05, 07:10, 07:15, ... 23:55
 };
 
 // Helper: for TODAY, prevent enabling past slots
@@ -116,6 +116,8 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
     timeSlots: string[];
   }[]>(generateNext14Days());
   const [bookedSlots, setBookedSlots] = useState<{[key: string]: string[]}>({});
+  const [rangeStartSlot, setRangeStartSlot] = useState<{date: string, time: string} | null>(null);
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
 
   const db = getFirestore();
 
@@ -123,6 +125,63 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
     setToast({ visible: true, message, type });
   };
   const hideToast = () => setToast(prev => ({ ...prev, visible: false }));
+
+  // ------- Helper: Get all slots between two times (inclusive) -------
+  const getSlotsBetween = (startTime: string, endTime: string): string[] => {
+    const allSlots = getTimeSlots();
+    const startIndex = allSlots.indexOf(startTime);
+    const endIndex = allSlots.indexOf(endTime);
+    
+    if (startIndex === -1 || endIndex === -1) return [];
+    
+    const minIndex = Math.min(startIndex, endIndex);
+    const maxIndex = Math.max(startIndex, endIndex);
+    
+    return allSlots.slice(minIndex, maxIndex + 1);
+  };
+
+  // ------- Toggle multiple slots at once (for drag selection) -------
+  const toggleSlotsRange = (date: string, startTime: string, endTime: string, shouldSelect: boolean) => {
+    if (!selectedBarber) return;
+    
+    const slotsToToggle = getSlotsBetween(startTime, endTime);
+    const day = availability.find(d => d.date === date);
+    if (!day) return;
+    
+    const currentSlots = day.timeSlots || [];
+    let newSlots: string[];
+    
+    if (shouldSelect) {
+      // Add all slots in range (avoid duplicates)
+      newSlots = [...new Set([...currentSlots, ...slotsToToggle])].filter(slot => {
+        // Don't add if passed or booked
+        return !isTimeSlotPassed(date, slot) && !(bookedSlots[date] || []).includes(slot);
+      });
+    } else {
+      // Remove all slots in range
+      newSlots = currentSlots.filter(slot => !slotsToToggle.includes(slot));
+    }
+    
+    newSlots.sort((a, b) => toMin(a) - toMin(b));
+    
+    // Update state
+    setAvailability(prev => {
+      const updatedAvailability = prev.map(d => 
+        d.date === date ? { ...d, timeSlots: newSlots } : d
+      );
+      
+      // Save to Firebase (use the last slot in range as trigger)
+      if (slotsToToggle.length > 0) {
+        saveTimeSlotToFirebase(
+          updatedAvailability,
+          date,
+          slotsToToggle[slotsToToggle.length - 1]
+        );
+      }
+      
+      return updatedAvailability;
+    });
+  };
 
   const loadBarbers = useCallback(async () => {
     try {
@@ -247,32 +306,45 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
       const bookedSlotsMap: {[key: string]: string[]} = {};
 
       for (const day of next14Days) {
-        const appointmentsQuery = query(
-          collection(db, 'appointments'),
-          where('barberId', '==', barberId),
-          where('date', '==', day.date),
-          where('status', '!=', 'cancelled')
-        );
-        
-        const appointmentsSnap = await getDocs(appointmentsQuery);
-        const bookedTimes: string[] = [];
-        
-        appointmentsSnap.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.time) {
-            bookedTimes.push(data.time);
+        try {
+          // Query without status filter to avoid needing composite index
+          // We'll filter cancelled appointments in the client
+          const appointmentsQuery = query(
+            collection(db, 'appointments'),
+            where('barberId', '==', barberId),
+            where('date', '==', day.date)
+          );
+          
+          const appointmentsSnap = await getDocs(appointmentsQuery);
+          const bookedTimes: string[] = [];
+          
+          appointmentsSnap.docs.forEach(doc => {
+            const data = doc.data();
+            // Filter out cancelled appointments on the client side
+            if (data.time && data.status !== 'cancelled') {
+              bookedTimes.push(data.time);
+            }
+          });
+          
+          if (bookedTimes.length > 0) {
+            bookedSlotsMap[day.date] = bookedTimes;
+            console.log(`📅 Found ${bookedTimes.length} booked slots for ${day.date}:`, bookedTimes);
           }
-        });
-        
-        if (bookedTimes.length > 0) {
-          bookedSlotsMap[day.date] = bookedTimes;
-          console.log(`📅 Found ${bookedTimes.length} booked slots for ${day.date}:`, bookedTimes);
+        } catch (dayError: any) {
+          // If it's an index error, log it but continue with other days
+          if (dayError?.code === 'failed-precondition' && dayError?.message?.includes('index')) {
+            console.warn(`⚠️ Index not found for ${day.date}, skipping booked slots for this day. Create the index at: ${dayError.message.match(/https:\/\/[^\s]+/)?.[0] || 'Firebase Console'}`);
+          } else {
+            console.error(`Error loading booked slots for ${day.date}:`, dayError);
+          }
         }
       }
 
       setBookedSlots(bookedSlotsMap);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading booked slots:', error);
+      // Don't crash the app - just set empty booked slots
+      setBookedSlots({});
     }
   };
 
@@ -313,24 +385,17 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
       const next14Days = generateNext14Days();
       const savePromises: Promise<any>[] = [];
 
-      // Find the LAST existing date to use as template for new dates
+      // FIXED: Don't auto-create availability for future dates based on day of week
+      // Each date should be managed independently by the admin
+      // Only convert weekly availability on first setup if no daily exists at all
       let templateSlotsByDay: {[key: number]: string[]} = {};
       
-      // If we have existing dailyAvailability, use it as template (instead of weekly)
-      if (existingDates.size > 0) {
-        console.log('📋 Using existing dailyAvailability as template for new dates');
-        dailySnap.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.isAvailable === true && data.availableSlots && Array.isArray(data.availableSlots)) {
-            // Use the last available pattern for this dayOfWeek
-            templateSlotsByDay[data.dayOfWeek] = data.availableSlots;
-          }
-        });
-        console.log('📋 Template from existing daily:', templateSlotsByDay);
-      } else if (Object.keys(weeklyAvailability).length > 0) {
-        // Fallback to weekly if no daily exists yet
-        console.log('📋 Using weekly availability as template (first-time setup)');
+      // Only use weekly template if there's NO daily availability at all (first-time setup)
+      if (existingDates.size === 0 && Object.keys(weeklyAvailability).length > 0) {
+        console.log('📋 First-time setup: Using weekly availability as template');
         templateSlotsByDay = weeklyAvailability;
+      } else {
+        console.log('📋 Not using template - each date is managed independently');
       }
 
       next14Days.forEach(day => {
@@ -340,33 +405,38 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
           return;
         }
 
-        const dayOfWeek = getDayOfWeekFromYMD(day.date);
-        const slots = templateSlotsByDay[dayOfWeek];
+        // Only create availability if we have a weekly template (first-time setup only)
+        // Otherwise, leave dates as unavailable until admin explicitly enables them
+        if (Object.keys(templateSlotsByDay).length > 0) {
+          const dayOfWeek = getDayOfWeekFromYMD(day.date);
+          const slots = templateSlotsByDay[dayOfWeek];
 
-        if (slots && slots.length > 0) {
-          // Use template pattern as default
-          const sortedSlots = [...slots].sort((a, b) => toMin(a) - toMin(b));
-          const startTime = sortedSlots[0];
-          const finalEndTime = addMinutesSafe(sortedSlots[sortedSlots.length - 1], SLOT_SIZE_MINUTES);
+          if (slots && slots.length > 0) {
+            // Use template pattern as default (only on first-time setup)
+            const sortedSlots = [...slots].sort((a, b) => toMin(a) - toMin(b));
+            const startTime = sortedSlots[0];
+            const finalEndTime = addMinutesSafe(sortedSlots[sortedSlots.length - 1], SLOT_SIZE_MINUTES);
 
-          const docData = {
-            barberId,
-            date: day.date,
-            dayOfWeek,
-            startTime,
-            endTime: finalEndTime,
-            availableSlots: sortedSlots,
-            isAvailable: true,
-            createdAt: new Date()
-          };
+            const docData = {
+              barberId,
+              date: day.date,
+              dayOfWeek,
+              startTime,
+              endTime: finalEndTime,
+              availableSlots: sortedSlots,
+              isAvailable: true,
+              createdAt: new Date()
+            };
 
-          console.log(`💾 Creating daily availability for ${day.date} from template (${slots.length} slots)`);
-          savePromises.push(setDoc(doc(collection(db, 'dailyAvailability')), docData));
+            console.log(`💾 First-time setup: Creating daily availability for ${day.date} from weekly template (${slots.length} slots)`);
+            savePromises.push(setDoc(doc(collection(db, 'dailyAvailability')), docData));
+          } else {
+            // No template pattern - leave as unavailable
+            console.log(`⚪ ${day.date}: No template, leaving unavailable`);
+          }
         } else {
-          // No template pattern - leave as unavailable (admin can enable later)
-          console.log(`⚪ ${day.date}: No template, leaving unavailable`);
-          // NOTE: We don't create explicit unavailable records to reduce database writes
-          // The UI will treat missing dates as unavailable
+          // No weekly template - leave date as unavailable until admin enables it
+          console.log(`⚪ ${day.date}: No template (not first-time), leaving unavailable - admin must enable manually`);
         }
       });
 
@@ -413,7 +483,7 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
       const barberId = selectedBarber.id;
 
       if (newAvailability) {
-        // If making available, set default 9:00-17:00 schedule with 20-minute slots
+        // If making available, set default 9:00-17:00 schedule with slot-based slots
         const defaultSlots = generateTimeSlots(9, 17);
         console.log('✅ Creating default slots for SPECIFIC DATE ONLY:', date, defaultSlots);
 
@@ -828,7 +898,7 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
                 שליטה מלאה על זמינות {selectedBarber?.name}
               </Text>
               <Text style={styles.subInstructionText}>
-                כל סלוט הוא 20 דקות. ברירת מחדל: ימי שישי ושבת לא זמינים, שעות 09:00-17:00 כשמפעילים יום.
+                כל סלוט הוא 5 דקות. ברירת מחדל: ימי שישי ושבת לא זמינים, שעות 09:00-17:00 כשמפעילים יום.
               </Text>
 
               <Text style={styles.debugText}>
@@ -862,7 +932,28 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
 
                   {day.isAvailable && (
                     <View style={styles.timeGrid}>
-                      <Text style={styles.timeGridTitle}>בחר שעות זמינות:</Text>
+                      <View style={styles.timeGridHeader}>
+                        <Text style={styles.timeGridTitle}>בחר שעות זמינות:</Text>
+                        <TouchableOpacity
+                          style={[
+                            styles.multiSelectButton,
+                            multiSelectMode && styles.multiSelectButtonActive
+                          ]}
+                          onPress={() => setMultiSelectMode(!multiSelectMode)}
+                        >
+                          <Text style={[
+                            styles.multiSelectButtonText,
+                            multiSelectMode && styles.multiSelectButtonTextActive
+                          ]}>
+                            {multiSelectMode ? '✓ בחירה מרובה' : 'בחירה מרובה'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      {multiSelectMode && (
+                        <Text style={styles.multiSelectHint}>
+                          💡 במצב בחירה מרובה - כל לחיצה בוחרת/מסירה סלוט
+                        </Text>
+                      )}
                       <View style={styles.timeSlots}>
                         {getTimeSlots().map((time) => {
                           const isSelected = (day.timeSlots || []).includes(time);
@@ -883,22 +974,26 @@ const AdminAvailabilityScreen: React.FC<AdminAvailabilityScreenProps> = ({ onNav
                                   : styles.unselectedTimeSlot
                               ]}
                               onPress={() => {
-                                console.log('👆 TouchableOpacity pressed:', { 
-                                  date: day.date, 
-                                  time, 
-                                  isSelected, 
-                                  hasPassed,
-                                  isBooked,
-                                  disabled: hasPassed || isBooked 
-                                });
                                 if (!hasPassed && !isBooked) {
-                                  toggleTimeSlot(day.date, time);
-                                } else if (hasPassed) {
-                                  console.log('❌ Slot disabled - has passed');
-                                } else if (isBooked) {
-                                  console.log('❌ Slot disabled - already booked');
+                                  // If range start is set and it's the same day, select the range
+                                  if (rangeStartSlot && rangeStartSlot.date === day.date && rangeStartSlot.time !== time) {
+                                    // Select range from start to current
+                                    const shouldSelect = !isSelected; // If start slot was not selected, select the range
+                                    toggleSlotsRange(day.date, rangeStartSlot.time, time, !shouldSelect);
+                                    setRangeStartSlot(null); // Clear range selection
+                                  } else {
+                                    // Normal single slot toggle
+                                    toggleTimeSlot(day.date, time);
+                                  }
                                 }
                               }}
+                              onLongPress={() => {
+                                // Set range start slot
+                                if (!hasPassed && !isBooked) {
+                                  setRangeStartSlot({ date: day.date, time });
+                                }
+                              }}
+                              delayLongPress={300}
                               disabled={hasPassed || isBooked}
                             >
                               <Text
@@ -1027,7 +1122,27 @@ const styles = StyleSheet.create({
   inactiveButton: { backgroundColor: '#dc3545' },
   toggleText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
   timeGrid: { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  timeGridTitle: { fontSize: 16, fontWeight: '600', color: '#555', marginBottom: 12, textAlign: 'center' },
+  timeGridTitle: { fontSize: 16, fontWeight: '600', color: '#555', marginBottom: 8, textAlign: 'center' },
+  rangeHint: { 
+    fontSize: 12, 
+    color: '#666', 
+    textAlign: 'center', 
+    marginBottom: 8, 
+    fontStyle: 'italic',
+    paddingHorizontal: 12
+  },
+  rangeActiveHint: { 
+    fontSize: 13, 
+    color: '#007bff', 
+    textAlign: 'center', 
+    marginBottom: 12, 
+    fontWeight: '600',
+    backgroundColor: '#e3f2fd',
+    padding: 10,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#007bff'
+  },
   timeSlots: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
   unselectedTimeSlot: { backgroundColor: '#f8f9fa', borderColor: '#ddd' },
   selectedCount: { fontSize: 14, color: '#007bff', fontWeight: '600', textAlign: 'center', marginTop: 12, padding: 8, backgroundColor: '#e3f2fd', borderRadius: 6 },

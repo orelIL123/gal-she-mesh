@@ -71,9 +71,10 @@ export const ToastSuccess: React.FC<ToastSuccessProps> = ({
       ]}
     >
       <LinearGradient
-        colors={[colors.success, colors.neonGreen]}
+        colors={[colors.barberGoldLight, colors.barberGold, colors.barberGoldDark]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
+        locations={[0, 0.5, 1]}
         style={styles.gradient}
       >
         <View style={styles.content}>
@@ -96,11 +97,11 @@ const styles = StyleSheet.create({
   gradient: {
     borderRadius: 12,
     padding: 16,
-    shadowColor: colors.success,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowColor: colors.barberGold,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 10,
   },
   content: {
     flexDirection: 'row',

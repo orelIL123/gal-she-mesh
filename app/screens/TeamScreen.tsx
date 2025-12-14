@@ -1,3 +1,4 @@
+import { doc, getDoc, getFirestore } from 'firebase/firestore';
 import React, { useEffect, useState, memo } from 'react';
 import {
     Alert,
@@ -28,10 +29,28 @@ const TeamScreen: React.FC<TeamScreenProps> = ({ onNavigate, onBack }) => {
   const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [detailsBarber, setDetailsBarber] = useState<Barber | null>(null);
+  const [atmosphereImage, setAtmosphereImage] = useState<string>('');
 
   useEffect(() => {
     loadBarbers();
+    fetchAtmosphereImage();
   }, []);
+
+  const fetchAtmosphereImage = async () => {
+    try {
+      const db = getFirestore();
+      const settingsDocRef = doc(db, 'settings', 'images');
+      const settingsDocSnap = await getDoc(settingsDocRef);
+      if (settingsDocSnap.exists()) {
+        const settingsData = settingsDocSnap.data();
+        if (settingsData.atmosphereImage) {
+          setAtmosphereImage(settingsData.atmosphereImage);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching atmosphere image:', error);
+    }
+  };
 
   const loadBarbers = async () => {
     try {
@@ -98,11 +117,15 @@ const TeamScreen: React.FC<TeamScreenProps> = ({ onNavigate, onBack }) => {
       
       {/* Hero Section */}
       <View style={styles.heroSection}>
-        <Image
-          source={require('../../assets/images/atmosphere/atmosphere.png')}
-          style={styles.heroImage}
-          resizeMode="cover"
-        />
+        {atmosphereImage ? (
+          <Image
+            source={{ uri: atmosphereImage }}
+            style={styles.heroImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={[styles.heroImage, { backgroundColor: '#333' }]} />
+        )}
         <View style={styles.heroOverlay} />
         <View style={styles.heroContent}>
           <Text style={styles.heroTitle}>הכירו את הצוות המקצועי שלנו</Text>
@@ -252,7 +275,7 @@ const TeamScreen: React.FC<TeamScreenProps> = ({ onNavigate, onBack }) => {
             <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 6 }}>{detailsBarber?.name}</Text>
             <Text style={{ fontSize: 16, color: '#666', marginBottom: 8 }}>{detailsBarber?.experience}</Text>
             {detailsBarber?.phone && (
-              <Text style={{ fontSize: 16, color: '#8b4513', marginBottom: 8 }}>טלפון: {detailsBarber.phone}</Text>
+              <Text style={{ fontSize: 16, color: '#FFD700', marginBottom: 8 }}>טלפון: {detailsBarber.phone}</Text>
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
               {/* אייקון וואטסאפ */}
@@ -261,7 +284,7 @@ const TeamScreen: React.FC<TeamScreenProps> = ({ onNavigate, onBack }) => {
               </View>
             </View>
             <TouchableOpacity onPress={() => setDetailsBarber(null)} style={{ marginTop: 18 }}>
-              <Text style={{ color: '#8b4513', fontWeight: 'bold' }}>סגור</Text>
+              <Text style={{ color: '#FFD700', fontWeight: 'bold' }}>סגור</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -564,7 +587,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   detailsButton: {
-    backgroundColor: '#8b4513',
+    backgroundColor: '#FFD700',
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 16,

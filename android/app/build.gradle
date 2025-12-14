@@ -87,13 +87,13 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.naoramar.app'
+    namespace 'com.galshemesh.app'
     defaultConfig {
-        applicationId 'com.naoramar.app'
+        applicationId 'com.galshemesh.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.3.0"
+        versionName "1.0.0"
     }
     signingConfigs {
         debug {

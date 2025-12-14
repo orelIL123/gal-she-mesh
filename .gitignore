@@ -37,3 +37,18 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# Firebase Admin Key (NEVER COMMIT THIS!)
+firebase-admin-key.json
+**/firebase-admin-key.json
+gal-shemesh-firebase-adminsdk-*.json
+naorbaruch-*.json
+*-firebase-adminsdk-*.json
+google-services-*.json
+
+# Scripts output (contains passwords!)
+scripts/output/
+scripts/*.csv
+!scripts/example-users.csv
+
+ios/Pods/

@@ -13,12 +13,13 @@ import {
 } from 'react-native';
 import {
     clearAllUserNotifications,
-    createTestNotification,
+    deleteOldNotifications,
     getCurrentUser,
     getUserNotifications,
     markNotificationAsRead
 } from '../../services/firebase';
 import TopNav from '../components/TopNav';
+import { colors } from '../constants/colors';
 
 interface NotificationsScreenProps {
   onNavigate: (screen: string) => void;
@@ -36,8 +37,8 @@ interface Notification {
 
 const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigate, onBack }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [appointmentNotifications, setAppointmentNotifications] = useState(true);
-  const [generalNotifications, setGeneralNotifications] = useState(true);
+  const [appointmentNotifications, setAppointmentNotifications] = useState(false);
+  const [generalNotifications, setGeneralNotifications] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,19 +50,12 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigate, o
       setLoading(true);
       const user = getCurrentUser();
       if (user) {
+        // Delete old notifications (older than 6 hours)
+        await deleteOldNotifications(user.uid, 6);
+        
+        // Load real notifications only
         const userNotifications = await getUserNotifications(user.uid);
         setNotifications(userNotifications);
-        
-        // If no notifications, create some test ones
-        if (userNotifications.length === 0) {
-          await createTestNotification(user.uid, 'general', 'ברוכים הבאים! 🎉', 'תודה שהצטרפתם לאפליקציה של רון תורגמן');
-          await createTestNotification(user.uid, 'appointment', 'תזכורת לתור', 'התור שלך מתחיל בעוד 10 דקות');
-          await createTestNotification(user.uid, 'general', 'הודעה מהספר', 'זמנים מיוחדים לחגים - אנא בדקו שעות פתיחה');
-          
-          // Reload notifications
-          const updatedNotifications = await getUserNotifications(user.uid);
-          setNotifications(updatedNotifications);
-        }
       }
     } catch (error) {
       console.error('Error loading notifications:', error);
@@ -90,7 +84,7 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigate, o
       case 'reminder':
         return '#FF9800';
       case 'general':
-        return '#4CAF50';
+        return '#FFD700';
       default:
         return '#666';
     }
@@ -169,13 +163,13 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigate, o
 
             <View style={styles.settingItem}>
               <View style={styles.settingLeft}>
-                <Ionicons name="megaphone" size={20} color="#4CAF50" style={styles.settingIcon} />
+                <Ionicons name="megaphone" size={20} color="#FFD700" style={styles.settingIcon} />
                 <Text style={styles.settingText}>הודעות כלליות</Text>
               </View>
               <Switch
                 value={generalNotifications}
                 onValueChange={setGeneralNotifications}
-                trackColor={{ false: '#ddd', true: '#4CAF50' }}
+                trackColor={{ false: '#ddd', true: '#FFD700' }}
                 thumbColor={generalNotifications ? '#fff' : '#f4f3f4'}
               />
             </View>
@@ -252,7 +246,7 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigate, o
           {/* Notification Schedule Info */}
           <View style={styles.infoSection}>
             <LinearGradient
-              colors={['#007bff', '#0056b3']}
+              colors={[colors.barberGold, colors.barberGoldDark]}
               style={styles.infoGradient}
             >
               <Ionicons name="information-circle" size={24} color="#fff" />

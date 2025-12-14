@@ -8,11 +8,11 @@
  * - Notification channel setup (Android)
  */
 
-import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
-import { updateDoc, doc, deleteField } from 'firebase/firestore';
-import { db } from '../config/firebase';
 import * as Device from 'expo-device';
+import * as Notifications from 'expo-notifications';
+import { deleteField, doc, updateDoc } from 'firebase/firestore';
+import { Platform } from 'react-native';
+import { db } from '../config/firebase';
 
 // ============================================================================
 // TYPES
@@ -136,16 +136,17 @@ export async function ensureAndroidChannel(): Promise<void> {
 /**
  * Register push token for a user
  * Saves the Expo push token to Firestore for server-side push notifications
+ * Only registers if permissions are already granted (does not request permissions)
  * @param uid - Firebase user ID
  */
 export async function registerPushTokenForUser(uid: string): Promise<void> {
   try {
     console.log('🔄 Registering push token for user:', uid);
 
-    // Ensure permissions first
-    const hasPermission = await ensurePermissions();
+    // Check if permissions are already granted (don't request)
+    const hasPermission = await checkPermissions();
     if (!hasPermission) {
-      console.log('❌ Cannot register push token without permissions');
+      console.log('❌ Cannot register push token without permissions - user must enable notifications first');
       return;
     }
 

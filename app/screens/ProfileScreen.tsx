@@ -195,7 +195,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onBack }) => 
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'confirmed': return '#4CAF50';
+      case 'confirmed': return '#FFD700';
       case 'pending': return '#FF9800';
       case 'completed': return '#2196F3';
       case 'cancelled': return '#F44336';
@@ -952,7 +952,7 @@ const styles = StyleSheet.create({
     textAlign: 'left',
   },
   saveButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#FFD700',
     paddingVertical: 12,
     borderRadius: 8,
     marginTop: 16,

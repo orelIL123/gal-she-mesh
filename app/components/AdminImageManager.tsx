@@ -233,15 +233,18 @@ const AdminImageManager: React.FC<AdminImageManagerProps> = ({ onClose }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('admin.atmosphere_image')}</Text>
           <View style={styles.imageContainer}>
-            <Image
-              source={
-                images.atmosphereImage
-                  ? { uri: images.atmosphereImage }
-                  : require('../../assets/images/atmosphere/atmosphere.png')
-              }
-              style={styles.previewImage}
-              resizeMode="cover"
-            />
+            {images.atmosphereImage ? (
+              <Image
+                source={{ uri: images.atmosphereImage }}
+                style={styles.previewImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.previewImage, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="image-outline" size={48} color="#666" />
+                <Text style={{ color: '#666', marginTop: 8 }}>אין תמונת אווירה</Text>
+              </View>
+            )}
             <TouchableOpacity
               style={styles.updateButton}
               onPress={handleUpdateAtmosphere}
@@ -257,15 +260,18 @@ const AdminImageManager: React.FC<AdminImageManagerProps> = ({ onClose }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('admin.about_us_image')}</Text>
           <View style={styles.imageContainer}>
-            <Image
-              source={
-                images.aboutUsImage
-                  ? { uri: images.aboutUsImage }
-                  : require('../../assets/images/ABOUT US/aboutus.png')
-              }
-              style={styles.previewImage}
-              resizeMode="cover"
-            />
+            {images.aboutUsImage ? (
+              <Image
+                source={{ uri: images.aboutUsImage }}
+                style={styles.previewImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.previewImage, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="image-outline" size={48} color="#666" />
+                <Text style={{ color: '#666', marginTop: 8 }}>אין תמונת אודותינו</Text>
+              </View>
+            )}
             <TouchableOpacity
               style={styles.updateButton}
               onPress={handleUpdateAboutUs}

@@ -26,9 +26,9 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
   const [cleanupLoading, setCleanupLoading] = useState(false);
   
   // Settings states
-  const [welcomeMessage, setWelcomeMessage] = useState('שלום, ברוכים הבאים ל-naor amar');
-  const [subtitleMessage, setSubtitleMessage] = useState('ל-TURGI ברברשופ');
-  const [aboutUsText, setAboutUsText] = useState('ברוכים הבאים למספרה של רון תורג׳מן! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. רון, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
+  const [welcomeMessage, setWelcomeMessage] = useState('שלום, ברוכים הבאים ל-gal shemesh לגל שמש');
+  const [subtitleMessage, setSubtitleMessage] = useState('לגל שמש ברברשופ');
+  const [aboutUsText, setAboutUsText] = useState('ברוכים הבאים למספרת גל שמש! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. אילון, ספר מקצועי עם שנות ניסיון, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
   const [popupMessage, setPopupMessage] = useState('');
 
   useEffect(() => {
@@ -85,15 +85,19 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
       const welcomeDoc = await getDoc(doc(db, 'settings', 'homeMessages'));
       if (welcomeDoc.exists()) {
         const data = welcomeDoc.data();
-        setWelcomeMessage(data.welcome || 'שלום, ברוכים הבאים ל-naor amar');
-        setSubtitleMessage(data.subtitle || 'ל-TURGI ברברשופ');
+        setWelcomeMessage(data.welcome || 'שלום, ברוכים הבאים ל-gal shemesh לגל שמש');
+        setSubtitleMessage(data.subtitle || 'לגל שמש ברברשופ');
       } else {
         // Create default if doesn't exist
-        await setDoc(doc(db, 'settings', 'homeMessages'), {
-          welcome: 'שלום, ברוכים הבאים ל-naor amar',
-          subtitle: 'ל-TURGI ברברשופ',
-          createdAt: new Date()
-        });
+        await setDoc(
+          doc(db, 'settings', 'homeMessages'),
+          {
+            welcome: 'שלום, ברוכים הבאים ל-gal shemesh לגל שמש',
+            subtitle: 'לגל שמש ברברשופ',
+            createdAt: new Date()
+          },
+          { merge: true }
+        );
       }
 
       // Load about us text
@@ -103,11 +107,15 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
         setAboutUsText(data.text || '');
       } else {
         // Create default if doesn't exist
-        const defaultAboutText = 'ברוכים הבאים למספרה של רון תורג׳מן! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. רון, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.';
-        await setDoc(doc(db, 'settings', 'aboutUsText'), {
-          text: defaultAboutText,
-          createdAt: new Date()
-        });
+        const defaultAboutText = 'ברוכים הבאים למספרת גל שמש! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. אילון, ספר מקצועי עם שנות ניסיון, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.';
+        await setDoc(
+          doc(db, 'settings', 'aboutUsText'),
+          {
+            text: defaultAboutText,
+            createdAt: new Date()
+          },
+          { merge: true }
+        );
         setAboutUsText(defaultAboutText);
       }
       
@@ -122,11 +130,15 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
   const saveWelcomeMessages = async () => {
     try {
       setLoading(true);
-      await setDoc(doc(db, 'settings', 'homeMessages'), {
-        welcome: welcomeMessage,
-        subtitle: subtitleMessage,
-        updatedAt: new Date()
-      });
+      await setDoc(
+        doc(db, 'settings', 'homeMessages'),
+        {
+          welcome: welcomeMessage,
+          subtitle: subtitleMessage,
+          updatedAt: new Date()
+        },
+        { merge: true }
+      );
       showToast('הודעות הברכה עודכנו בהצלחה!');
     } catch (error) {
       console.error('Error saving welcome messages:', error);
@@ -139,10 +151,14 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
   const saveAboutUsText = async () => {
     try {
       setLoading(true);
-      await setDoc(doc(db, 'settings', 'aboutUsText'), {
-        text: aboutUsText,
-        updatedAt: new Date()
-      });
+      await setDoc(
+        doc(db, 'settings', 'aboutUsText'),
+        {
+          text: aboutUsText,
+          updatedAt: new Date()
+        },
+        { merge: true }
+      );
       showToast('טקסט אודותינו עודכן בהצלחה!');
     } catch (error) {
       console.error('Error saving about us text:', error);
@@ -214,7 +230,7 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
               style={styles.textInput}
               value={welcomeMessage}
               onChangeText={setWelcomeMessage}
-              placeholder="שלום, ברוכים הבאים ל-naor amar"
+              placeholder="שלום, ברוכים הבאים ל-gal shemesh לגל שמש"
               textAlign="right"
               multiline
             />
@@ -226,7 +242,7 @@ const AdminSettingsScreen: React.FC<AdminSettingsScreenProps> = ({ onNavigate, o
               style={styles.textInput}
               value={subtitleMessage}
               onChangeText={setSubtitleMessage}
-              placeholder="ל-TURGI ברברשופ"
+              placeholder="לגל שמש ברברשופ"
               textAlign="right"
               multiline
             />
@@ -418,7 +434,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   saveButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#FFD700',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

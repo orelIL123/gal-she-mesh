@@ -60,10 +60,14 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
     const fetchAboutUs = async () => {
       try {
         const db = getFirestore();
-        const docRef = doc(db, 'settings', 'aboutus');
+        const docRef = doc(db, 'settings', 'aboutUsText');
         const snap = await getDoc(docRef);
         if (snap.exists()) {
           setAboutUsText(snap.data().text || '');
+        } else {
+          const defaultText = 'ברוכים הבאים למספרת גל שמש! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח.';
+          setAboutUsText(defaultText);
+          await setDoc(docRef, { text: defaultText }, { merge: true });
         }
       } catch (e) {
         showToast('שגיאה בטעינת אודות', 'error');
@@ -141,7 +145,11 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
     setAboutUsLoading(true);
     try {
       const db = getFirestore();
-      await setDoc(doc(db, 'settings', 'aboutus'), { text: aboutUsText });
+      await setDoc(
+        doc(db, 'settings', 'aboutUsText'),
+        { text: aboutUsText, updatedAt: new Date() },
+        { merge: true }
+      );
       showToast('הטקסט נשמר בהצלחה!');
     } catch (e) {
       showToast('שגיאה בשמירת הטקסט', 'error');

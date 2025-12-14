@@ -292,7 +292,7 @@ const AdminCustomersScreen: React.FC<AdminCustomersScreenProps> = ({
         }
       />
       
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>לקוחות ({customers.length})</Text>
         </View>
@@ -401,7 +401,11 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 20,
+  },
+  scrollContent: {
+    paddingTop: 100, // Add padding to account for TopNav height
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   header: {
     flexDirection: 'row',

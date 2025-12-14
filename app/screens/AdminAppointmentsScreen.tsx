@@ -169,7 +169,7 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'confirmed': return '#4CAF50';
+      case 'confirmed': return '#FFD700';
       case 'completed': return '#2196F3';
       case 'cancelled': return '#F44336';
       default: return '#757575';
@@ -329,9 +329,9 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
     }
 
     try {
-      // Validate that the selected time is on the 20-minute grid
+      // Validate that the selected time is on the slot grid (5-minute intervals)
       if (!isOnGrid(selectedTime)) {
-        showToast(`זמן חייב להיות על גריד של ${SLOT_SIZE_MINUTES} דקות (HH:00, HH:20, HH:40)`, 'error');
+        showToast(`זמן חייב להיות על גריד של ${SLOT_SIZE_MINUTES} דקות (כל 5 דקות: HH:00, HH:05, HH:10, וכו')`, 'error');
         return;
       }
 
@@ -342,9 +342,9 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
 
       const selectedTreatmentObj = treatments.find(t => t.id === selectedTreatment);
       
-      // Validate treatment duration is a multiple of 25 minutes
+      // Validate treatment duration is a multiple of 5 minutes (minimum 5)
       if (selectedTreatmentObj && !isValidDuration(selectedTreatmentObj.duration)) {
-        showToast(`משך הטיפול חייב להיות כפולה של ${SLOT_SIZE_MINUTES} דקות`, 'error');
+        showToast(`משך הטיפול חייב להיות כפולה של ${SLOT_SIZE_MINUTES} דקות (מינימום 5 דקות)`, 'error');
         return;
       }
 
@@ -361,7 +361,7 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
         date: Timestamp.fromDate(appointmentDateTime),
         status: 'confirmed' as const, // Changed from 'pending' to 'confirmed'
         notes: appointmentNotes,
-        duration: selectedTreatmentObj?.duration || 60, // Default to 60 minutes if not found
+        duration: selectedTreatmentObj?.duration || 25, // Default to 25 minutes (1 slot) if not found
         // Add manual client info if using manual input
         ...(inputMethod === 'manual' && {
           clientName: manualClientName.trim(),
@@ -997,25 +997,34 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
 
               {/* Barber Selection */}
               <Text style={styles.formLabel}>בחר ספר *</Text>
-              <ScrollView style={styles.selectionContainer}>
-                {barbers.map((barber) => (
-                  <TouchableOpacity
-                    key={barber.id}
-                    style={[
-                      styles.selectionButton,
-                      selectedBarber === barber.id && styles.selectedSelectionButton
-                    ]}
-                    onPress={() => setSelectedBarber(barber.id)}
-                  >
-                    <Text style={[
-                      styles.selectionButtonText,
-                      selectedBarber === barber.id && styles.selectedSelectionButtonText
-                    ]}>
-                      {barber.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              {barbers.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateIcon}>✂️</Text>
+                  <Text style={styles.emptyStateText}>
+                    אין ספרים במערכת. אנא הוסף ספרים דרך מסך ניהול הצוות.
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView style={styles.selectionContainer}>
+                  {barbers.map((barber) => (
+                    <TouchableOpacity
+                      key={barber.id}
+                      style={[
+                        styles.selectionButton,
+                        selectedBarber === barber.id && styles.selectedSelectionButton
+                      ]}
+                      onPress={() => setSelectedBarber(barber.id)}
+                    >
+                      <Text style={[
+                        styles.selectionButtonText,
+                        selectedBarber === barber.id && styles.selectedSelectionButtonText
+                      ]}>
+                        {barber.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
 
               {/* Treatment Selection */}
               <Text style={styles.formLabel}>בחר טיפול *</Text>
@@ -1182,10 +1191,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 100,
   },
+  emptyStateIcon: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
   emptyStateText: {
     fontSize: 16,
     color: '#666',
     marginTop: 16,
+    textAlign: 'center',
   },
   appointmentCard: {
     backgroundColor: '#fff',
@@ -1302,7 +1316,7 @@ const styles = StyleSheet.create({
     minWidth: 80,
   },
   confirmButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#FFD700',
   },
   completeButton: {
     backgroundColor: '#2196F3',

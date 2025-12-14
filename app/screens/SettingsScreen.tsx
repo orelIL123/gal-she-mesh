@@ -23,9 +23,9 @@ interface SettingsScreenProps {
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, onBack }) => {
   const { t, i18n } = useTranslation();
-  const [notifications, setNotifications] = useState(true);
-  const [appointmentReminders, setAppointmentReminders] = useState(true);
-  const [generalNotifications, setGeneralNotifications] = useState(true);
+  const [notifications, setNotifications] = useState(false);
+  const [appointmentReminders, setAppointmentReminders] = useState(false);
+  const [generalNotifications, setGeneralNotifications] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
 
   const languages = [
@@ -75,7 +75,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, onBack }) =
 
 
   const handleSupport = () => {
-    Linking.openURL('mailto:support@turgibarber.com?subject=תמיכה באפליקציה').catch(() => {
+    Linking.openURL('mailto:info@eilonmatok.com?subject=תמיכה באפליקציה').catch(() => {
       Alert.alert('שגיאה', 'לא ניתן לפתוח את אפליקציית המייל');
     });
   };
@@ -207,7 +207,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, onBack }) =
 
           {/* App Info */}
           <View style={styles.appInfo}>
-            <Text style={styles.appInfoText}>TURGI Barber App</Text>
+            <Text style={styles.appInfoText}>גל שמש Barber App</Text>
             <Text style={styles.appVersionText}>{t('common.version') || 'גרסה'} 1.0.0</Text>
             <Text style={styles.appCreditText}>{t('home.powered_by')}</Text>
           </View>

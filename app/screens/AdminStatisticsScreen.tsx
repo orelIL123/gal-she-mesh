@@ -11,6 +11,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { colors } from '../constants/colors';
 import {
     checkIsAdmin,
     getAllAppointments,
@@ -383,7 +384,7 @@ const AdminStatisticsScreen: React.FC<AdminStatisticsScreenProps> = ({ onNavigat
           {/* Header */}
           <View style={styles.header}>
             <LinearGradient
-              colors={['#17a2b8', '#138496']}
+              colors={[colors.barberGold, colors.barberGoldDark]}
               style={styles.headerGradient}
             >
               <Text style={styles.headerTitle}>דשבורד עסקי</Text>

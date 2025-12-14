@@ -137,7 +137,7 @@ const SideMenu: React.FC<SideMenuProps> = ({ visible, onClose, onNavigate, onNot
                       <Text style={[styles.languageText, i18n.language === 'he' && styles.activeLanguageText]}>
                         {t('settings.hebrew')}
                       </Text>
-                      {i18n.language === 'he' && <Ionicons name="checkmark" size={20} color="#4CAF50" />}
+                      {i18n.language === 'he' && <Ionicons name="checkmark" size={20} color="#FFD700" />}
                     </TouchableOpacity>
                     
                     <TouchableOpacity
@@ -147,7 +147,7 @@ const SideMenu: React.FC<SideMenuProps> = ({ visible, onClose, onNavigate, onNot
                       <Text style={[styles.languageText, i18n.language === 'en' && styles.activeLanguageText]}>
                         {t('settings.english')}
                       </Text>
-                      {i18n.language === 'en' && <Ionicons name="checkmark" size={20} color="#4CAF50" />}
+                      {i18n.language === 'en' && <Ionicons name="checkmark" size={20} color="#FFD700" />}
                     </TouchableOpacity>
                   </View>
                 )}
@@ -270,16 +270,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   activeLanguage: {
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(76, 175, 80, 0.3)',
+    borderColor: 'rgba(255, 215, 0, 0.3)',
   },
   languageText: {
     fontSize: 14,
     color: '#ccc',
   },
   activeLanguageText: {
-    color: '#4CAF50',
+    color: '#FFD700',
     fontWeight: '600',
   },
 });

@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { colors } from '../constants/colors';
 import {
   Appointment,
   Barber,
@@ -114,7 +115,7 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'confirmed': return '#4CAF50';
+      case 'confirmed': return '#FFD700';
       case 'pending': return '#FF9800';
       case 'completed': return '#2196F3';
       case 'cancelled': return '#9E9E9E';
@@ -256,7 +257,7 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
           onPress={() => setFilter('upcoming')}
         >
           <LinearGradient
-            colors={filter === 'upcoming' ? ['#4CAF50', '#45a049'] : ['#f8f9fa', '#e9ecef']}
+            colors={filter === 'upcoming' ? [colors.barberGold, colors.barberGoldDark] : ['#f8f9fa', '#e9ecef']}
             style={styles.filterGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -296,7 +297,7 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
           onPress={() => setFilter('past')}
         >
           <LinearGradient
-            colors={filter === 'past' ? ['#2196F3', '#1976D2'] : ['#f8f9fa', '#e9ecef']}
+            colors={filter === 'past' ? [colors.barberGold, colors.barberGoldDark] : ['#f8f9fa', '#e9ecef']}
             style={styles.filterGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -356,7 +357,7 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
                 onPress={() => onNavigate('booking')}
               >
                 <LinearGradient
-                  colors={['#4CAF50', '#45a049']}
+                  colors={[colors.barberGold, colors.barberGoldDark]}
                   style={styles.bookNewGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
@@ -397,7 +398,7 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
 
                   {/* Treatment Name */}
                   <View style={styles.treatmentContainer}>
-                    <Ionicons name="cut-outline" size={24} color="#4CAF50" />
+                    <Ionicons name="cut-outline" size={24} color="#FFD700" />
                     <Text style={styles.treatmentName}>
                       {getTreatmentName(appointment.treatmentId)}
                     </Text>
@@ -465,7 +466,7 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
           onPress={() => onNavigate('booking')}
         >
           <LinearGradient
-            colors={['#4CAF50', '#45a049']}
+            colors={['#FFD700', '#DAA520']}
             style={styles.fabGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -509,7 +510,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   activeFilterButtonUpcoming: {
-    shadowColor: '#4CAF50',
+    shadowColor: '#FFD700',
     shadowOpacity: 0.3,
   },
   activeFilterButtonPast: {
@@ -733,7 +734,7 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     overflow: 'hidden',
-    shadowColor: '#4CAF50',
+    shadowColor: '#FFD700',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 12,

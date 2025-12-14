@@ -4,16 +4,15 @@ import * as Notifications from 'expo-notifications';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Updates from 'expo-updates';
-import { onAuthStateChanged } from 'firebase/auth';
 import 'nativewind';
 import { useEffect } from 'react';
 import { I18nextProvider } from 'react-i18next';
-import { Alert } from 'react-native';
+import { Alert, View } from 'react-native';
 import 'react-native-reanimated';
 import '../app/globals.css';
 import { auth } from '../config/firebase';
 import { processScheduledReminders } from '../services/firebase';
-import { ensureAndroidChannel, registerPushTokenForUser } from '../services/notifications';
+import { ensureAndroidChannel } from '../services/notifications';
 import AppAuthGate from './components/AppAuthGate';
 import i18n from './i18n';
 
@@ -80,22 +79,8 @@ export default function RootLayout() {
     };
   }, [router]);
 
-  // Register push token when user logs in
-  useEffect(() => {
-    console.log('🔄 Setting up auth state listener for push token registration...');
-
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        console.log('✅ User logged in, registering push token...');
-        // User logged in - register push token
-        await registerPushTokenForUser(user.uid);
-      } else {
-        console.log('❌ User logged out, push token already revoked in logout flow');
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
+  // Note: Push token registration is now only done when user explicitly enables notifications
+  // via settings or onboarding flow, not automatically on login
 
   // Check for updates on app start
   useEffect(() => {
@@ -154,8 +139,8 @@ export default function RootLayout() {
   }, []);
 
   if (!loaded) {
-    // Async font loading only occurs in development.
-    return null;
+    // Show black screen while fonts are loading (matches splash screen)
+    return <View style={{ flex: 1, backgroundColor: '#000000' }} />;
   }
 
   return (
@@ -179,6 +164,7 @@ export default function RootLayout() {
             <Stack.Screen name="admin-statistics" options={{ headerShown: false }} />
             <Stack.Screen name="admin-team" options={{ headerShown: false }} />
             <Stack.Screen name="admin-treatments" options={{ headerShown: false }} />
+            <Stack.Screen name="my-appointments" options={{ headerShown: false }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="+not-found" options={{ headerShown: false }} />
           </Stack>

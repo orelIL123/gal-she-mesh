@@ -24,21 +24,21 @@ export const CustomCard: React.FC<CustomCardProps> = ({
   titleStyle,
   subtitleStyle,
 }) => {
-  const getCardColors = (): [string, string] => {
+  const getCardColors = (): [string, string, string] => {
     switch (variant) {
       case 'selected':
-        return [colors.neonBlue, colors.gradientEnd];
+        return [colors.barberGoldLight, colors.barberGold, colors.barberGoldDark];
       case 'disabled':
-        return [colors.border, colors.borderLight];
+        return [colors.border, colors.borderLight, colors.border];
       default:
-        return [colors.card, colors.surface];
+        return [colors.card, colors.surface, colors.card];
     }
   };
 
   const getBorderColor = () => {
     switch (variant) {
       case 'selected':
-        return colors.neonBlue;
+        return colors.barberGold;
       case 'disabled':
         return colors.border;
       default:
@@ -51,6 +51,7 @@ export const CustomCard: React.FC<CustomCardProps> = ({
       colors={getCardColors()}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
+      locations={[0, 0.5, 1]}
       style={[
         {
           borderRadius: 16,
@@ -58,10 +59,10 @@ export const CustomCard: React.FC<CustomCardProps> = ({
           borderWidth: 2,
           borderColor: getBorderColor(),
           shadowColor: getBorderColor(),
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: variant === 'selected' ? 0.3 : 0.1,
-          shadowRadius: 8,
-          elevation: variant === 'selected' ? 8 : 4,
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: variant === 'selected' ? 0.5 : 0.1,
+          shadowRadius: variant === 'selected' ? 12 : 8,
+          elevation: variant === 'selected' ? 10 : 4,
         },
         style,
       ]}

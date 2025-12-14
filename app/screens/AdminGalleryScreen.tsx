@@ -24,6 +24,7 @@ import {
   getAllStorageImages,
   getGalleryImages,
   getShopItems,
+  initializeGalleryImages,
   ShopItem,
   updateShopItem,
   uploadImageToStorage
@@ -89,7 +90,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
   const [shopStorageImages, setShopStorageImages] = useState<string[]>([]);
 
   // Add state for about us text
-  const [aboutUsText, setAboutUsText] = useState('ברוכים הבאים ל-TURGI – מספרה משפחתית עם יחס אישי, מקצועיות ואווירה חמה. נשמח לראותכם!');
+  const [aboutUsText, setAboutUsText] = useState('ברוכים הבאים לגל שמש – מספרה משפחתית עם יחס אישי, מקצועיות ואווירה חמה. נשמח לראותכם!');
   const [editingAboutUs, setEditingAboutUs] = useState(false);
 
   useEffect(() => {
@@ -133,10 +134,87 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
   const loadImages = async () => {
     try {
       setLoading(true);
-      const [imagesData, storageImagesData] = await Promise.all([
+      let [imagesData, storageImagesData] = await Promise.all([
         getGalleryImages(),
         getAllStorageImages()
       ]);
+
+      if (!imagesData || imagesData.length === 0) {
+        try {
+          console.log('📷 No gallery images found, initializing defaults from Firebase...');
+          await initializeGalleryImages();
+          imagesData = await getGalleryImages();
+        } catch (initError) {
+          console.error('Error initializing gallery images:', initError);
+          showToast('שגיאה בטעינת גלריה, נסה שוב מאוחר יותר', 'error');
+        }
+      }
+
+      // Load atmosphere and aboutus images from settings and add them to gallery if they don't exist
+      try {
+        const db = getFirestore();
+        const settingsDocRef = doc(db, 'settings', 'images');
+        const settingsDocSnap = await getDoc(settingsDocRef);
+        
+        if (settingsDocSnap.exists()) {
+          const settingsData = settingsDocSnap.data();
+          const atmosphereImage = settingsData.atmosphereImage;
+          const aboutUsImage = settingsData.aboutUsImage;
+          
+          // Check if background image exists in gallery, if not add it
+          if (atmosphereImage) {
+            const backgroundExists = imagesData.some(img => 
+              img.type === 'background' && img.imageUrl === atmosphereImage
+            );
+            if (!backgroundExists) {
+              // Add background image to gallery if it doesn't exist
+              const backgroundImageId = await addGalleryImage({
+                imageUrl: atmosphereImage,
+                type: 'background',
+                order: 0,
+                isActive: true
+              });
+              imagesData.push({
+                id: backgroundImageId,
+                imageUrl: atmosphereImage,
+                type: 'background',
+                order: 0,
+                isActive: true,
+                createdAt: new Date() as any
+              });
+              console.log('✅ Added background image from settings to gallery');
+            }
+          }
+          
+          // Check if aboutus image exists in gallery, if not add it
+          if (aboutUsImage) {
+            const aboutUsExists = imagesData.some(img => 
+              img.type === 'aboutus' && img.imageUrl === aboutUsImage
+            );
+            if (!aboutUsExists) {
+              // Add aboutus image to gallery if it doesn't exist
+              const aboutUsImageId = await addGalleryImage({
+                imageUrl: aboutUsImage,
+                type: 'aboutus',
+                order: 0,
+                isActive: true
+              });
+              imagesData.push({
+                id: aboutUsImageId,
+                imageUrl: aboutUsImage,
+                type: 'aboutus',
+                order: 0,
+                isActive: true,
+                createdAt: new Date() as any
+              });
+              console.log('✅ Added aboutus image from settings to gallery');
+            }
+          }
+        }
+      } catch (settingsError) {
+        console.error('Error loading settings images:', settingsError);
+      }
+
       setImages(imagesData);
       setStorageImages(storageImagesData);
     } catch (error) {
@@ -175,7 +253,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     setModalVisible(true);
   };
 
-  const pickImageFromDevice = async () => {
+  const pickImageFromDevice = async (): Promise<{ uri: string; mimeType?: string } | null> => {
     try {
       console.log('📱 Requesting media library permissions...');
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -202,9 +280,12 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
       console.log('📱 Image picker result:', result);
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const imageUri = result.assets[0].uri;
+        const asset = result.assets[0];
+        const imageUri = asset.uri;
+        const mimeType = asset.mimeType || 'image/jpeg';
         console.log('📤 Selected image URI:', imageUri);
-        return imageUri;
+        console.log('📄 MIME type:', mimeType);
+        return { uri: imageUri, mimeType };
       }
     } catch (error) {
       console.error('Error picking image:', error);
@@ -215,15 +296,23 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
 
   const uploadImageFromDevice = async () => {
     try {
-      const imageUri = await pickImageFromDevice();
-      if (!imageUri) return;
+      const imageData = await pickImageFromDevice();
+      if (!imageData) return;
 
       showToast('מעלה תמונה...', 'success');
       
-      const fileName = `img_${Date.now()}.jpg`;
+      // Determine file extension from mimeType
+      let extension = 'jpg';
+      if (imageData.mimeType?.includes('png')) {
+        extension = 'png';
+      } else if (imageData.mimeType?.includes('webp')) {
+        extension = 'webp';
+      }
+      
+      const fileName = `img_${Date.now()}.${extension}`;
       const folderPath = formData.type === 'background' ? 'backgrounds' : formData.type;
       
-      const downloadURL = await uploadImageToStorage(imageUri, folderPath, fileName);
+      const downloadURL = await uploadImageToStorage(imageData.uri, folderPath, fileName, imageData.mimeType);
       
       setFormData({
         ...formData,
@@ -265,10 +354,12 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     try {
       console.log('🔄 Saving image to Firebase...', formData);
       
+      const imageUrl = formData.imageUrl.trim();
+      
       if (editingImage) {
         // Update existing image
         const imageData = {
-          imageUrl: formData.imageUrl.trim(),
+          imageUrl: imageUrl,
           type: formData.type,
           order: parseInt(formData.order),
           isActive: true
@@ -277,10 +368,31 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
         console.log('📝 Updating image:', editingImage.id, imageData);
         
         // Update in Firebase using updateDoc instead of addDoc
-        const { updateDoc, doc } = await import('firebase/firestore');
+        const { updateDoc, doc, setDoc, getDoc } = await import('firebase/firestore');
         const { db } = await import('../../config/firebase');
         
         await updateDoc(doc(db, 'gallery', editingImage.id), imageData);
+        
+        // If background or aboutus, also update settings/images
+        if (formData.type === 'background') {
+          const settingsRef = doc(db, 'settings', 'images');
+          const settingsSnap = await getDoc(settingsRef);
+          const currentData = settingsSnap.exists() ? settingsSnap.data() : {};
+          await setDoc(settingsRef, {
+            ...currentData,
+            atmosphereImage: imageUrl
+          }, { merge: true });
+          console.log('✅ Updated atmosphereImage in settings');
+        } else if (formData.type === 'aboutus') {
+          const settingsRef = doc(db, 'settings', 'images');
+          const settingsSnap = await getDoc(settingsRef);
+          const currentData = settingsSnap.exists() ? settingsSnap.data() : {};
+          await setDoc(settingsRef, {
+            ...currentData,
+            aboutUsImage: imageUrl
+          }, { merge: true });
+          console.log('✅ Updated aboutUsImage in settings');
+        }
         
         // Update in local state
         setImages(prev => prev.map(img => 
@@ -303,7 +415,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
         }
 
         const imageData = {
-          imageUrl: formData.imageUrl.trim(),
+          imageUrl: imageUrl,
           type: formData.type,
           order: parseInt(formData.order),
           isActive: true
@@ -313,11 +425,50 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
         const newImageId = await addGalleryImage(imageData);
         console.log('✅ Image saved with ID:', newImageId);
         
+        // If background or aboutus, also update settings/images
+        if (formData.type === 'background') {
+          const { setDoc, doc, getDoc } = await import('firebase/firestore');
+          const { db } = await import('../../config/firebase');
+          const settingsRef = doc(db, 'settings', 'images');
+          const settingsSnap = await getDoc(settingsRef);
+          const currentData = settingsSnap.exists() ? settingsSnap.data() : {};
+          await setDoc(settingsRef, {
+            ...currentData,
+            atmosphereImage: imageUrl
+          }, { merge: true });
+          console.log('✅ Updated atmosphereImage in settings');
+        } else if (formData.type === 'aboutus') {
+          const { setDoc, doc, getDoc } = await import('firebase/firestore');
+          const { db } = await import('../../config/firebase');
+          const settingsRef = doc(db, 'settings', 'images');
+          const settingsSnap = await getDoc(settingsRef);
+          const currentData = settingsSnap.exists() ? settingsSnap.data() : {};
+          await setDoc(settingsRef, {
+            ...currentData,
+            aboutUsImage: imageUrl
+          }, { merge: true });
+          console.log('✅ Updated aboutUsImage in settings');
+        }
+        
         setImages(prev => [...prev, { id: newImageId, ...imageData, createdAt: new Date() as any }]);
         showToast('התמונה נוספה בהצלחה');
       }
       
       setModalVisible(false);
+      
+      // Reset form
+      setFormData({
+        imageUrl: '',
+        type: selectedTab as 'gallery' | 'background' | 'splash' | 'aboutus' | 'treatments',
+        order: '0'
+      });
+      setEditingImage(null);
+      
+      // Refresh images from Firestore
+      const refreshedImages = await getGalleryImages();
+      setImages(refreshedImages);
+      console.log('✅ Refreshed images, total count:', refreshedImages.length);
+      console.log('✅ Background images:', refreshedImages.filter(img => img.type === 'background'));
       
       // Refresh storage images
       const storageImagesData = await getAllStorageImages();
@@ -339,8 +490,39 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
           style: 'destructive',
           onPress: async () => {
             try {
+              // Get image data before deleting
+              const imageToDelete = images.find(img => img.id === imageId);
+              
               await deleteGalleryImage(imageId);
               setImages(prev => prev.filter(img => img.id !== imageId));
+              
+              // If deleting background or aboutus, also remove from settings
+              if (imageToDelete) {
+                if (imageToDelete.type === 'background') {
+                  const { setDoc, doc, getDoc } = await import('firebase/firestore');
+                  const { db } = await import('../../config/firebase');
+                  const settingsRef = doc(db, 'settings', 'images');
+                  const settingsSnap = await getDoc(settingsRef);
+                  const currentData = settingsSnap.exists() ? settingsSnap.data() : {};
+                  await setDoc(settingsRef, {
+                    ...currentData,
+                    atmosphereImage: ''
+                  }, { merge: true });
+                  console.log('✅ Removed atmosphereImage from settings');
+                } else if (imageToDelete.type === 'aboutus') {
+                  const { setDoc, doc, getDoc } = await import('firebase/firestore');
+                  const { db } = await import('../../config/firebase');
+                  const settingsRef = doc(db, 'settings', 'images');
+                  const settingsSnap = await getDoc(settingsRef);
+                  const currentData = settingsSnap.exists() ? settingsSnap.data() : {};
+                  await setDoc(settingsRef, {
+                    ...currentData,
+                    aboutUsImage: ''
+                  }, { merge: true });
+                  console.log('✅ Removed aboutUsImage from settings');
+                }
+              }
+              
               showToast('התמונה נמחקה בהצלחה');
             } catch (error) {
               console.error('Error deleting image:', error);
@@ -512,19 +694,27 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
       setIsUploading(true);
       console.log('🔄 Starting shop image upload...');
       
-      const imageUri = await pickImageFromDevice();
-      if (!imageUri) {
+      const imageData = await pickImageFromDevice();
+      if (!imageData) {
         console.log('❌ No image selected');
         return;
       }
 
-      console.log('📱 Image selected:', imageUri);
+      console.log('📱 Image selected:', imageData.uri);
       showToast('מעלה תמונה...', 'success');
       
-      const fileName = `shop_${Date.now()}.jpg`;
+      // Determine file extension from mimeType
+      let extension = 'jpg';
+      if (imageData.mimeType?.includes('png')) {
+        extension = 'png';
+      } else if (imageData.mimeType?.includes('webp')) {
+        extension = 'webp';
+      }
+      
+      const fileName = `shop_${Date.now()}.${extension}`;
       console.log('📁 Uploading to shop folder with filename:', fileName);
       
-      const downloadURL = await uploadImageToStorage(imageUri, 'shop', fileName);
+      const downloadURL = await uploadImageToStorage(imageData.uri, 'shop', fileName, imageData.mimeType);
       console.log('✅ Upload successful, URL:', downloadURL);
       
       // עדכון ישיר של ה-state במקום החזרת URL
@@ -1351,7 +1541,7 @@ const styles = StyleSheet.create({
   },
   imageStatus: {
     fontSize: 12,
-    color: '#4CAF50',
+    color: '#FFD700',
     fontWeight: 'bold',
   },
   modalOverlay: {

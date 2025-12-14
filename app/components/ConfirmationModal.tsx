@@ -42,7 +42,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
 
   const getColorByType = () => {
     switch (type) {
-      case 'success': return '#4CAF50';
+      case 'success': return '#FFD700';
       case 'warning': return '#FF9800';
       case 'error': return '#F44336';
       default: return '#2196F3';

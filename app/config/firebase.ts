@@ -1,13 +1,15 @@
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
     Auth,
-    browserLocalPersistence,
     getAuth,
-    setPersistence
+    getReactNativePersistence,
+    initializeAuth
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
+import { Platform } from 'react-native';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -30,13 +32,34 @@ Object.entries(firebaseConfig).forEach(([key, value]) => {
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Firebase Auth
-export const auth: Auth = getAuth(app);
+// Initialize Firebase Auth with proper React Native persistence
+let auth: Auth;
 
-// Set persistence for React Native
-setPersistence(auth, browserLocalPersistence).catch((error) => {
-  console.error('Error setting auth persistence:', error);
-});
+if (Platform.OS !== 'web') {
+  // For React Native - use persistence with AsyncStorage
+  try {
+    // Initialize with AsyncStorage persistence using getReactNativePersistence
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+    });
+    console.log('✅ Firebase Auth (app/config): Initialized with AsyncStorage persistence');
+  } catch (error: any) {
+    // If auth already initialized, get the existing instance
+    if (error.code === 'auth/already-initialized') {
+      auth = getAuth(app);
+      console.log('✅ Firebase Auth (app/config): Using existing auth instance');
+    } else {
+      console.warn('⚠️ Firebase Auth (app/config): InitializeAuth failed, falling back to getAuth:', error);
+      auth = getAuth(app);
+    }
+  }
+} else {
+  // For web - use default persistence
+  auth = getAuth(app);
+  console.log('✅ Firebase Auth (app/config): Initialized for web');
+}
+
+export { auth };
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app);

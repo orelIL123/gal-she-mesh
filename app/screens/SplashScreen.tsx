@@ -1,12 +1,44 @@
+import { collection, getDocs, getFirestore, query, where } from 'firebase/firestore';
 import { useNavigation } from 'expo-router';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Animated, Image, StyleSheet, View } from 'react-native';
 
 export default function SplashScreen() {
   const navigation = useNavigation();
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const [splashImageUrl, setSplashImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    // Fetch splash image from Firebase
+    const fetchSplashImage = async () => {
+      try {
+        const db = getFirestore();
+        const splashQuery = query(
+          collection(db, 'gallery'),
+          where('type', '==', 'splash'),
+          where('isActive', '==', true)
+        );
+        const splashSnapshot = await getDocs(splashQuery);
+        
+        if (!splashSnapshot.empty) {
+          const splashImages = splashSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          
+          splashImages.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+          
+          if (splashImages.length > 0 && splashImages[0].imageUrl) {
+            setSplashImageUrl(splashImages[0].imageUrl);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching splash image:', error);
+      }
+    };
+    
+    fetchSplashImage();
+
     // Start fade in animation only (no scale effect)
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -32,11 +64,15 @@ export default function SplashScreen() {
           },
         ]}
       >
-        <Image
-          source={require('../../assets/images/naoramar.png')}
-          style={styles.image}
-          resizeMode="contain"
-        />
+        {splashImageUrl ? (
+          <Image
+            source={{ uri: splashImageUrl }}
+            style={styles.image}
+            resizeMode="contain"
+          />
+        ) : (
+          <View style={[styles.image, { backgroundColor: '#000' }]} />
+        )}
       </Animated.View>
     </View>
   );

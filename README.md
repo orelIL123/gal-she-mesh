@@ -1,23 +1,24 @@
-# naor amar - Barber Shop App
+# gal shemesh - Barber Shop App
 
 ## App Configuration
 
 ### Business Details
-- **Business**: naor amar
-- **Owner**: naor amar
-- **Email**: naor895@gmail.com
-- **Phone**: 0532706369
-- **Address**: היובל 1
+- **Business**: gal shemesh
+- **Owner**: gal shemesh
+- **Email**: Galshemesh76@gmail.com
+- **Phone**: 0522210281
+- **Address**: החמישה 21 פתח תקווה
 
 ### App Info
-- **App Name**: NAOR AMAR
-- **Bundle ID**: com.naoramar.app
-- **Firebase Project**: 17391cbc
+- **App Name**: Gal Shemesh
+- **Bundle ID**: com.galshemesh.app
+- **Firebase Project**: 1dd0ee39
 - **Language**: he
 - **Workers**: 1
 
 ### Services
-- תספורת מלאה
+- תספורת וסידור זקן
+- ת
 
 ### Messaging Setup
 - **SMS4Free**: ✅ Enabled
@@ -27,7 +28,7 @@
 
 1. **Firebase Setup**
    ```bash
-   # Create Firebase project: 17391cbc
+   # Create Firebase project: 1dd0ee39
    # Add your google-services.json and GoogleService-Info.plist
    ```
 
@@ -55,4 +56,4 @@ Check `.env.example` for all required environment variables including:
 - WhatsApp API credentials (if enabled)
 
 ## Contact
-naor amar - naor895@gmail.com
+gal shemesh - Galshemesh76@gmail.com

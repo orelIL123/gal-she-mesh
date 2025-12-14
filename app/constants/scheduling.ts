@@ -4,30 +4,23 @@
  */
 
 // Global slot size in minutes - all scheduling is based on this grid
-export const SLOT_SIZE_MINUTES = 20;
+// Changed to 5 minutes to support flexible treatment durations (10, 15, 20, 25, 30, etc.)
+export const SLOT_SIZE_MINUTES = 5;
 
-// Time grid points (in minutes from start of hour)
-export const TIME_GRID_POINTS = [0, 20, 40]; // HH:00, HH:20, HH:40
+// Time grid points (in minutes from start of hour) - every 5 minutes
+// This allows fine-grained scheduling while keeping availability management simple
+export const TIME_GRID_POINTS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]; // Every 5 minutes
 
-// Helper function to snap time to the nearest 20-minute grid point
+// Helper function to snap time to the nearest 5-minute grid point
 export const snapToGrid = (date: Date): Date => {
   const minutes = date.getMinutes();
   const hours = date.getHours();
   
-  // Find the closest grid point (0, 20, 40)
-  let snappedMinutes = 0;
-  if (minutes <= 10) {
-    snappedMinutes = 0;
-  } else if (minutes <= 30) {
-    snappedMinutes = 20;
-  } else if (minutes <= 50) {
-    snappedMinutes = 40;
-  } else {
-    snappedMinutes = 60; // Next hour
-  }
+  // Find the closest 5-minute grid point
+  const snappedMinutes = Math.round(minutes / 5) * 5;
   
   const snappedDate = new Date(date);
-  if (snappedMinutes === 60) {
+  if (snappedMinutes >= 60) {
     snappedDate.setHours(hours + 1, 0, 0, 0);
   } else {
     snappedDate.setMinutes(snappedMinutes, 0, 0);
@@ -36,9 +29,10 @@ export const snapToGrid = (date: Date): Date => {
   return snappedDate;
 };
 
-// Helper function to check if a duration is valid (multiple of 20 minutes)
+// Helper function to check if a duration is valid (multiple of 5 minutes, minimum 5)
+// This allows flexible treatment durations: 5, 10, 15, 20, 25, 30, etc.
 export const isValidDuration = (durationMinutes: number): boolean => {
-  return durationMinutes > 0 && durationMinutes % SLOT_SIZE_MINUTES === 0;
+  return durationMinutes >= 5 && durationMinutes % SLOT_SIZE_MINUTES === 0;
 };
 
 // Helper function to get the number of slots needed for a duration
@@ -52,10 +46,10 @@ export const generateTimeSlots = (startHour: number, endHour: number): string[] 
   const dayStartMinutes = startHour * 60;
   const dayEndMinutes = endHour * 60;
   
-  // Find the first 25-minute boundary at or after startHour
+  // Find the first slot boundary at or after startHour
   const firstSlotMinutes = Math.ceil(dayStartMinutes / SLOT_SIZE_MINUTES) * SLOT_SIZE_MINUTES;
   
-  // Generate continuous 25-minute increments (no hour jumps)
+  // Generate continuous slot increments (no hour jumps)
   for (let currentMinutes = firstSlotMinutes; currentMinutes < dayEndMinutes; currentMinutes += SLOT_SIZE_MINUTES) {
     const hours = Math.floor(currentMinutes / 60);
     const minutes = currentMinutes % 60;
@@ -79,10 +73,10 @@ export const minutesToTimeString = (minutes: number): string => {
   return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
 };
 
-// Helper function to check if a time string is on the grid
+// Helper function to check if a time string is on the grid (5-minute intervals)
 export const isOnGrid = (timeString: string): boolean => {
   const totalMinutes = timeStringToMinutes(timeString);
-  // Check if the time is on a 25-minute boundary from midnight
+  // Check if the time is on a 5-minute slot boundary from midnight
   return totalMinutes % SLOT_SIZE_MINUTES === 0;
 };
 

@@ -1,17 +1,34 @@
-import React from 'react';
-import {
-  Alert,
-  Modal,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  ScrollView,
-  Dimensions,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import {
+    clearAllUserNotifications,
+    deleteOldNotifications,
+    getCurrentUser,
+    getUserNotifications,
+    markNotificationAsRead
+} from '../../services/firebase';
 
 const {} = Dimensions.get('window');
+
+interface Notification {
+  id: string;
+  type: 'appointment' | 'general' | 'reminder';
+  title: string;
+  message: string;
+  time: string;
+  isRead: boolean;
+}
 
 interface NotificationPanelProps {
   visible: boolean;
@@ -19,37 +36,41 @@ interface NotificationPanelProps {
 }
 
 const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose }) => {
-  const notifications = [
-    {
-      id: '1',
-      type: 'appointment',
-      title: 'תזכורת לתור',
-      message: 'התור שלך אצל דוד מחר בשעה 10:00',
-      time: '10 דקות',
-      read: false,
-    },
-    {
-      id: '2',
-      type: 'general',
-      title: 'הודעה מהספר',
-      message: 'שעות פתיחה מיוחדות בסוף השבוע',
-      time: '2 שעות',
-      read: false,
-    },
-    {
-      id: '3',
-      type: 'appointment',
-      title: 'התור אושר',
-      message: 'התור שלך ליום שני אושר בהצלחה',
-      time: '1 יום',
-      read: true,
-    },
-  ];
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Load notifications when panel opens
+  useEffect(() => {
+    if (visible) {
+      loadNotifications();
+    }
+  }, [visible]);
+
+  const loadNotifications = async () => {
+    try {
+      setLoading(true);
+      const user = getCurrentUser();
+      if (user) {
+        // First, delete old notifications (older than 6 hours)
+        await deleteOldNotifications(user.uid, 6);
+        
+        // Then load remaining notifications
+        const userNotifications = await getUserNotifications(user.uid);
+        setNotifications(userNotifications);
+      }
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
       case 'appointment':
         return 'calendar';
+      case 'reminder':
+        return 'alarm';
       case 'general':
         return 'megaphone';
       default:
@@ -61,6 +82,8 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose 
     switch (type) {
       case 'appointment':
         return '#007bff';
+      case 'reminder':
+        return '#FF9800';
       case 'general':
         return '#28a745';
       default:
@@ -68,13 +91,65 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose 
     }
   };
 
-  const handleNotificationPress = (notification: any) => {
+  const handleNotificationPress = async (notification: Notification) => {
+    // Mark as read
+    if (!notification.isRead) {
+      try {
+        await markNotificationAsRead(notification.id);
+        setNotifications(prev => 
+          prev.map(n => n.id === notification.id ? { ...n, isRead: true } : n)
+        );
+      } catch (error) {
+        console.error('Error marking notification as read:', error);
+      }
+    }
+
     Alert.alert(
       notification.title,
       notification.message,
       [{ text: 'סגור', style: 'default' }]
     );
   };
+
+  const handleMarkAllRead = async () => {
+    try {
+      const unreadNotifications = notifications.filter(n => !n.isRead);
+      for (const notification of unreadNotifications) {
+        await markNotificationAsRead(notification.id);
+      }
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+      Alert.alert('התראות', 'כל ההתראות סומנו כנקראו');
+    } catch (error) {
+      console.error('Error marking all as read:', error);
+    }
+  };
+
+  const handleClearAll = () => {
+    Alert.alert(
+      'מחק התראות',
+      'האם למחוק את כל ההתראות?',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'מחק',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const user = getCurrentUser();
+              if (user) {
+                await clearAllUserNotifications(user.uid);
+                setNotifications([]);
+              }
+            } catch (error) {
+              console.error('Error clearing notifications:', error);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   return (
     <Modal
@@ -86,14 +161,21 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose 
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>התראות</Text>
+            <Text style={styles.headerTitle}>
+              התראות {unreadCount > 0 && `(${unreadCount})`}
+            </Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color="#666" />
             </TouchableOpacity>
           </View>
 
           <ScrollView style={styles.notificationsList}>
-            {notifications.length === 0 ? (
+            {loading ? (
+              <View style={styles.emptyState}>
+                <ActivityIndicator size="large" color="#007bff" />
+                <Text style={styles.emptyText}>טוען התראות...</Text>
+              </View>
+            ) : notifications.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ionicons name="notifications-off" size={48} color="#ccc" />
                 <Text style={styles.emptyText}>אין התראות חדשות</Text>
@@ -104,7 +186,7 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose 
                   key={notification.id}
                   style={[
                     styles.notificationItem,
-                    !notification.read && styles.unreadNotification
+                    !notification.isRead && styles.unreadNotification
                   ]}
                   onPress={() => handleNotificationPress(notification)}
                 >
@@ -128,7 +210,7 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose 
                       {notification.message}
                     </Text>
                   </View>
-                  {!notification.read && (
+                  {!notification.isRead && (
                     <View style={styles.unreadDot} />
                   )}
                 </TouchableOpacity>
@@ -137,14 +219,22 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose 
           </ScrollView>
 
           <View style={styles.footer}>
-            <TouchableOpacity
-              style={styles.markAllReadButton}
-              onPress={() => {
-                Alert.alert('התראות', 'כל ההתראות סומנו כנקראו');
-              }}
-            >
-              <Text style={styles.markAllReadText}>סמן הכל כנקרא</Text>
-            </TouchableOpacity>
+            {notifications.length > 0 && (
+              <View style={styles.footerButtons}>
+                <TouchableOpacity
+                  style={styles.markAllReadButton}
+                  onPress={handleMarkAllRead}
+                >
+                  <Text style={styles.markAllReadText}>סמן הכל כנקרא</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.clearAllButton}
+                  onPress={handleClearAll}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#F44336" />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </View>
@@ -254,7 +344,13 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
   },
+  footerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   markAllReadButton: {
+    flex: 1,
     backgroundColor: '#007bff',
     paddingVertical: 12,
     borderRadius: 8,
@@ -264,6 +360,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  clearAllButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#F44336',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
   },
 });
 

@@ -337,7 +337,7 @@ const AdminNotificationSettingsScreen: React.FC<AdminNotificationSettingsScreenP
         <View style={styles.settingItem}>
           <View style={styles.settingLeft}>
             <View style={styles.iconContainer}>
-              <Ionicons name="person-add" size={24} color="#4CAF50" />
+              <Ionicons name="person-add" size={24} color="#FFD700" />
             </View>
             <View style={styles.settingText}>
               <Text style={styles.settingTitle}>משתמש חדש נרשם</Text>
@@ -349,7 +349,7 @@ const AdminNotificationSettingsScreen: React.FC<AdminNotificationSettingsScreenP
           <Switch
             value={settings.newUserRegistered}
             onValueChange={() => handleToggle('newUserRegistered')}
-            trackColor={{ false: '#ddd', true: '#4CAF50' }}
+            trackColor={{ false: '#ddd', true: '#FFD700' }}
             thumbColor={settings.newUserRegistered ? '#fff' : '#f4f3f4'}
           />
         </View>
@@ -431,13 +431,13 @@ const AdminNotificationSettingsScreen: React.FC<AdminNotificationSettingsScreenP
             {/* 1 Hour Before */}
             <View style={styles.reminderItem}>
               <View style={styles.reminderLeft}>
-                <Ionicons name="hourglass" size={20} color="#4CAF50" />
+                <Ionicons name="hourglass" size={20} color="#FFD700" />
                 <Text style={styles.reminderText}>שעה לפני התור</Text>
               </View>
               <Switch
                 value={settings.reminderTimings.oneHourBefore}
                 onValueChange={() => handleReminderToggle('oneHourBefore')}
-                trackColor={{ false: '#ddd', true: '#4CAF50' }}
+                trackColor={{ false: '#ddd', true: '#FFD700' }}
                 thumbColor={settings.reminderTimings.oneHourBefore ? '#fff' : '#f4f3f4'}
               />
             </View>

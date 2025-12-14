@@ -16,6 +16,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { colors } from '../constants/colors';
 import {
     checkIsAdmin,
     getAllUsers,
@@ -183,7 +184,7 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
               {/* Header */}
               <View style={styles.header}>
                 <LinearGradient
-                  colors={['#6c757d', '#495057']}
+                  colors={[colors.barberGold, colors.barberGoldDark]}
                   style={styles.headerGradient}
                 >
                   <Text style={styles.headerTitle}>שליחת התראות</Text>

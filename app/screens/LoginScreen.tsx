@@ -1,27 +1,35 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { getAuth, sendPasswordResetEmail } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  Image,
-  KeyboardAvoidingView,
-  Linking,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Image,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
+import { app } from '../../config/firebase';
 import { authManager } from '../../services/authManager';
-import { loginUser, loginWithPhoneAndPassword, registerForPushNotifications } from '../../services/firebase';
+import { checkUserExistsForPasswordReset, loginUser, loginWithPhoneAndPassword } from '../../services/firebase';
 import { colors } from '../constants/colors';
 import { CONTACT_INFO } from '../constants/contactInfo';
+import { sendSms } from '../services/messaging/instance';
+
+// Generate a random 6-digit verification code
+const generateVerificationCode = (): string => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -32,6 +40,16 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [foundUserId, setFoundUserId] = useState<string | undefined>(undefined); // Store the user's Firestore ID for password reset
+  
+  // SMS verification states for password reset
+  const [showSmsVerification, setShowSmsVerification] = useState(false);
+  const [smsCode, setSmsCode] = useState('');
+  const [expectedCode, setExpectedCode] = useState('');
+  const [foundUserPhone, setFoundUserPhone] = useState<string | undefined>(undefined);
 
   // Load saved credentials on component mount
   useEffect(() => {
@@ -130,17 +148,8 @@ export default function LoginScreen() {
         await loginWithPhoneAndPassword(normalizedInput, password);
       }
 
-      // Register for push notifications after successful login
-      try {
-        const user = authManager.getCurrentUser();
-        if (user) {
-          await registerForPushNotifications(user.uid);
-          console.log('✅ LoginScreen: Push notifications registered for user:', user.uid);
-        }
-      } catch (error) {
-        console.error('❌ LoginScreen: Error registering for push notifications:', error);
-        // Don't fail login if push registration fails
-      }
+      // Note: Push notifications are not registered automatically on login
+      // User must explicitly enable notifications via settings or onboarding
 
       Alert.alert('הצלחה', 'התחברת בהצלחה', [
         { text: 'אישור', onPress: () => router.replace('/(tabs)') }
@@ -193,28 +202,204 @@ export default function LoginScreen() {
     }
   };
 
-  const handleForgotPassword = () => {
-    Alert.alert(
-      'שכחת סיסמה?',
-      'לאיפוס סיסמה, אנא פנה לרון בוואטסאפ',
-      [
-        {
-          text: 'פתח וואטסאפ',
-          onPress: () => {
-            const phoneNumber = '972542280222'; // מספר הטלפון של רון
-            const message = 'היי רון, שכחתי את הסיסמה שלי לאפליקציה. תוכל לעזור?';
-            const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
-            Linking.openURL(whatsappUrl).catch(() => {
-              Alert.alert('שגיאה', 'לא ניתן לפתוח את וואטסאפ. אנא וודא שהאפליקציה מותקנת.');
-            });
-          }
-        },
-        {
-          text: 'ביטול',
-          style: 'cancel'
+  const maskEmailForDisplay = (email: string) => {
+    const [localPart, domain] = email.split('@');
+    if (!domain) {
+      return email;
+    }
+
+    if (localPart.length <= 2) {
+      return `${localPart[0] || ''}***@${domain}`;
+    }
+
+    return `${localPart[0]}***${localPart[localPart.length - 1]}@${domain}`;
+  };
+
+  // Step 1: Check if user exists and send SMS verification code
+  const handleForgotPassword = async () => {
+    if (!emailOrPhone.trim()) {
+      Alert.alert('שכחת סיסמה?', 'אנא הזן את מספר הטלפון שלך בשדה למעלה ואז לחץ על "שכחתי סיסמה".');
+      return;
+    }
+
+    setResettingPassword(true);
+    try {
+      const userExists = await checkUserExistsForPasswordReset(emailOrPhone);
+      
+      if (!userExists.exists) {
+        Alert.alert(
+          'משתמש לא נמצא',
+          'לא נמצא משתמש עם מספר הטלפון הזה. אנא בדוק את המספר או הירשם מחדש.',
+          [{ text: 'OK', onPress: () => {} }]
+        );
+        setResettingPassword(false);
+        return;
+      }
+      
+      // User exists - generate and send SMS verification code
+      const code = generateVerificationCode();
+      setExpectedCode(code);
+      setFoundUserId(userExists.userId);
+      
+      // Format phone number for SMS
+      let phoneToSend = emailOrPhone.trim();
+      if (!phoneToSend.startsWith('+')) {
+        if (phoneToSend.startsWith('0')) {
+          phoneToSend = '+972' + phoneToSend.substring(1);
+        } else {
+          phoneToSend = '+972' + phoneToSend;
         }
-      ]
-    );
+      }
+      setFoundUserPhone(phoneToSend);
+      
+      console.log(`📱 Sending verification code ${code} to ${phoneToSend}`);
+      
+      // Send SMS with verification code
+      const smsResult = await sendSms(phoneToSend, `קוד אימות לאיפוס סיסמה: ${code}`);
+      
+      if (smsResult.success) {
+        console.log('✅ SMS sent successfully');
+        setShowSmsVerification(true);
+        setResettingPassword(false);
+      } else {
+        console.error('❌ Failed to send SMS:', smsResult.error);
+        Alert.alert('שגיאה', 'לא הצלחנו לשלוח קוד אימות. אנא נסה שוב.');
+        setResettingPassword(false);
+      }
+    } catch (error: any) {
+      console.error('❌ Password reset error:', error);
+      Alert.alert('שגיאה', error?.message || 'אירעה שגיאה. אנא נסה שוב מאוחר יותר.');
+      setResettingPassword(false);
+    }
+  };
+
+  // Step 2: Verify SMS code
+  const handleVerifySmsCode = () => {
+    if (!smsCode.trim()) {
+      Alert.alert('שגיאה', 'אנא הזן את קוד האימות');
+      return;
+    }
+
+    if (smsCode.trim() !== expectedCode) {
+      Alert.alert('שגיאה', 'קוד האימות שגוי. אנא נסה שוב.');
+      return;
+    }
+
+    // Code verified - show email input
+    console.log('✅ SMS code verified');
+    setShowSmsVerification(false);
+    setShowEmailInput(true);
+    setSmsCode('');
+  };
+
+  // Step 3: Send password reset email
+  const handleSendResetEmail = async () => {
+    if (!resetEmail.trim()) {
+      Alert.alert('שגיאה', 'אנא הזן את האימייל שלך');
+      return;
+    }
+    
+    if (!foundUserId) {
+      Alert.alert('שגיאה', 'לא נמצא משתמש במערכת. אנא נסה שוב.');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(resetEmail.trim())) {
+      Alert.alert('שגיאה', 'אנא הזן כתובת אימייל תקינה');
+      return;
+    }
+    
+    setResettingPassword(true);
+    try {
+      console.log(`📧 Calling Cloud Function to update email for user: ${foundUserId}`);
+      
+      // Step 1: Call Cloud Function to update email in Firebase Auth
+      const functions = getFunctions(app);
+      const updateEmailAndSendReset = httpsCallable(functions, 'updateEmailAndSendReset');
+      
+      const result = await updateEmailAndSendReset({
+        firestoreUserId: foundUserId,
+        newEmail: resetEmail.trim().toLowerCase()
+      });
+      
+      console.log('✅ Cloud Function result:', result.data);
+      
+      // Step 2: Now send the password reset email from client side
+      // This is needed because generatePasswordResetLink doesn't send emails
+      const auth = getAuth(app);
+      const emailToReset = resetEmail.trim().toLowerCase();
+      
+      console.log(`📧 Sending password reset email to: ${emailToReset}`);
+      await sendPasswordResetEmail(auth, emailToReset);
+      console.log('✅ Password reset email sent successfully');
+      
+      const maskedEmail = maskEmailForDisplay(resetEmail.trim());
+      Alert.alert(
+        'הודעת איפוס בדרך 📧',
+        `קישור לאיפוס סיסמה נשלח ל${maskedEmail}.\nאם לא מצאת את ההודעה, בדוק גם בתיבת הספאם.`
+      );
+      
+      // Reset all states
+      setShowEmailInput(false);
+      setResetEmail('');
+      setFoundUserId(undefined);
+      setExpectedCode('');
+      setFoundUserPhone(undefined);
+    } catch (error: any) {
+      console.error('❌ Password reset error:', error);
+      let errorMessage = 'אירעה שגיאה בעת שליחת קישור האיפוס.';
+      
+      // Handle specific Firebase errors
+      if (error?.message?.includes('already-exists') || error?.code === 'functions/already-exists') {
+        errorMessage = 'האימייל הזה כבר בשימוש בחשבון אחר. אנא השתמש באימייל אחר.';
+      } else if (error?.message?.includes('invalid-argument') || error?.code === 'functions/invalid-argument') {
+        errorMessage = 'כתובת האימייל אינה תקינה. אנא בדוק ונסה שוב.';
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert('שגיאה', errorMessage);
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
+  // Resend SMS code
+  const handleResendCode = async () => {
+    if (!foundUserPhone) return;
+    
+    setResettingPassword(true);
+    try {
+      const code = generateVerificationCode();
+      setExpectedCode(code);
+      
+      console.log(`📱 Resending verification code ${code} to ${foundUserPhone}`);
+      
+      const smsResult = await sendSms(foundUserPhone, `קוד אימות לאיפוס סיסמה: ${code}`);
+      
+      if (smsResult.success) {
+        Alert.alert('נשלח!', 'קוד אימות חדש נשלח לטלפון שלך');
+      } else {
+        Alert.alert('שגיאה', 'לא הצלחנו לשלוח קוד אימות. אנא נסה שוב.');
+      }
+    } catch (error) {
+      Alert.alert('שגיאה', 'לא הצלחנו לשלוח קוד אימות. אנא נסה שוב.');
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
+  // Cancel password reset flow
+  const handleCancelReset = () => {
+    setShowSmsVerification(false);
+    setShowEmailInput(false);
+    setSmsCode('');
+    setResetEmail('');
+    setFoundUserId(undefined);
+    setExpectedCode('');
+    setFoundUserPhone(undefined);
   };
 
   const handleBack = () => {
@@ -265,47 +450,138 @@ export default function LoginScreen() {
                 autoCapitalize="none"
               />
 
-              <Text style={styles.label}>סיסמא</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="הזן סיסמא"
-                placeholderTextColor={colors.textSecondary}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-
-              {/* Remember Me Checkbox */}
-              <View style={styles.rememberMeContainer}>
-                <TouchableOpacity
-                  style={styles.checkboxContainer}
-                  onPress={() => {
-                    console.log('🔄 Remember me toggled:', !rememberMe);
-                    setRememberMe(!rememberMe);
-                  }}
-                >
-                  <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                    {rememberMe && <Ionicons name="checkmark" size={16} color="#fff" />}
+              {/* Step 2: SMS Verification */}
+              {showSmsVerification ? (
+                <>
+                  <View style={styles.infoBox}>
+                    <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
+                    <Text style={styles.infoText}>
+                      שלחנו קוד אימות לטלפון שלך. הזן את הקוד כדי להמשיך.
+                    </Text>
                   </View>
-                  <Text style={styles.rememberMeText}>זכור אותי</Text>
-                </TouchableOpacity>
-              </View>
+                  <Text style={styles.label}>קוד אימות</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="הזן קוד 6 ספרות"
+                    placeholderTextColor={colors.textSecondary}
+                    value={smsCode}
+                    onChangeText={setSmsCode}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                  />
+                  <TouchableOpacity
+                    style={[styles.loginButton, resettingPassword && styles.buttonDisabled]}
+                    onPress={handleVerifySmsCode}
+                    disabled={resettingPassword}
+                  >
+                    <Text style={styles.loginButtonText}>אמת קוד</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleResendCode}
+                    style={{ marginTop: 10 }}
+                    disabled={resettingPassword}
+                  >
+                    <Text style={styles.forgotPasswordText}>
+                      {resettingPassword ? 'שולח...' : 'שלח קוד שוב'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleCancelReset}
+                    style={styles.cancelButton}
+                  >
+                    <Text style={styles.cancelButtonText}>ביטול</Text>
+                  </TouchableOpacity>
+                </>
+              ) : showEmailInput ? (
+                /* Step 3: Email Input (after SMS verification) */
+                <>
+                  <View style={styles.infoBox}>
+                    <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                    <Text style={styles.infoText}>
+                      אומת בהצלחה! הזן את האימייל שלך (כל אימייל אמיתי) כדי לקבל קישור לאיפוס סיסמה.
+                    </Text>
+                  </View>
+                  <Text style={styles.label}>אימייל לאיפוס סיסמה</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="הזן את האימייל שלך"
+                    placeholderTextColor={colors.textSecondary}
+                    value={resetEmail}
+                    onChangeText={setResetEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                  />
+                  <TouchableOpacity
+                    style={[styles.loginButton, resettingPassword && styles.buttonDisabled]}
+                    onPress={handleSendResetEmail}
+                    disabled={resettingPassword}
+                  >
+                    {resettingPassword ? (
+                      <ActivityIndicator color="#ffffff" />
+                    ) : (
+                      <Text style={styles.loginButtonText}>שלח קישור איפוס</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleCancelReset}
+                    style={styles.cancelButton}
+                  >
+                    <Text style={styles.cancelButtonText}>ביטול</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                /* Normal login mode */
+                <>
+                  <Text style={styles.label}>סיסמא</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="הזן סיסמא"
+                    placeholderTextColor={colors.textSecondary}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                  />
 
-              <TouchableOpacity
-                style={[styles.loginButton, loading && styles.buttonDisabled]}
-                onPress={handleLogin}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <Text style={styles.loginButtonText}>התחבר</Text>
-                )}
-              </TouchableOpacity>
+                  {/* Remember Me Checkbox */}
+                  <View style={styles.rememberMeContainer}>
+                    <TouchableOpacity
+                      style={styles.checkboxContainer}
+                      onPress={() => {
+                        console.log('🔄 Remember me toggled:', !rememberMe);
+                        setRememberMe(!rememberMe);
+                      }}
+                    >
+                      <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                        {rememberMe && <Ionicons name="checkmark" size={16} color="#fff" />}
+                      </View>
+                      <Text style={styles.rememberMeText}>זכור אותי</Text>
+                    </TouchableOpacity>
+                  </View>
 
-              <TouchableOpacity onPress={handleForgotPassword} style={{ marginBottom: 10 }}>
-                <Text style={styles.forgotPasswordText}>שכחתי סיסמה?</Text>
-              </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.loginButton, loading && styles.buttonDisabled]}
+                    onPress={handleLogin}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#ffffff" />
+                    ) : (
+                      <Text style={styles.loginButtonText}>התחבר</Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    onPress={handleForgotPassword} 
+                    style={{ marginTop: 10, marginBottom: 10 }} 
+                    disabled={resettingPassword}
+                  >
+                    <Text style={styles.forgotPasswordText}>
+                      {resettingPassword ? 'שולח קוד אימות...' : 'שכחתי סיסמה?'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
 
               <TouchableOpacity onPress={() => router.push('/register')}>
                 <Text style={styles.linkText}>אין לך חשבון? הירשם</Text>
@@ -329,10 +605,10 @@ export default function LoginScreen() {
             <Text style={styles.modalTitle}>תנאי שימוש ומדיניות פרטיות</Text>
             <ScrollView style={styles.modalScrollView}>
               <Text style={styles.modalText}>
-                <Text style={styles.sectionTitle}>תנאי שימוש - רון תורגמן מספרה{'\n\n'}</Text>
+                <Text style={styles.sectionTitle}>תנאי שימוש - גל שמש מספרה{'\n\n'}</Text>
 
                 <Text style={styles.subsectionTitle}>1. קבלת השירות{'\n'}</Text>
-                • השירות מיועד לקביעת תורים במספרה של רון תורגמן{'\n'}
+                • השירות מיועד לקביעת תורים במספרה של גל שמש{'\n'}
                 • יש לספק מידע מדויק ומלא בעת קביעת התור{'\n'}
                 • המספרה שומרת לעצמה את הזכות לסרב לתת שירות במקרים חריגים{'\n\n'}
 
@@ -613,5 +889,14 @@ const styles = StyleSheet.create({
     color: colors.primary,
     textAlign: 'center',
     textDecorationLine: 'underline',
+  },
+  cancelButton: {
+    marginTop: 10,
+    paddingVertical: 8,
+  },
+  cancelButtonText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
   },
 });

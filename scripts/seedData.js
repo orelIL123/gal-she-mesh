@@ -29,7 +29,7 @@ const seedData = async () => {
       console.log('Adding barbers...');
       const barbers = [
       {
-        name: "Ron turgeman",
+        name: "אילון מתוק",
         experience: "15 שנות ניסיון",
         rating: 5.0,
         available: true,

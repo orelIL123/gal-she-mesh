@@ -392,8 +392,20 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
           continue;
         }
         
-        const apptDuration = appt.duration || 25; // Default 25min
+        // Use the actual duration from the appointment
+        // IMPORTANT: If appointment doesn't have duration, it means it's an old appointment
+        // We should use a reasonable default, but ideally all appointments should have duration
+        // For old appointments, use 30 minutes as default (most common treatment duration)
+        const apptDuration = appt.duration || 30;
         const apptEnd = new Date(apptStart.getTime() + apptDuration * 60000);
+        
+        console.log('Appointment duration check:', {
+          apptId: appt.id,
+          hasDuration: !!appt.duration,
+          duration: apptDuration,
+          apptStart: `${apptStart.getHours()}:${apptStart.getMinutes().toString().padStart(2, '0')}`,
+          apptEnd: `${apptEnd.getHours()}:${apptEnd.getMinutes().toString().padStart(2, '0')}`
+        });
         
         // Check for overlap - if any part of the slot overlaps with appointment
         const hasOverlap = slotStart < apptEnd && slotEnd > apptStart;
@@ -471,20 +483,61 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       
       const slots = [];
       
-      // Use ALL admin slots - no artificial cutoff
-      // Admin controls what slots are available, not the booking screen
+      // IMPORTANT: Show slots at intervals matching the treatment duration!
+      // For 30-min treatment: 9:00, 9:30, 10:00...
+      // For 20-min treatment: 9:00, 9:20, 9:40...
+      // For 15-min treatment: 9:00, 9:15, 9:30...
+      
+      // First, filter slots that can fit the treatment before midnight
       const validSlots = availableTimeSlots.filter(slot => {
-        // Only filter by treatment duration fit, not by arbitrary dayEnd
         const startMinutes = toMin(slot);
         const endMinutes = startMinutes + treatmentDuration;
-
-        // Check if slot + treatment fits within the same day (before midnight)
-        return endMinutes <= 24 * 60; // 24:00 = midnight
+        return endMinutes <= 24 * 60;
       });
       
-      // Convert time strings to Date objects and check availability
-      for (const timeString of validSlots) {
-        const [hour, minute] = timeString.split(':').map(Number);
+      if (validSlots.length === 0) {
+        console.log('❌ No valid slots for this treatment duration');
+        return [];
+      }
+      
+      // Generate slot candidates at intervals matching the treatment duration
+      // These are times like 9:00, 9:30, 10:00 for 30-min treatments
+      const slotCandidates: string[] = [];
+      
+      // Find the earliest and latest available times
+      const sortedSlots = [...validSlots].sort((a, b) => toMin(a) - toMin(b));
+      const earliestMinutes = toMin(sortedSlots[0]);
+      const latestMinutes = toMin(sortedSlots[sortedSlots.length - 1]);
+      
+      // Start from the earliest available time, rounded down to nearest treatment interval
+      // For 30-min: if first slot is 9:05, we start checking from 9:00
+      const startHour = Math.floor(earliestMinutes / 60);
+      const firstIntervalMinutes = startHour * 60;
+      
+      // Generate all possible start times based on treatment duration
+      for (let minutes = firstIntervalMinutes; minutes <= latestMinutes; minutes += treatmentDuration) {
+        const timeString = `${Math.floor(minutes / 60).toString().padStart(2, '0')}:${(minutes % 60).toString().padStart(2, '0')}`;
+        
+        // Check if this start time AND all slots during the treatment are available
+        let allSlotsAvailable = true;
+        for (let checkMinutes = minutes; checkMinutes < minutes + treatmentDuration; checkMinutes += SLOT_SIZE_MINUTES) {
+          const checkTime = `${Math.floor(checkMinutes / 60).toString().padStart(2, '0')}:${(checkMinutes % 60).toString().padStart(2, '0')}`;
+          if (!availableTimeSlots.includes(checkTime)) {
+            allSlotsAvailable = false;
+            break;
+          }
+        }
+        
+        if (allSlotsAvailable) {
+          slotCandidates.push(timeString);
+        }
+      }
+      
+      console.log(`📊 Slot candidates for ${treatmentDuration}min treatment:`, slotCandidates);
+      
+      // Convert time strings to Date objects and check for appointment overlaps
+      for (const slotTimeString of slotCandidates) {
+        const [hour, minute] = slotTimeString.split(':').map(Number);
         const slotStart = new Date(date);
         slotStart.setHours(hour, minute, 0, 0);
         
@@ -494,34 +547,14 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
           continue;
         }
         
-        // Check if slot + treatment duration fits within the time slot
-        const slotEnd = new Date(slotStart.getTime() + treatmentDuration * 60000);
-        const nextSlotStart = new Date(slotStart.getTime() + SLOT_SIZE_MINUTES * 60000); // Next 20-min slot
+        const displayTime = `${slotStart.getHours().toString().padStart(2, '0')}:${slotStart.getMinutes().toString().padStart(2, '0')}`;
         
-        // For treatments longer than 20 minutes, we need to check if there are enough consecutive slots
-        if (treatmentDuration > SLOT_SIZE_MINUTES) {
-          // Check if we have enough consecutive 20-minute slots for the treatment
-          const requiredSlots = getSlotsNeeded(treatmentDuration);
-          let hasEnoughSlots = true;
-
-          for (let i = 0; i < requiredSlots; i++) {
-            const checkSlotStart = new Date(slotStart.getTime() + (i * SLOT_SIZE_MINUTES * 60000));
-
-            // Check if this 20-minute slot is available
-            if (!isSlotAvailable(checkSlotStart, SLOT_SIZE_MINUTES, appointments)) {
-              hasEnoughSlots = false;
-              break;
-            }
-          }
-          
-          if (hasEnoughSlots && isSlotAvailable(slotStart, treatmentDuration, appointments)) {
-            slots.push(slotStart);
-          }
+        // Check for appointment overlaps
+        if (isSlotAvailable(slotStart, treatmentDuration, appointments)) {
+          slots.push(slotStart);
+          console.log(`✅ Slot available for ${treatmentDuration}min treatment: ${displayTime}`);
         } else {
-          // For treatments 20 minutes or less, use the original logic
-          if (slotEnd <= nextSlotStart && isSlotAvailable(slotStart, treatmentDuration, appointments)) {
-            slots.push(slotStart);
-          }
+          console.log(`❌ Slot blocked by appointment: ${displayTime}`);
         }
       }
       
@@ -579,9 +612,17 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
   };
 
   const handleBarberSelect = async (barber: Barber) => {
+    // Reset date-specific availability when changing barber
+    // Each barber has their own availability!
+    setDateSpecificAvailability({});
+    setAvailableTimes([]);
+    setSelectedDate(null);
+    setSelectedTime(null);
+    
     setSelectedBarber(barber);
     setCurrentStep(2);
     
+    console.log('🔄 Barber changed, reset availability for new barber:', barber.name);
     // No auto-creation. Customer reflects admin exactly.
   };
 
@@ -944,43 +985,59 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
         {/* Step 1: Select Barber */}
         {currentStep === 1 && (
           <View style={styles.stepContent}>
-            <View style={styles.barbersGrid}>
-              {barbers.map((barber) => (
-                <TouchableOpacity
-                  key={barber.id}
-                  style={[
-                    styles.barberCard,
-                    selectedBarber?.id === barber.id && styles.selectedCard
-                  ]}
-                  onPress={() => handleBarberSelect(barber)}
-                  disabled={false}
+            {barbers.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateIcon}>✂️</Text>
+                <Text style={styles.emptyStateTitle}>אין ספרים זמינים</Text>
+                <Text style={styles.emptyStateText}>
+                  אנא פנה למנהל המערכת להוספת ספרים למערכת
+                </Text>
+                <TouchableOpacity 
+                  style={styles.emptyStateButton}
+                  onPress={onBack}
                 >
-                  <LinearGradient
-                    colors={['#1a1a1a', '#000000', '#1a1a1a']}
-                    style={styles.barberGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <View style={styles.barberImage}>
-                      {barber.image ? (
-                        <Image
-                          source={{ uri: barber.image }}
-                          style={styles.barberPhoto}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <Text style={styles.barberPlaceholder}>✂️</Text>
-                      )}
-                    </View>
-                    <Text style={styles.barberName}>{barber.name}</Text>
-                    <Text style={styles.barberExperience}>{barber.experience}</Text>
-                    <TouchableOpacity style={styles.detailsButton} onPress={() => setDetailsBarber(barber)}>
-                      <Text style={styles.detailsButtonText}>{t('booking.details')}</Text>
-                    </TouchableOpacity>
-                  </LinearGradient>
+                  <Text style={styles.emptyStateButtonText}>חזור</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
+              </View>
+            ) : (
+              <View style={styles.barbersGrid}>
+                {barbers.map((barber) => (
+                  <TouchableOpacity
+                    key={barber.id}
+                    style={[
+                      styles.barberCard,
+                      selectedBarber?.id === barber.id && styles.selectedCard
+                    ]}
+                    onPress={() => handleBarberSelect(barber)}
+                    disabled={false}
+                  >
+                    <LinearGradient
+                      colors={['#1a1a1a', '#000000', '#1a1a1a']}
+                      style={styles.barberGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <View style={styles.barberImage}>
+                        {barber.image ? (
+                          <Image
+                            source={{ uri: barber.image }}
+                            style={styles.barberPhoto}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <Text style={styles.barberPlaceholder}>✂️</Text>
+                        )}
+                      </View>
+                      <Text style={styles.barberName}>{barber.name}</Text>
+                      <Text style={styles.barberExperience}>{barber.experience}</Text>
+                      <TouchableOpacity style={styles.detailsButton} onPress={() => setDetailsBarber(barber)}>
+                        <Text style={styles.detailsButtonText}>{t('booking.details')}</Text>
+                      </TouchableOpacity>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         )}
 
@@ -1277,7 +1334,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
             <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 6 }}>{detailsBarber?.name}</Text>
             <Text style={{ fontSize: 16, color: '#666', marginBottom: 8 }}>{detailsBarber?.experience}</Text>
             {detailsBarber?.phone && (
-              <Text style={{ fontSize: 16, color: '#8b4513', marginBottom: 8 }}>{t('profile.phone')} {detailsBarber.phone}</Text>
+              <Text style={{ fontSize: 16, color: '#FFD700', marginBottom: 8 }}>{t('profile.phone')} {detailsBarber.phone}</Text>
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
               {/* אייקון וואטסאפ */}
@@ -1286,7 +1343,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
               </View>
             </View>
             <TouchableOpacity onPress={() => setDetailsBarber(null)} style={{ marginTop: 18 }}>
-              <Text style={{ color: '#8b4513', fontWeight: 'bold' }}>{t('common.close')}</Text>
+              <Text style={{ color: '#FFD700', fontWeight: 'bold' }}>{t('common.close')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1779,7 +1836,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#FFD700',
   },
   cancelButton: {
     backgroundColor: '#f8f9fa',
@@ -1797,7 +1854,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   detailsButton: {
-    backgroundColor: '#8b4513',
+    backgroundColor: '#FFD700',
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 16,
@@ -1968,6 +2025,42 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: '#e7f3ff',
     borderRadius: 12,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    minHeight: 400,
+  },
+  emptyStateIcon: {
+    fontSize: 64,
+    marginBottom: 20,
+  },
+  emptyStateTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 24,
+  },
+  emptyStateButton: {
+    backgroundColor: '#FFD700',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 25,
+  },
+  emptyStateButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

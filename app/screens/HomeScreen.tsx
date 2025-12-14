@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { collection, doc, getDoc, getDocs, getFirestore, query, where } from 'firebase/firestore';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Alert,
@@ -77,7 +77,8 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
     aboutUs: '',
     gallery: [],
   });
-  
+  const [atmosphereImageError, setAtmosphereImageError] = useState(false);
+
   // Dynamic content states
   const [welcomeMessage, setWelcomeMessage] = useState('');
   const [subtitleMessage, setSubtitleMessage] = useState('');
@@ -91,31 +92,29 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
   const headerFade = useRef(new Animated.Value(0)).current;
   const ctaFade = useRef(new Animated.Value(0)).current;
   const cardsFade = useRef(new Animated.Value(0)).current;
-  
+  const loadingAnim = useRef(new Animated.Value(0)).current;
+
   // 3D Carousel refs
   const carousel3DRef = useRef<ScrollView>(null);
-  const cardWidth = 160;
-  const cardSpacing = 8;
+  const cardWidth = 240; // Increased from 160
+  const cardSpacing = 16; // Increased from 8
   const scrollX = useRef(new Animated.Value(0)).current;
-  
-  // Get original images array
-  const originalImages = settingsImages.gallery.length > 0 ? settingsImages.gallery : [
-    require('../../assets/images/gallery/1.jpg'),
-    require('../../assets/images/gallery/2.jpg'),
-    require('../../assets/images/gallery/3.jpg'),
-    require('../../assets/images/gallery/4.jpg'),
-  ];
-  
-  // Create infinite scroll data by duplicating images
-  const infiniteImages = [...originalImages, ...originalImages, ...originalImages];
+
+  // Get original images array - only from Firebase, no hardcoded fallbacks
+  const originalImages = settingsImages.gallery.length > 0 ? settingsImages.gallery : [];
+
+  // Create infinite scroll data by duplicating images (only if we have images)
+  const infiniteImages = originalImages.length > 0
+    ? [...originalImages, ...originalImages, ...originalImages]
+    : [];
   const originalLength = originalImages.length;
   const itemWidth = cardWidth + cardSpacing;
-  
+
   // Handle infinite scroll
   const handleScroll = (event: any) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const totalWidth = originalLength * itemWidth;
-    
+
     // If scrolled past the end, reset to beginning + offset
     if (offsetX >= totalWidth * 2) {
       carousel3DRef.current?.scrollTo({
@@ -132,21 +131,34 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
     }
   };
 
-  // Start at middle section for infinite scroll
+  // Start at middle section for infinite scroll (only if we have images)
   useEffect(() => {
-    setTimeout(() => {
-      carousel3DRef.current?.scrollTo({
-        x: originalLength * itemWidth,
-        animated: false,
-      });
-    }, 100);
+    if (originalLength > 0 && carousel3DRef.current) {
+      setTimeout(() => {
+        carousel3DRef.current?.scrollTo({
+          x: originalLength * itemWidth,
+          animated: false,
+        });
+      }, 100);
+    }
   }, [originalLength, itemWidth]);
 
   useEffect(() => {
-    // Simulate loading (splash) for 3 seconds
-    setTimeout(() => {
-      setLoading(false);
-    }, 3000);
+    // Scissors animation loop
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(loadingAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(loadingAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        })
+      ])
+    ).start();
   }, []);
 
   useEffect(() => {
@@ -184,14 +196,22 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
     }
   }, [loading]);
 
-  useEffect(() => {
-    // Fetch images and dynamic content after interactions are complete
-    InteractionManager.runAfterInteractions(() => {
-      fetchImages();
-      fetchDynamicContent();
-      cleanupOldWaitlistData();
-    });
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      const task = InteractionManager.runAfterInteractions(async () => {
+        // Fetch all data in parallel
+        await Promise.all([
+          fetchImages(),
+          fetchDynamicContent(),
+          cleanupOldWaitlistData()
+        ]);
+        // Stop loading after data is fetched
+        setLoading(false);
+      });
+
+      return () => task.cancel();
+    }, [])
+  );
 
   // Cleanup old waitlist entries (runs automatically on app start)
   const cleanupOldWaitlistData = async () => {
@@ -208,7 +228,7 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
   const fetchDynamicContent = async () => {
     try {
       const db = getFirestore();
-      
+
       // Load welcome messages
       const welcomeDoc = await getDoc(doc(db, 'settings', 'homeMessages'));
       if (welcomeDoc.exists()) {
@@ -224,9 +244,9 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
       const aboutDoc = await getDoc(doc(db, 'settings', 'aboutUsText'));
       if (aboutDoc.exists()) {
         const data = aboutDoc.data();
-        setAboutUsMessage(data.text || 'ברוכים הבאים למספרה של רון תורג׳מן! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. רון, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
+        setAboutUsMessage(data.text || 'ברוכים הבאים למספרת גל שמש! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. גל, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
       } else {
-        setAboutUsMessage('ברוכים הבאים למספרה של רון תורג׳מן! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. רון, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
+        setAboutUsMessage('ברוכים הבאים למספרת גל שמש! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. גל, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
       }
 
       // Check for popup message
@@ -243,166 +263,166 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
       // Fallback to translation values
       setWelcomeMessage(t('home.welcome'));
       setSubtitleMessage(t('home.subtitle'));
-      setAboutUsMessage('ברוכים הבאים למספרה של רון תורג׳מן! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. רון, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
+      setAboutUsMessage('ברוכים הבאים למספרת גל שמש! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. גל, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
     }
   };
 
   // Fetch images from Firebase gallery collection and settings
   const fetchImages = async () => {
-      try {
-        const db = getFirestore();
-        
-        // Load gallery images from the gallery collection
-        const galleryQuery = query(collection(db, 'gallery'), where('isActive', '==', true));
-        const gallerySnapshot = await getDocs(galleryQuery);
-        const galleryImages: string[] = [];
-        
+    try {
+      const db = getFirestore();
+
+      // Load gallery images from the gallery collection
+      const galleryQuery = query(collection(db, 'gallery'), where('isActive', '==', true));
+      const gallerySnapshot = await getDocs(galleryQuery);
+      const galleryImages: string[] = [];
+
+      gallerySnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.type === 'gallery' && data.imageUrl) {
+          galleryImages.push(data.imageUrl);
+        }
+      });
+
+      // Sort by order if available
+      galleryImages.sort((a, b) => {
+        const docA = gallerySnapshot.docs.find(doc => doc.data().imageUrl === a);
+        const docB = gallerySnapshot.docs.find(doc => doc.data().imageUrl === b);
+        const orderA = docA?.data().order || 0;
+        const orderB = docB?.data().order || 0;
+        return orderA - orderB;
+      });
+
+      // Load atmosphere and about us images from settings
+      let atmosphereImage = '';
+      let aboutUsImage = '';
+
+      const settingsDocRef = doc(db, 'settings', 'images');
+      const settingsDocSnap = await getDoc(settingsDocRef);
+      if (settingsDocSnap.exists()) {
+        const settingsData = settingsDocSnap.data();
+        atmosphereImage = settingsData.atmosphereImage || '';
+        aboutUsImage = settingsData.aboutUsImage || '';
+        console.log('📁 Settings document contains:', {
+          atmosphereImage: atmosphereImage ? '✅ Found' : '❌ Not found',
+          aboutUsImage: aboutUsImage ? '✅ Found' : '❌ Not found',
+          allData: settingsData
+        });
+      } else {
+        console.log('📁 No settings/images document found');
+      }
+
+      // Also check gallery collection for background/aboutus images
+      if (!atmosphereImage || !aboutUsImage) {
         gallerySnapshot.forEach((doc) => {
           const data = doc.data();
-          if (data.type === 'gallery' && data.imageUrl) {
-            galleryImages.push(data.imageUrl);
+          if (data.type === 'background' && data.imageUrl && !atmosphereImage) {
+            atmosphereImage = data.imageUrl;
+          }
+          if (data.type === 'aboutus' && data.imageUrl && !aboutUsImage) {
+            aboutUsImage = data.imageUrl;
           }
         });
-        
-        // Sort by order if available
-        galleryImages.sort((a, b) => {
-          const docA = gallerySnapshot.docs.find(doc => doc.data().imageUrl === a);
-          const docB = gallerySnapshot.docs.find(doc => doc.data().imageUrl === b);
-          const orderA = docA?.data().order || 0;
-          const orderB = docB?.data().order || 0;
-          return orderA - orderB;
-        });
-        
-        // Load atmosphere and about us images from settings
-        let atmosphereImage = '';
-        let aboutUsImage = '';
-        
-        const settingsDocRef = doc(db, 'settings', 'images');
-        const settingsDocSnap = await getDoc(settingsDocRef);
-        if (settingsDocSnap.exists()) {
-          const settingsData = settingsDocSnap.data();
-          atmosphereImage = settingsData.atmosphereImage || '';
-          aboutUsImage = settingsData.aboutUsImage || '';
-          console.log('📁 Settings document contains:', {
-            atmosphereImage: atmosphereImage ? '✅ Found' : '❌ Not found',
-            aboutUsImage: aboutUsImage ? '✅ Found' : '❌ Not found',
-            allData: settingsData
-          });
-        } else {
-          console.log('📁 No settings/images document found');
-        }
-        
-        // Also check gallery collection for background/aboutus images
-        if (!atmosphereImage || !aboutUsImage) {
-          gallerySnapshot.forEach((doc) => {
-            const data = doc.data();
-            if (data.type === 'background' && data.imageUrl && !atmosphereImage) {
-              atmosphereImage = data.imageUrl;
-            }
-            if (data.type === 'aboutus' && data.imageUrl && !aboutUsImage) {
-              aboutUsImage = data.imageUrl;
-            }
-          });
-        }
-        
-        setSettingsImages({
-          atmosphere: atmosphereImage,
-          aboutUs: aboutUsImage,
-          gallery: galleryImages,
-        });
-        
-        console.log('✅ Loaded Firebase images:', {
-          atmosphere: atmosphereImage ? '✅ Found' : '❌ Not found',
-          aboutUs: aboutUsImage ? '✅ Found' : '❌ Not found', 
-          galleryCount: galleryImages.length,
-          galleryImages: galleryImages.slice(0, 2) // Show first 2 URLs
-        });
-
-        // Check if we have placeholder images
-        const hasPlaceholders = galleryImages.some(url => 
-          url && (url.includes('placeholder') || url.includes('via.placeholder'))
-        );
-        
-        if (hasPlaceholders) {
-          console.log('⚠️ Found placeholder images in gallery, they will appear as gray cards');
-          console.log('🔍 Placeholder URLs:', galleryImages.filter(url => 
-            url && (url.includes('placeholder') || url.includes('via.placeholder'))
-          ));
-        }
-
-        // If no gallery images found, initialize with default images
-        if (galleryImages.length === 0) {
-          console.log('🔍 No gallery images found. Checking all gallery collection documents...');
-          const allGallerySnapshot = await getDocs(collection(db, 'gallery'));
-          console.log('📋 All gallery collection documents:');
-          allGallerySnapshot.forEach((doc) => {
-            console.log('Document ID:', doc.id, 'Data:', doc.data());
-          });
-          
-          // Try to initialize gallery with default images
-          try {
-            console.log('🚀 Initializing gallery with default images...');
-            const { initializeGalleryImages } = await import('../../services/firebase');
-            await initializeGalleryImages();
-            
-            // Reload images after initialization
-            console.log('🔄 Reloading images after initialization...');
-            const refreshedGalleryQuery = query(collection(db, 'gallery'), where('isActive', '==', true));
-            const refreshedGallerySnapshot = await getDocs(refreshedGalleryQuery);
-            const refreshedGalleryImages: string[] = [];
-            
-            refreshedGallerySnapshot.forEach((doc) => {
-              const data = doc.data();
-              if (data.type === 'gallery' && data.imageUrl) {
-                refreshedGalleryImages.push(data.imageUrl);
-              }
-            });
-            
-            if (refreshedGalleryImages.length > 0) {
-              setSettingsImages(prev => ({
-                ...prev,
-                gallery: refreshedGalleryImages,
-              }));
-              console.log('✅ Gallery initialized with', refreshedGalleryImages.length, 'images');
-            }
-          } catch (initError) {
-            console.error('❌ Failed to initialize gallery:', initError);
-          }
-        } else if (hasPlaceholders) {
-          // If we have placeholder images, try to replace them automatically
-          try {
-            console.log('🔄 Auto-replacing placeholder images...');
-            const { replaceGalleryPlaceholders } = await import('../../services/firebase');
-            await replaceGalleryPlaceholders();
-            
-            // Reload images after replacement
-            console.log('🔄 Reloading images after replacement...');
-            const refreshedGalleryQuery = query(collection(db, 'gallery'), where('isActive', '==', true));
-            const refreshedGallerySnapshot = await getDocs(refreshedGalleryQuery);
-            const refreshedGalleryImages: string[] = [];
-            
-            refreshedGallerySnapshot.forEach((doc) => {
-              const data = doc.data();
-              if (data.type === 'gallery' && data.imageUrl) {
-                refreshedGalleryImages.push(data.imageUrl);
-              }
-            });
-            
-            if (refreshedGalleryImages.length > 0) {
-              setSettingsImages(prev => ({
-                ...prev,
-                gallery: refreshedGalleryImages,
-              }));
-              console.log('✅ Gallery placeholders replaced with', refreshedGalleryImages.length, 'real images');
-            }
-          } catch (replaceError) {
-            console.error('❌ Failed to replace placeholders:', replaceError);
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to fetch Firebase images:', err);
       }
-    };
+
+      setSettingsImages({
+        atmosphere: atmosphereImage,
+        aboutUs: aboutUsImage,
+        gallery: galleryImages,
+      });
+
+      console.log('✅ Loaded Firebase images:', {
+        atmosphere: atmosphereImage ? '✅ Found' : '❌ Not found',
+        aboutUs: aboutUsImage ? '✅ Found' : '❌ Not found',
+        galleryCount: galleryImages.length,
+        galleryImages: galleryImages.slice(0, 2) // Show first 2 URLs
+      });
+
+      // Check if we have placeholder images
+      const hasPlaceholders = galleryImages.some(url =>
+        url && (url.includes('placeholder') || url.includes('via.placeholder'))
+      );
+
+      if (hasPlaceholders) {
+        console.log('⚠️ Found placeholder images in gallery, they will appear as gray cards');
+        console.log('🔍 Placeholder URLs:', galleryImages.filter(url =>
+          url && (url.includes('placeholder') || url.includes('via.placeholder'))
+        ));
+      }
+
+      // If no gallery images found, initialize with default images
+      if (galleryImages.length === 0) {
+        console.log('🔍 No gallery images found. Checking all gallery collection documents...');
+        const allGallerySnapshot = await getDocs(collection(db, 'gallery'));
+        console.log('📋 All gallery collection documents:');
+        allGallerySnapshot.forEach((doc) => {
+          console.log('Document ID:', doc.id, 'Data:', doc.data());
+        });
+
+        // Try to initialize gallery with default images
+        try {
+          console.log('🚀 Initializing gallery with default images...');
+          const { initializeGalleryImages } = await import('../../services/firebase');
+          await initializeGalleryImages();
+
+          // Reload images after initialization
+          console.log('🔄 Reloading images after initialization...');
+          const refreshedGalleryQuery = query(collection(db, 'gallery'), where('isActive', '==', true));
+          const refreshedGallerySnapshot = await getDocs(refreshedGalleryQuery);
+          const refreshedGalleryImages: string[] = [];
+
+          refreshedGallerySnapshot.forEach((doc) => {
+            const data = doc.data();
+            if (data.type === 'gallery' && data.imageUrl) {
+              refreshedGalleryImages.push(data.imageUrl);
+            }
+          });
+
+          if (refreshedGalleryImages.length > 0) {
+            setSettingsImages(prev => ({
+              ...prev,
+              gallery: refreshedGalleryImages,
+            }));
+            console.log('✅ Gallery initialized with', refreshedGalleryImages.length, 'images');
+          }
+        } catch (initError) {
+          console.error('❌ Failed to initialize gallery:', initError);
+        }
+      } else if (hasPlaceholders) {
+        // If we have placeholder images, try to replace them automatically
+        try {
+          console.log('🔄 Auto-replacing placeholder images...');
+          const { replaceGalleryPlaceholders } = await import('../../services/firebase');
+          await replaceGalleryPlaceholders();
+
+          // Reload images after replacement
+          console.log('🔄 Reloading images after replacement...');
+          const refreshedGalleryQuery = query(collection(db, 'gallery'), where('isActive', '==', true));
+          const refreshedGallerySnapshot = await getDocs(refreshedGalleryQuery);
+          const refreshedGalleryImages: string[] = [];
+
+          refreshedGallerySnapshot.forEach((doc) => {
+            const data = doc.data();
+            if (data.type === 'gallery' && data.imageUrl) {
+              refreshedGalleryImages.push(data.imageUrl);
+            }
+          });
+
+          if (refreshedGalleryImages.length > 0) {
+            setSettingsImages(prev => ({
+              ...prev,
+              gallery: refreshedGalleryImages,
+            }));
+            console.log('✅ Gallery placeholders replaced with', refreshedGalleryImages.length, 'real images');
+          }
+        } catch (replaceError) {
+          console.error('❌ Failed to replace placeholders:', replaceError);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch Firebase images:', err);
+    }
+  };
 
   // Remove auto-scroll for manual control
   // useEffect(() => {
@@ -437,28 +457,28 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
       cardOffset,
       cardOffset + cardWidth + cardSpacing,
     ];
-    
+
     const translateX = scrollXValue.interpolate({
       inputRange,
-      outputRange: [cardWidth / 2, 0, -cardWidth / 2],
+      outputRange: [cardWidth / 3, 0, -cardWidth / 3],
       extrapolate: 'extend',
     });
-    
+
     const scale = scrollXValue.interpolate({
       inputRange,
-      outputRange: [0.9, 1, 0.9],
+      outputRange: [0.85, 1.1, 0.85],
       extrapolate: 'extend',
     });
-    
+
     const rotateY = scrollXValue.interpolate({
       inputRange,
-      outputRange: ['-30deg', '0deg', '30deg'],
+      outputRange: ['-25deg', '0deg', '25deg'],
       extrapolate: 'extend',
     });
-    
+
     const opacity = scrollXValue.interpolate({
       inputRange,
-      outputRange: [0.8, 1, 0.8],
+      outputRange: [0.7, 1, 0.7],
       extrapolate: 'extend',
     });
 
@@ -467,20 +487,21 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
         { translateX },
         { scale },
         { rotateY },
-        { perspective: 1000 },
+        { perspective: 800 },
       ],
       opacity,
+      // Removed zIndex animation to prevent "Loss of precision" error on Android/Hermes
     };
   };
 
   const handlePhoneCall = () => {
-    Linking.openURL('tel:+972542280222').catch(() => {
+    Linking.openURL('tel:+972508315000').catch(() => {
       Alert.alert(t('common.error'), t('errors.phone_error'));
     });
   };
 
   const handleWhatsApp = () => {
-    Linking.openURL('https://wa.me/972542280222').catch(() => {
+    Linking.openURL('https://wa.me/972508315000').catch(() => {
       Alert.alert(t('common.error'), t('errors.whatsapp_error'));
     });
   };
@@ -495,15 +516,15 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
     let url = '';
     switch (platform) {
       case 'facebook':
-        url = 'https://www.facebook.com/turgibarber';
+        url = 'https://www.facebook.com/eilonmatokbarber';
         break;
       case 'instagram':
-        url = 'https://www.instagram.com/turgibarber';
+        url = 'https://www.instagram.com/gal.shemesh.official?igsh=MWhnajBmZG1xb2s5Zg==';
         break;
       default:
         return;
     }
-    
+
     Linking.openURL(url).catch(() => {
       Alert.alert(t('common.error'), t('errors.link_error'));
     });
@@ -513,7 +534,17 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>{t('common.loading')}</Text>
+          <Animated.View style={{
+            transform: [{
+              rotate: loadingAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: ['-15deg', '15deg']
+              })
+            }]
+          }}>
+            <Ionicons name="cut" size={60} color="#FFD700" />
+          </Animated.View>
+          {/* Removed Loading Text as requested */}
         </View>
       </SafeAreaView>
     );
@@ -521,17 +552,34 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <TopNav 
-        title="naor amar "
-        onBellPress={() => setNotificationPanelVisible(true)} 
-        onMenuPress={() => setSideMenuVisible(true)} 
+      <TopNav
+        title="Gal Shemesh"
+        onBellPress={() => setNotificationPanelVisible(true)}
+        onMenuPress={() => setSideMenuVisible(true)}
       />
       <View style={styles.backgroundWrapper}>
+        {/* Local image - loads fast */}
         <ImageBackground
-          source={settingsImages.atmosphere ? { uri: settingsImages.atmosphere } : require('../../assets/images/atmosphere/atmosphere.png')}
+          source={require('../../assets/images/atmosphere/atmosphere.png')}
           style={styles.atmosphereImage}
           resizeMode="cover"
+          onError={() => {
+            // If local image fails to load, mark error
+            setAtmosphereImageError(true);
+          }}
         >
+          {/* Firebase image overlay - loads on top if available */}
+          {settingsImages.atmosphere && !atmosphereImageError && (
+            <Image
+              source={{ uri: settingsImages.atmosphere }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              onError={() => {
+                // If Firebase image fails, keep showing local image
+                setAtmosphereImageError(true);
+              }}
+            />
+          )}
           <View style={styles.overlay} />
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.9)']}
@@ -551,19 +599,19 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
           </View>
         </ImageBackground>
       </View>
-      
-      <ScrollView 
-        style={styles.scrollView} 
-        showsVerticalScrollIndicator={false} 
+
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
         <View style={styles.contentWrapper}>
           {/* Guest Mode Banner */}
           {isGuestMode && (
-            <Animated.View 
+            <Animated.View
               style={[
                 styles.guestBanner,
-                { 
+                {
                   opacity: fadeAnim,
                   transform: [{ translateY: slideAnim }]
                 }
@@ -579,17 +627,17 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
           )}
 
           {/* Greeting and CTA Section */}
-          <Animated.View 
+          <Animated.View
             style={[
-              styles.greetingCtaContainer, 
-              { 
+              styles.greetingCtaContainer,
+              {
                 opacity: fadeAnim,
                 transform: [{ translateY: slideAnim }]
               }
             ]}
           >
             <LinearGradient
-              colors={['rgba(139, 69, 19, 0.1)', 'rgba(139, 69, 19, 0.05)', 'rgba(3, 3, 3, 0.95)']}
+              colors={['rgba(255, 215, 0, 0.1)', 'rgba(255, 215, 0, 0.05)', 'rgba(3, 3, 3, 0.95)']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.cardGradient}
@@ -623,7 +671,7 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
           <Animated.View style={[styles.quickActionsSection, { opacity: ctaFade }]}>
             <Text style={styles.sectionTitle}>{t('home.quick_actions')}</Text>
             <View style={styles.quickActionsGrid}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.quickActionCard}
                 onPress={() => {
                   if (isGuestMode) {
@@ -640,25 +688,37 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
                   }
                 }}
               >
-                <Ionicons name="calendar" size={32} color="#007bff" />
+                <LinearGradient
+                  colors={['#1a1a1a', '#333333']}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Ionicons name="calendar" size={32} color="#FFD700" style={{ zIndex: 1 }} />
                 <Text style={styles.quickActionTitle}>{t('home.book_new')}</Text>
                 <Text style={styles.quickActionSubtitle}>{t('home.book_subtitle')}</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={styles.quickActionCard}
-                onPress={() => onNavigate('profile')}
+                onPress={() => onNavigate('my-appointments')}
               >
-                <Ionicons name="list" size={32} color="#007bff" />
+                <LinearGradient
+                  colors={['#1a1a1a', '#333333']}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Ionicons name="list" size={32} color="#FFD700" style={{ zIndex: 1 }} />
                 <Text style={styles.quickActionTitle}>{t('home.my_appointments')}</Text>
                 <Text style={styles.quickActionSubtitle}>{t('home.appointments_subtitle')}</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={styles.quickActionCard}
                 onPress={() => onNavigate('team')}
               >
-                <Ionicons name="people" size={32} color="#007bff" />
+                <LinearGradient
+                  colors={['#1a1a1a', '#333333']}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Ionicons name="people" size={32} color="#FFD700" style={{ zIndex: 1 }} />
                 <Text style={styles.quickActionTitle}>{t('home.our_team')}</Text>
                 <Text style={styles.quickActionSubtitle}>{t('home.team_subtitle')}</Text>
               </TouchableOpacity>
@@ -666,59 +726,61 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
           </Animated.View>
 
           {/* 3D Gallery Carousel Section */}
-          <Animated.View style={[styles.gallerySection, { opacity: cardsFade }]}>
-            <Text style={styles.sectionTitle}>{t('home.gallery')}</Text>
-            <View style={styles.carousel3DContainer}>
-              <Animated.ScrollView 
-                ref={carousel3DRef}
-                horizontal 
-                showsHorizontalScrollIndicator={false} 
-                contentContainerStyle={styles.carousel3DContent}
-                pagingEnabled={false}
-                decelerationRate="normal"
-                onScroll={Animated.event(
-                  [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-                  { useNativeDriver: false, listener: handleScroll }
-                )}
-                scrollEventThrottle={16}
-              >
-                {infiniteImages.map((img, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    onPress={() => {
-                      const imageUrl = typeof img === 'string' ? img : img.uri;
-                      setSelectedImage(imageUrl);
-                      setShowImageModal(true);
-                    }}
-                    activeOpacity={0.9}
-                  >
-                    <Animated.View 
-                      style={[
-                        styles.carousel3DCard,
-                        getCardTransform(index, scrollX),
-                      ]}
+          {originalImages.length > 0 ? (
+            <Animated.View style={[styles.gallerySection, { opacity: cardsFade }]}>
+              <Text style={styles.sectionTitle}>{t('home.gallery')}</Text>
+              <View style={styles.carousel3DContainer}>
+                <Animated.ScrollView
+                  ref={carousel3DRef}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.carousel3DContent}
+                  pagingEnabled={false}
+                  decelerationRate="normal"
+                  onScroll={Animated.event(
+                    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+                    { useNativeDriver: false, listener: handleScroll }
+                  )}
+                  scrollEventThrottle={16}
+                >
+                  {infiniteImages.map((img, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      onPress={() => {
+                        const imageUrl = typeof img === 'string' ? img : img.uri;
+                        setSelectedImage(imageUrl);
+                        setShowImageModal(true);
+                      }}
+                      activeOpacity={0.9}
                     >
-                      <Image
-                        source={typeof img === 'string' ? { uri: img } : img}
-                        style={styles.carousel3DImage}
-                        resizeMode="cover"
-                      />
-                      <View style={styles.carousel3DOverlay}>
-                        <LinearGradient
-                          colors={['transparent', 'rgba(0,0,0,0.8)']}
-                          style={styles.carousel3DGradient}
+                      <Animated.View
+                        style={[
+                          styles.carousel3DCard,
+                          getCardTransform(index, scrollX),
+                        ]}
+                      >
+                        <Image
+                          source={typeof img === 'string' ? { uri: img } : img}
+                          style={styles.carousel3DImage}
+                          resizeMode="cover"
                         />
-                        <View style={styles.tapIndicator}>
-                          <Ionicons name="expand" size={20} color="#fff" />
-                          <Text style={styles.tapIndicatorText}>לחץ לצפייה</Text>
+                        <View style={styles.carousel3DOverlay}>
+                          <LinearGradient
+                            colors={['transparent', 'rgba(0,0,0,0.8)']}
+                            style={styles.carousel3DGradient}
+                          />
+                          <View style={styles.tapIndicator}>
+                            <Ionicons name="expand" size={20} color="#fff" />
+                            <Text style={styles.tapIndicatorText}>לחץ לצפייה</Text>
+                          </View>
                         </View>
-                      </View>
-                    </Animated.View>
-                  </TouchableOpacity>
-                ))}
-              </Animated.ScrollView>
-            </View>
-          </Animated.View>
+                      </Animated.View>
+                    </TouchableOpacity>
+                  ))}
+                </Animated.ScrollView>
+              </View>
+            </Animated.View>
+          ) : null}
 
           {/* About Us Section */}
           <Animated.View style={[styles.aboutSection, { opacity: cardsFade }]}>
@@ -735,8 +797,8 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
                   
 ✂️ AI: "המספרה שלנו היא לא רק מקום להסתפר, אלא מקום להרגיש בו טוב, להירגע ולצאת עם חיוך. כל תספורת היא יצירת אמנות!"`}
                 </Text>
-                <TouchableOpacity 
-                  style={styles.wazeButton} 
+                <TouchableOpacity
+                  style={styles.wazeButton}
                   onPress={handleWaze}
                 >
                   <Text style={styles.wazeButtonText}>{t('home.navigate_waze')}</Text>
@@ -754,14 +816,14 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
                 <Text style={styles.contactTitle}>{t('home.call_us')}</Text>
                 <Text style={styles.contactSubtitle}>{t('home.phone')}</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity style={styles.contactCard} onPress={handleWhatsApp}>
                 <Ionicons name="logo-whatsapp" size={32} color="#25d366" />
                 <Text style={styles.contactTitle}>{t('home.whatsapp')}</Text>
                 <Text style={styles.contactSubtitle}>{t('home.send_message')}</Text>
               </TouchableOpacity>
             </View>
-            
+
             <View style={styles.socialRow}>
               <TouchableOpacity onPress={() => handleSocialMedia('facebook')} style={styles.socialButton}>
                 <Ionicons name="logo-facebook" size={28} color="#1877f2" />
@@ -785,8 +847,8 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
           </View>
         </View>
       </ScrollView>
-      
-      <SideMenu 
+
+      <SideMenu
         visible={sideMenuVisible}
         onClose={() => setSideMenuVisible(false)}
         onNavigate={(screen) => {
@@ -795,13 +857,13 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
         }}
         onNotificationPress={() => setNotificationPanelVisible(true)}
       />
-      
-      <NotificationPanel 
+
+      <NotificationPanel
         visible={notificationPanelVisible}
         onClose={() => setNotificationPanelVisible(false)}
       />
       <TermsModal visible={showTerms} onClose={() => setShowTerms(false)} />
-      
+
       {/* Admin Popup Message */}
       <Modal
         animationType="fade"
@@ -818,8 +880,8 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
               </TouchableOpacity>
             </View>
             <Text style={styles.popupMessage}>{popupMessage}</Text>
-            <TouchableOpacity 
-              style={styles.popupButton} 
+            <TouchableOpacity
+              style={styles.popupButton}
               onPress={() => setShowPopup(false)}
             >
               <Text style={styles.popupButtonText}>הבנתי</Text>
@@ -924,7 +986,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
   },
   bottomGradient: {
     position: 'absolute',
@@ -1076,29 +1138,32 @@ const styles = StyleSheet.create({
   },
   quickActionCard: {
     flex: 1,
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
     marginHorizontal: 4,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 3,
+    overflow: 'hidden',
+    position: 'relative',
   },
   quickActionTitle: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#222',
+    color: '#fff',
     marginBottom: 4,
     marginTop: 8,
     textAlign: 'center',
+    zIndex: 1,
   },
   quickActionSubtitle: {
     fontSize: 12,
-    color: '#666',
+    color: '#ccc',
     textAlign: 'center',
+    zIndex: 1,
   },
   gallerySection: {
     marginBottom: 24,
@@ -1116,36 +1181,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   carousel3DContainer: {
-    height: 280,
+    height: 380, // Increased height for larger cards
     justifyContent: 'center',
     alignItems: 'center',
+    marginVertical: 10,
   },
   carousel3DContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: Dimensions.get('window').width / 2 - 120, // Center the first card
+    alignItems: 'center',
   },
   carousel3DCard: {
-    width: 160,
-    height: 240,
-    borderRadius: 20,
-    marginRight: 8,
+    width: 240, // Increased width
+    height: 340, // Increased height
+    borderRadius: 24,
+    marginRight: 16,
     backgroundColor: '#eee',
-    overflow: 'hidden',
+    overflow: 'visible', // Changed to visible for shadow effects
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 15 },
-    shadowOpacity: 0.4,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
     shadowRadius: 20,
     elevation: 15,
   },
   carousel3DImage: {
     width: '100%',
     height: '100%',
+    borderRadius: 24, // Match card border radius
   },
   carousel3DOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 80,
+    height: 100,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    overflow: 'hidden', // Clip gradient to border radius
   },
   carousel3DGradient: {
     flex: 1,

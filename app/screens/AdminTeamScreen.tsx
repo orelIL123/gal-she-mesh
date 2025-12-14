@@ -19,10 +19,12 @@ import {
 import {
     addBarberProfile,
     Barber,
+    checkIsAdmin,
     deleteBarberProfile,
     getBarbers,
     getStorageImages,
     getTreatments,
+    onAuthStateChange,
     Treatment,
     updateBarberProfile,
     uploadImageToStorage
@@ -77,6 +79,8 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
   const [modalVisible, setModalVisible] = useState(false);
   const [editingBarber, setEditingBarber] = useState<Barber | null>(null);
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -90,9 +94,39 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
     phone: ''
   });
 
+  // Check admin status
+  useEffect(() => {
+    const unsubscribe = onAuthStateChange(async (user) => {
+      if (user) {
+        setCurrentUserId(user.uid);
+        console.log('🔍 AdminTeamScreen - User UID:', user.uid);
+        const adminStatus = await checkIsAdmin(user.uid);
+        console.log('🔍 AdminTeamScreen - Admin status:', adminStatus);
+        setIsAdmin(adminStatus);
+        if (!adminStatus) {
+          Alert.alert(
+            'אין הרשאות',
+            `אין לך הרשאות מנהל.\n\nUID: ${user.uid}\n\nאנא התחבר עם משתמש אדמין.`,
+            [{ text: 'חזרה', onPress: () => onNavigate('admin-home') }]
+          );
+        }
+      } else {
+        console.log('🔍 AdminTeamScreen - No user signed in');
+        Alert.alert('שגיאה', 'אנא התחבר למערכת');
+        onNavigate('home');
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   useEffect(() => {
     loadBarbers();
   }, []);
+
+  // Debug modal visibility
+  useEffect(() => {
+    console.log('🔵 modalVisible changed to:', modalVisible);
+  }, [modalVisible]);
 
   const loadBarbers = async () => {
     try {
@@ -105,19 +139,19 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
       console.log('Loaded barbers:', barbersData);
       console.log('Loaded worker images:', imagesData);
       
-      // Auto-fix Ron Turgeman's image if needed
-      const ronTurgeman = barbersData.find(b => b.name === 'Ron turgeman');
-      if (ronTurgeman && imagesData.length > 0 && !ronTurgeman.image) {
-        const ronImage = imagesData.find(img => img.includes('ronturgeman'));
-        if (ronImage) {
-          console.log('Auto-fixing Ron Turgeman image:', ronImage);
+      // Auto-fix barber image if needed
+      const mainBarber = barbersData.find(b => b.isMainBarber);
+      if (mainBarber && imagesData.length > 0 && !mainBarber.image) {
+        const barberImage = imagesData[0]; // Use first available image
+        if (barberImage) {
+          console.log('Auto-fixing barber image:', barberImage);
           try {
-            await updateBarberProfile(ronTurgeman.id, { image: ronImage });
+            await updateBarberProfile(mainBarber.id, { image: barberImage });
             // Reload barbers to reflect changes
             const updatedBarbers = await getBarbers();
             setBarbers(updatedBarbers);
           } catch (error) {
-            console.error('Error updating Ron Turgeman image:', error);
+            console.error('Error updating barber image:', error);
           }
         }
       }
@@ -141,6 +175,9 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
   };
 
   const openAddModal = () => {
+    console.log('🔵 openAddModal called');
+    console.log('🔵 Current treatments:', treatments.length);
+    console.log('🔵 Current modalVisible state:', modalVisible);
     setEditingBarber(null);
     const defaultPricing: { [treatmentId: string]: number } = {};
     treatments.forEach(treatment => {
@@ -157,7 +194,13 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
       pricing: defaultPricing,
       phone: ''
     });
+    console.log('🔵 Setting modalVisible to true');
     setModalVisible(true);
+    console.log('🔵 modalVisible should now be true');
+    // Force a re-render check
+    setTimeout(() => {
+      console.log('🔵 After timeout - modalVisible:', modalVisible);
+    }, 100);
   };
 
   const openEditModal = (barber: Barber) => {
@@ -210,10 +253,7 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
       showToast('נא למלא שם הספר', 'error');
       return false;
     }
-    if (!formData.experience.trim()) {
-      showToast('נא למלא ניסיון', 'error');
-      return false;
-    }
+    // Experience is now optional - removed validation
     if (!formData.rating || isNaN(Number(formData.rating)) || Number(formData.rating) < 1 || Number(formData.rating) > 5) {
       showToast('נא למלא דירוג תקין (1-5)', 'error');
       return false;
@@ -230,9 +270,8 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
     if (!validateForm()) return;
 
     try {
-      const barberData = {
+      const barberData: any = {
         name: formData.name.trim(),
-        experience: formData.experience.trim(),
         rating: parseInt(formData.rating),
         specialties: formData.specialties.filter(s => s.trim()),
         image: formData.image.trim() || (workerImages[0] || 'https://via.placeholder.com/150x150'),
@@ -240,6 +279,11 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
         pricing: formData.pricing,
         phone: formData.phone.trim()
       };
+      
+      // Add experience only if provided (optional field)
+      if (formData.experience.trim()) {
+        barberData.experience = formData.experience.trim();
+      }
 
       if (editingBarber) {
         await updateBarberProfile(editingBarber.id, barberData);
@@ -321,16 +365,39 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
     });
   };
 
-  const pickImageFromDevice = async () => {
+  const pickImageFromDevice = async (): Promise<{ uri: string; mimeType?: string } | null> => {
     try {
+      console.log('📱 Requesting media library permissions...');
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        showToast('נדרשת הרשאה לגישה לגלריה', 'error');
+        return null;
+      }
+
+      // Double check permission status
+      if (permissionResult.status !== 'granted') {
+        showToast('הרשאת גישה נדחתה', 'error');
+        return null;
+      }
+
+      console.log('📱 Permissions granted, launching image picker...');
+      
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
-        quality: 1,
+        quality: 0.8,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        return result.assets[0].uri;
+      console.log('📱 Image picker result:', result);
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const imageUri = asset.uri;
+        const mimeType = asset.mimeType || 'image/jpeg';
+        console.log('📤 Selected image URI:', imageUri);
+        console.log('📄 MIME type:', mimeType);
+        return { uri: imageUri, mimeType };
       }
     } catch (error) {
       console.error('Error picking image:', error);
@@ -341,14 +408,24 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
 
   const uploadWorkerImageFromDevice = async () => {
     try {
-      const imageUri = await pickImageFromDevice();
-      if (!imageUri) return;
+      const imageData = await pickImageFromDevice();
+      if (!imageData) return;
 
       showToast('מעלה תמונה...', 'success');
       
-      const fileName = `worker_${Date.now()}.jpg`;
+      // Determine file extension from mimeType
+      let extension = 'jpg';
+      if (imageData.mimeType?.includes('png')) {
+        extension = 'png';
+      } else if (imageData.mimeType?.includes('webp')) {
+        extension = 'webp';
+      }
       
-      const downloadURL = await uploadImageToStorage(imageUri, 'workers', fileName);
+      const fileName = `worker_${Date.now()}.${extension}`;
+      console.log('📁 Uploading to workers folder with filename:', fileName);
+      
+      const downloadURL = await uploadImageToStorage(imageData.uri, 'workers', fileName, imageData.mimeType);
+      console.log('✅ Upload successful, URL:', downloadURL);
       
       setFormData({
         ...formData,
@@ -362,7 +439,7 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
       showToast('התמונה הועלתה בהצלחה', 'success');
     } catch (error) {
       console.error('Error uploading image:', error);
-      showToast('שגיאה בהעלאת התמונה', 'error');
+      showToast(`שגיאה בהעלאת התמונה: ${error instanceof Error ? error.message : 'שגיאה לא ידועה'}`, 'error');
     }
   };
 
@@ -520,13 +597,20 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
         animationType="slide"
         transparent={true}
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => {
+          console.log('🔵 Modal onRequestClose called');
+          setModalVisible(false);
+        }}
+        onShow={() => {
+          console.log('🔵 Modal onShow called - Modal is now visible!');
+        }}
       >
-        <KeyboardAvoidingView 
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          <View style={styles.modalContent}>
+        {modalVisible && (
+          <KeyboardAvoidingView 
+            style={styles.modalOverlay}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {editingBarber ? 'עריכת ספר' : 'הוספת ספר חדש'}
@@ -549,7 +633,7 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>ניסיון</Text>
+                <Text style={styles.inputLabel}>ניסיון (אופציונלי)</Text>
                 <TextInput
                   style={styles.textInput}
                   value={formData.experience}
@@ -565,7 +649,7 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
                   style={styles.textInput}
                   value={formData.phone}
                   onChangeText={(text) => setFormData({ ...formData, phone: text })}
-                  placeholder="לדוגמה: 0542280222"
+                  placeholder="לדוגמה: 052-221-0281"
                   keyboardType="phone-pad"
                   textAlign="right"
                 />
@@ -728,6 +812,7 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
             </View>
           </View>
         </KeyboardAvoidingView>
+        )}
       </Modal>
 
       <ToastMessage
@@ -842,7 +927,7 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
   },
   availableBadge: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#FFD700',
   },
   unavailableBadge: {
     backgroundColor: '#F44336',
@@ -937,15 +1022,19 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 24,
     margin: 20,
-    width: '90%',
-    maxWidth: 400,
-    maxHeight: '90%',
+    width: '95%',
+    maxWidth: 450,
+    maxHeight: '95%',
+    minHeight: 500,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
   modalTitle: {
     fontSize: 20,
@@ -1011,7 +1100,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   toggleOn: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#FFD700',
   },
   toggleOff: {
     backgroundColor: '#ddd',
@@ -1031,12 +1120,17 @@ const styles = StyleSheet.create({
   modalActions: {
     flexDirection: 'row',
     gap: 12,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
   },
   actionButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
   },
   cancelButton: {
     backgroundColor: '#f8f9fa',

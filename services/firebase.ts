@@ -1,37 +1,38 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import {
-  createUserWithEmailAndPassword,
-  EmailAuthProvider,
-  linkWithCredential,
-  onAuthStateChanged,
-  PhoneAuthProvider,
-  signInWithCredential,
-  signInWithEmailAndPassword,
-  signOut,
-  updateProfile,
-  User
+    createUserWithEmailAndPassword,
+    EmailAuthProvider,
+    linkWithCredential,
+    onAuthStateChanged,
+    PhoneAuthProvider,
+    sendPasswordResetEmail,
+    signInWithCredential,
+    signInWithEmailAndPassword,
+    signOut,
+    updateProfile,
+    User
 } from 'firebase/auth';
 import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  updateDoc,
-  where,
-  writeBatch
+    addDoc,
+    collection,
+    deleteDoc,
+    doc,
+    getDoc,
+    getDocs,
+    limit,
+    onSnapshot,
+    orderBy,
+    query,
+    serverTimestamp,
+    setDoc,
+    Timestamp,
+    updateDoc,
+    where,
+    writeBatch
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { deleteObject, getDownloadURL, listAll, ref, uploadBytes } from 'firebase/storage';
+import { deleteObject, getDownloadURL, listAll, ref, uploadBytes, UploadMetadata } from 'firebase/storage';
 import { isValidDuration, SLOT_SIZE_MINUTES } from '../app/constants/scheduling';
 import { auth, db, functions, storage } from '../config/firebase';
 import { AuthStorageService } from './authStorage';
@@ -240,6 +241,70 @@ export interface AppSettings {
   updatedAt: Timestamp;
 }
 
+const derivePhoneFormats = (input: string) => {
+  const digitsOnly = (input ?? '').replace(/[^0-9]/g, '');
+  let withoutCountry = digitsOnly;
+
+  if (withoutCountry.startsWith('972')) {
+    withoutCountry = withoutCountry.substring(3);
+  }
+
+  if (withoutCountry.startsWith('0')) {
+    withoutCountry = withoutCountry.substring(1);
+  }
+
+  if (!withoutCountry && digitsOnly) {
+    withoutCountry = digitsOnly;
+  }
+
+  const withCountry = withoutCountry ? `972${withoutCountry}` : digitsOnly;
+  const normalizedPhone = withoutCountry
+    ? `+972${withoutCountry}`
+    : (digitsOnly ? `+${digitsOnly}` : input);
+  const localLeadingZero = withoutCountry
+    ? `0${withoutCountry}`
+    : (digitsOnly.startsWith('0') ? digitsOnly : `0${digitsOnly}`);
+
+  return {
+    digitsOnly,
+    withoutCountry,
+    withCountry,
+    normalizedPhone,
+    localLeadingZero,
+  };
+};
+
+const buildPhoneEmailCandidates = (formats: ReturnType<typeof derivePhoneFormats>) => {
+  const candidates = new Set<string>();
+  const add = (localPart?: string, domain?: string) => {
+    if (!localPart || !domain) return;
+    candidates.add(`${localPart}@${domain}`);
+  };
+
+  // Domain for users - גל שמש
+  add(formats.withCountry, 'galshemesh.app');
+  add(formats.withoutCountry, 'galshemesh.app');
+  add(formats.digitsOnly, 'galshemesh.app');
+
+  add(formats.withCountry, 'sms.barbershop.local');
+  add(formats.withoutCountry, 'sms.barbershop.local');
+  add(formats.digitsOnly, 'sms.barbershop.local');
+
+  add(formats.withCountry, 'galshemesh.local');
+  add(formats.withoutCountry, 'galshemesh.local');
+  add(formats.digitsOnly, 'galshemesh.local');
+
+  add(formats.withCountry, 'ronbarber.app');
+  add(formats.withoutCountry, 'ronbarber.app');
+  add(formats.digitsOnly, 'ronbarber.app');
+
+  add(formats.withCountry, 'temp.galshemesh.com');
+  add(formats.withoutCountry, 'temp.galshemesh.com');
+  add(formats.digitsOnly, 'temp.galshemesh.com');
+
+  return Array.from(candidates).filter(Boolean);
+};
+
 // Auth functions
 export const loginUser = async (email: string, password: string) => {
   try {
@@ -424,7 +489,7 @@ export const sendSMSVerification = async (phoneNumber: string) => {
 
     const messagingService = new MessagingService(messagingConfig);
 
-    const smsMessage = `קוד האימות שלך: ${verificationCode}\nתוקף 10 דקות\n- נאור עמר מספרה`;
+    const smsMessage = `קוד האימות שלך: ${verificationCode}\nתוקף 10 דקות\n- גל שמש מספרה`;
 
     const result = await messagingService.sendMessage({
       to: formattedPhone,
@@ -598,20 +663,16 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
     if (verificationId.startsWith('sms4free_')) {
       console.log('🔧 Using SMS4Free phone registration');
 
-      // CRITICAL FIX: Normalize phone number to consistent +972 format
-      const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
-      let normalizedPhone = phoneNumber;
-      if (cleanPhone.startsWith('0')) {
-        normalizedPhone = `+972${cleanPhone.substring(1)}`;
-      } else if (cleanPhone.startsWith('972')) {
-        normalizedPhone = `+${cleanPhone}`;
-      } else if (!phoneNumber.startsWith('+')) {
-        normalizedPhone = `+972${cleanPhone}`;
+      // Normalize phone formats once
+      const phoneFormats = derivePhoneFormats(phoneNumber);
+      if (!phoneFormats.withCountry) {
+        throw new Error('מספר הטלפון שהוזן אינו תקין.');
       }
+      const normalizedPhone = phoneFormats.normalizedPhone;
       console.log(`📱 Normalized phone from "${phoneNumber}" to "${normalizedPhone}"`);
 
-      // Use consistent format: 972523985505@ronbarber.app
-      const tempEmail = `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@ronbarber.app`;
+      // Use consistent format: 972508315000@galshemesh.app
+      const tempEmail = `${phoneFormats.withCountry}@galshemesh.app`;
       // Use the password chosen by the user, not a temporary one
       const userPassword = password;
 
@@ -780,14 +841,19 @@ export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exist
     console.log(`🔍 Checking if user exists for phone: ${phoneNumber}`);
 
     // Generate all possible phone formats
-    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
-    const possiblePhones = [
-      phoneNumber, // Original format
-      `+972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}`, // +972 format
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}`, // 972 format
-      `0${cleanPhone.startsWith('972') ? cleanPhone.substring(3) : cleanPhone}`, // 0 format
-      cleanPhone // Just numbers
-    ];
+    const phoneFormats = derivePhoneFormats(phoneNumber);
+    const possiblePhones = Array.from(
+      new Set(
+        [
+          phoneNumber,
+          phoneFormats.normalizedPhone,
+          phoneFormats.withCountry ? `+${phoneFormats.withCountry}` : undefined,
+          phoneFormats.withCountry,
+          phoneFormats.localLeadingZero,
+          phoneFormats.digitsOnly,
+        ].filter((value): value is string => !!value)
+      )
+    );
 
     console.log(`🔍 Trying phone formats:`, possiblePhones);
 
@@ -822,16 +888,7 @@ export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exist
     
     // If not found by phone, try to find by the auto-generated email
     console.log(`🔍 Phone search failed, trying email search for: ${phoneNumber}`);
-    const possibleEmails = [
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@ronbarber.app`, // Most common format
-      `${cleanPhone}@ronbarber.app`,
-      `${cleanPhone}@sms.barbershop.local`, // New SMS format
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@sms.barbershop.local`,
-      `${cleanPhone}@phonesign.local`,
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@phonesign.local`,
-      `${cleanPhone}@temp.turgi.com`, // Alternative format
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@temp.turgi.com`
-    ];
+    const possibleEmails = buildPhoneEmailCandidates(phoneFormats);
     
     console.log(`🔍 Trying email formats:`, possibleEmails);
     
@@ -878,7 +935,7 @@ export const setPasswordForSMSUser = async (phoneNumber: string, password: strin
     }
 
     // Create email from phone number for Firebase Auth
-    const tempEmail = `${phoneNumber.replace(/[^0-9]/g, '')}@temp.turgi.com`;
+    const tempEmail = `${phoneNumber.replace(/[^0-9]/g, '')}@temp.galshemesh.com`;
     
     try {
       // Try to create user with temp email and password
@@ -927,8 +984,56 @@ export const loginWithPhoneAndPassword = async (phoneNumber: string, password: s
     console.log(`🔐 Phone number: ${phoneNumber}`);
     console.log(`🔐 Password length: ${password.length}`);
 
-    // First, check if user exists in database
-    const userCheck = await checkPhoneUserExists(phoneNumber);
+    const phoneFormats = derivePhoneFormats(phoneNumber);
+    if (!phoneFormats.withCountry) {
+      throw new Error('מספר הטלפון שהוזן אינו תקין.');
+    }
+
+    const primaryEmail = `${phoneFormats.withCountry}@galshemesh.app`;
+
+    // Try direct login with the deterministic phone email first
+    let initialLoginError: any = null;
+    try {
+      console.log(`🎯 Attempting primary phone-email login: ${primaryEmail}`);
+      const userCredential = await signInWithEmailAndPassword(auth, primaryEmail, password);
+      console.log(`✅ Login successful with primary phone-email: ${primaryEmail}`);
+
+      await saveAuthDataAfterLogin(userCredential.user);
+
+      try {
+        await updateDoc(doc(db, 'users', userCredential.user.uid), {
+          email: primaryEmail,
+          phone: phoneFormats.normalizedPhone,
+          hasPassword: true,
+        });
+      } catch (docError) {
+        console.warn('⚠️ Unable to sync user profile after primary phone login:', docError);
+      }
+
+      return userCredential.user;
+    } catch (error: any) {
+      initialLoginError = error;
+      console.error(`❌ Primary phone-email login failed:`, error.code, error.message);
+
+      // Don't throw immediately - continue to check Firestore for actual email
+      // The user might have changed their email during password reset
+      if (error.code === 'auth/wrong-password') {
+        // Only throw for wrong password if we're sure about the email
+        console.log(`⚠️ Wrong password with primary email, will check Firestore for updated email`);
+      }
+
+      // Continue to check Firestore - don't throw for invalid-credential
+      // because the email might have been updated
+      if (error.code !== 'auth/user-not-found' && 
+          error.code !== 'auth/invalid-email' && 
+          error.code !== 'auth/invalid-credential' &&
+          error.code !== 'auth/wrong-password') {
+        throw error;
+      }
+    }
+
+    // Check if user exists in database and get their ACTUAL email
+    const userCheck = await checkPhoneUserExists(phoneFormats.normalizedPhone || phoneNumber);
     console.log(`📞 User check result:`, JSON.stringify(userCheck, null, 2));
 
     if (!userCheck.exists) {
@@ -976,17 +1081,7 @@ export const loginWithPhoneAndPassword = async (phoneNumber: string, password: s
 
     // Fallback: If no email in Firestore, try common formats (for old users)
     console.log(`⚠️ No email stored in Firestore, trying common formats (fallback for old users)`);
-    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
-    const possibleEmails = [
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@ronbarber.app`, // Most common format
-      `${cleanPhone}@ronbarber.app`,
-      `${cleanPhone}@sms.barbershop.local`,
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@sms.barbershop.local`,
-      `${cleanPhone}@phonesign.local`,
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@phonesign.local`,
-      `${cleanPhone}@temp.turgi.com`,
-      `972${cleanPhone.startsWith('0') ? cleanPhone.substring(1) : cleanPhone}@temp.turgi.com`
-    ];
+    const possibleEmails = buildPhoneEmailCandidates(phoneFormats);
 
     console.log(`🔍 Trying email formats for login:`, possibleEmails);
 
@@ -1051,6 +1146,246 @@ export const loginWithPhoneAndPassword = async (phoneNumber: string, password: s
   }
 };
 
+// Check if user exists by phone number (for password reset flow)
+export const checkUserExistsForPasswordReset = async (phoneNumber: string): Promise<{ exists: boolean; userId?: string; email?: string }> => {
+  try {
+    const phoneFormats = derivePhoneFormats(phoneNumber.trim());
+    const normalizedPhone = phoneFormats.normalizedPhone || phoneNumber.trim();
+    const userCheck = await checkPhoneUserExists(normalizedPhone);
+    
+    return {
+      exists: userCheck.exists,
+      userId: userCheck.uid,
+      email: userCheck.email // Return the email stored in Firestore
+    };
+  } catch (error) {
+    console.error('Error checking user for password reset:', error);
+    return { exists: false };
+  }
+};
+
+// Send password reset email to any email address
+export const sendPasswordResetToEmail = async (email: string): Promise<void> => {
+  try {
+    const normalizedEmail = email.toLowerCase().trim();
+    console.log(`📧 Attempting to send password reset email to: ${normalizedEmail}`);
+    
+    await sendPasswordResetEmail(auth, normalizedEmail);
+    console.log(`✅ Password reset email sent successfully to: ${normalizedEmail}`);
+  } catch (error: any) {
+    console.error(`❌ Failed to send password reset email to ${email}:`, error?.code, error?.message);
+    console.error(`❌ Full error details:`, JSON.stringify(error, null, 2));
+    
+    if (error?.code === 'auth/user-not-found') {
+      throw new Error('לא נמצא חשבון עם האימייל הזה במערכת ההזדהות. האימייל במערכת שלנו לא קשור לחשבון Firebase. אנא פנה לתמיכה.');
+    } else if (error?.code === 'auth/invalid-email') {
+      throw new Error('האימייל שהוזן אינו תקין. אנא בדוק את האימייל ונסה שוב.');
+    }
+    throw error;
+  }
+};
+
+export const initiatePasswordReset = async (identifier: string): Promise<string> => {
+  const trimmedIdentifier = identifier.trim();
+
+  if (!trimmedIdentifier) {
+    throw new Error('אנא הזן מספר טלפון כדי לאפס סיסמה.');
+  }
+
+  const sendResetForEmail = async (targetEmail: string) => {
+    try {
+      await sendPasswordResetEmail(auth, targetEmail);
+      console.log(`✅ Password reset email sent to: ${targetEmail}`);
+      return targetEmail;
+    } catch (error: any) {
+      console.error(`❌ Failed to send password reset email to ${targetEmail}:`, error?.code, error?.message);
+      // Don't throw here - let the caller handle it
+      throw error;
+    }
+  };
+
+  // If user entered an email, try it first (maybe they have a real email account)
+  if (trimmedIdentifier.includes('@')) {
+    try {
+      await sendResetForEmail(trimmedIdentifier.toLowerCase());
+      return trimmedIdentifier.toLowerCase();
+    } catch (error: any) {
+      // If email not found, ask for phone instead
+      if (error?.code === 'auth/user-not-found') {
+        throw new Error('לא נמצא חשבון עם האימייל הזה. אנא הזן את מספר הטלפון שלך במקום.');
+      }
+      throw error;
+    }
+  }
+
+  // Main flow: user entered phone number - check if user exists
+  const phoneFormats = derivePhoneFormats(trimmedIdentifier);
+  const normalizedPhone = phoneFormats.normalizedPhone || trimmedIdentifier;
+
+  const userCheck = await checkPhoneUserExists(normalizedPhone);
+
+  if (!userCheck.exists) {
+    throw new Error('USER_NOT_FOUND'); // Special error code to trigger email input
+  }
+  
+  // User exists - return special indicator to request email
+  return `USER_EXISTS:${normalizedPhone}`;
+
+  // Try the email from Firestore first if it exists
+  if (userCheck.email && userCheck.email.includes('@')) {
+    try {
+      await sendResetForEmail(userCheck.email);
+      return userCheck.email;
+    } catch (error: any) {
+      console.log(`⚠️ Email from Firestore failed, trying all formats...`);
+      // Continue to try all formats
+    }
+  }
+
+  // Try all possible email formats (auto-generated emails)
+  console.log('🔍 Trying all possible email formats for phone:', normalizedPhone);
+  const possibleEmails = buildPhoneEmailCandidates(phoneFormats);
+  
+  let lastError: any = null;
+  for (const email of possibleEmails) {
+    try {
+      console.log(`🔍 Trying password reset for email: ${email}`);
+      await sendPasswordResetEmail(auth, email);
+      console.log(`✅ Password reset email sent to: ${email}`);
+      return email;
+    } catch (error: any) {
+      console.log(`❌ Failed for ${email}:`, error?.code);
+      lastError = error;
+      // Continue to next email format
+      continue;
+    }
+  }
+
+  // If all email attempts failed, try sending SMS with reset link
+  // Generate a reset code and send via SMS
+  try {
+    console.log('📱 Email reset failed, trying SMS reset for phone:', normalizedPhone);
+    
+    // Generate a 6-digit reset code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetCodeId = `reset_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Store reset code in Firestore with expiration (10 minutes)
+    const resetCodeRef = doc(db, 'passwordResetCodes', resetCodeId);
+    await setDoc(resetCodeRef, {
+      phone: normalizedPhone,
+      code: resetCode,
+      userId: userCheck.uid,
+      createdAt: Timestamp.now(),
+      expiresAt: Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000)), // 10 minutes
+      used: false
+    });
+    
+    // Send SMS with reset code
+    const { MessagingService } = await import('../app/services/messaging/service');
+    const { messagingConfig } = await import('../app/config/messaging');
+    const messagingService = new MessagingService(messagingConfig);
+    
+    const smsMessage = `קוד איפוס סיסמה: ${resetCode}\nתוקף 10 דקות\nגל שמש מספרה`;
+    
+    const smsResult = await messagingService.sendMessage({
+      to: normalizedPhone,
+      message: smsMessage,
+      type: 'sms'
+    });
+    
+    if (smsResult.success) {
+      console.log('✅ Password reset SMS sent successfully');
+      return `SMS_SENT:${normalizedPhone}`; // Return special indicator for SMS
+    } else {
+      throw new Error('לא ניתן לשלוח SMS. אנא נסה שוב מאוחר יותר.');
+    }
+  } catch (smsError: any) {
+    console.error('❌ SMS reset failed:', smsError);
+    
+    // If all attempts failed, throw a helpful error
+    if (lastError?.code === 'auth/user-not-found') {
+      throw new Error('לא נמצא חשבון עם מספר הטלפון הזה. אנא בדקו את המספר או הירשמו מחדש.');
+    }
+    
+    throw new Error('לא ניתן לשלוח קישור איפוס. אנא נסה שוב מאוחר יותר או פנה לתמיכה.');
+  }
+};
+
+// Verify password reset code from SMS
+export const verifyPasswordResetCode = async (phoneNumber: string, code: string): Promise<{ valid: boolean; resetCodeId?: string; userId?: string }> => {
+  try {
+    const phoneFormats = derivePhoneFormats(phoneNumber.trim());
+    const normalizedPhone = phoneFormats.normalizedPhone || phoneNumber.trim();
+    
+    // Find reset code in Firestore
+    const resetCodesRef = collection(db, 'passwordResetCodes');
+    const q = query(
+      resetCodesRef,
+      where('phone', '==', normalizedPhone),
+      where('code', '==', code),
+      where('used', '==', false)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      return { valid: false };
+    }
+    
+    const resetCodeDoc = querySnapshot.docs[0];
+    const resetCodeData = resetCodeDoc.data();
+    
+    // Check if code expired
+    const expiresAt = resetCodeData.expiresAt?.toDate();
+    if (!expiresAt || expiresAt < new Date()) {
+      return { valid: false };
+    }
+    
+    return {
+      valid: true,
+      resetCodeId: resetCodeDoc.id,
+      userId: resetCodeData.userId
+    };
+  } catch (error) {
+    console.error('Error verifying reset code:', error);
+    return { valid: false };
+  }
+};
+
+// Reset password using SMS code
+export const resetPasswordWithCode = async (phoneNumber: string, code: string, newPassword: string): Promise<void> => {
+  try {
+    const verification = await verifyPasswordResetCode(phoneNumber, code);
+    
+    if (!verification.valid || !verification.resetCodeId || !verification.userId) {
+      throw new Error('קוד איפוס לא תקין או שפג תוקפו');
+    }
+    
+    // Get user profile to find email
+    const userProfile = await getUserProfile(verification.userId);
+    if (!userProfile || !userProfile.email) {
+      throw new Error('לא נמצא אימייל למשתמש');
+    }
+    
+    // Update password using Firebase Auth
+    // Note: Firebase doesn't have direct password update, so we need to use the reset link
+    // For now, we'll mark the code as used and guide user to use email reset
+    await updateDoc(doc(db, 'passwordResetCodes', verification.resetCodeId), {
+      used: true,
+      usedAt: Timestamp.now()
+    });
+    
+    // Try to send password reset email as fallback
+    await sendPasswordResetEmail(auth, userProfile.email);
+    
+    throw new Error('קישור איפוס סיסמה נשלח לאימייל שלך. אנא השתמש בקישור כדי לאפס את הסיסמה.');
+  } catch (error: any) {
+    console.error('Error resetting password with code:', error);
+    throw error;
+  }
+};
+
 // New function to set password for phone user
 export const setPasswordForPhoneUser = async (phoneNumber: string, password: string) => {
   try {
@@ -1065,7 +1400,7 @@ export const setPasswordForPhoneUser = async (phoneNumber: string, password: str
     }
 
     // Create email from phone number for Firebase Auth
-    const email = `${phoneNumber.replace(/[^0-9]/g, '')}@phonesign.local`;
+    const email = `${phoneNumber.replace(/[^0-9]/g, '')}@galshemesh.local`;
     
     // Link email/password credential to existing phone user
     const emailCredential = EmailAuthProvider.credential(email, password);
@@ -1259,47 +1594,18 @@ export const deleteCustomer = async (userId: string): Promise<{ success: boolean
 // Barbers functions
 export const getBarbers = async (useCache: boolean = false): Promise<Barber[]> => {
   try {
-    // DISABLE cache for barbers to ensure fresh data
-    console.log('🔄 Loading fresh barber data (no cache)');
-
     const querySnapshot = await getDocs(collection(db, 'barbers'));
     const barbers: Barber[] = [];
-    
+
     querySnapshot.forEach((doc) => {
-      const barberData = { id: doc.id, ...doc.data() } as Barber;
-      // ONLY show Ron Turgeman - be very strict
-      const name = barberData.name?.toLowerCase() || '';
-      if (name.includes('רון') || 
-          name.includes('ron') || 
-          name.includes('תורג') || 
-          name.includes('turg') ||
-          barberData.id === 'ron-turgeman' ||
-          barberData.name === 'רון תורג׳מן' ||
-          barberData.name === 'Ron Turgeman') {
-        barbers.push(barberData);
-      }
+      barbers.push({ id: doc.id, ...doc.data() } as Barber);
     });
 
-    // If no Ron found, create a default one
-    if (barbers.length === 0) {
-      console.log('🔧 No Ron found, creating default barber');
-      const defaultRon: Barber = {
-        id: 'ron-turgeman-default',
-        name: 'רון תורג׳מן',
-        image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&h=300&fit=crop&crop=face',
-        specialties: ['תספורת גברים', 'עיצוב זקן', 'תספורת ילדים'],
-        experience: '10+ שנות ניסיון',
-        rating: 5,
-        available: true,
-        pricing: {},
-        phone: '+972542280222',
-        photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&h=300&fit=crop&crop=face'
-      };
-      barbers.push(defaultRon);
-    }
-    
-    console.log('✅ Returning', barbers.length, 'barber(s): Ron Turgeman only');
-    
+    // Sort barbers alphabetically to provide consistent ordering
+    barbers.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
+
+    console.log('✅ Returning', barbers.length, 'barber(s) from Firestore');
+
     return barbers;
   } catch (error) {
     console.error('Error getting barbers:', error);
@@ -1363,7 +1669,7 @@ export const getTreatments = async (useCache: boolean = true): Promise<Treatment
 // Appointments functions
 export const createAppointment = async (appointmentData: Omit<Appointment, 'id' | 'createdAt'>) => {
   try {
-    // Validate duration is a multiple of 25 minutes
+    // Validate duration is a multiple of 5 minutes (minimum 5)
     if (appointmentData.duration && !isValidDuration(appointmentData.duration)) {
       throw new Error(`Duration must be a multiple of ${SLOT_SIZE_MINUTES} minutes. Got: ${appointmentData.duration} minutes`);
     }
@@ -1384,6 +1690,47 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
       await sendNotificationToUser(appointmentData.userId, 'תור חדש נוצר! 📅', `התור שלך נוצר בהצלחה. תאריך: ${dateStr}`, { appointmentId: docRef.id });
     } catch (notificationError) {
       console.log('Failed to send appointment notification:', notificationError);
+    }
+    
+    // Send SMS confirmation to user
+    try {
+      const userProfile = await getUserProfile(appointmentData.userId);
+      if (userProfile && userProfile.phone) {
+        const dateVal: any = appointmentData.date as any;
+        const asDate = typeof dateVal?.toDate === 'function' ? dateVal.toDate() : new Date(dateVal);
+        const dateStr = asDate.toLocaleDateString('he-IL');
+        const timeStr = asDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        
+        // Get barber and treatment names
+        let barberName = 'הספר';
+        let treatmentName = 'הטיפול';
+        try {
+          if (appointmentData.barberId) {
+            const barber = await getBarber(appointmentData.barberId);
+            if (barber) barberName = barber.name;
+          }
+          if (appointmentData.treatmentId) {
+            const treatments = await getTreatments();
+            const treatment = treatments.find(t => t.id === appointmentData.treatmentId);
+            if (treatment) treatmentName = treatment.name;
+          }
+        } catch (e) {
+          console.log('Could not fetch barber/treatment details for SMS');
+        }
+        
+        // Create SMS message (keep it short for SMS4Free - max 70 chars)
+        const smsMessage = `תור אושר! 📅\n${dateStr} ${timeStr}\n${barberName} - ${treatmentName}\nגל שמש מספרה`;
+        const shortMessage = smsMessage.length > 70 ? smsMessage.substring(0, 67) + '...' : smsMessage;
+        
+        console.log('📱 Sending SMS confirmation to:', userProfile.phone);
+        await sendSMSReminder(userProfile.phone, shortMessage);
+        console.log('✅ SMS confirmation sent successfully');
+      } else {
+        console.log('⚠️ User has no phone number, skipping SMS confirmation');
+      }
+    } catch (smsError) {
+      console.error('❌ Failed to send SMS confirmation:', smsError);
+      // Don't throw - SMS failure shouldn't prevent appointment creation
     }
     
     // Send notification to admin about new appointment
@@ -1412,6 +1759,79 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
       console.log('✅ Admin notification sent for new appointment');
     } catch (adminNotificationError) {
       console.log('❌ Failed to send admin notification:', adminNotificationError);
+    }
+    
+    // Send WhatsApp message to barber about new appointment
+    try {
+      if (appointmentData.barberId) {
+        const barber = await getBarber(appointmentData.barberId);
+        if (barber && barber.phone) {
+          const dateVal: any = appointmentData.date as any;
+          const asDate = typeof dateVal?.toDate === 'function' ? dateVal.toDate() : new Date(dateVal);
+          const dateStr = asDate.toLocaleDateString('he-IL');
+          const timeStr = asDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+          
+          // Get customer and treatment details
+          let customerName = 'לקוח';
+          let treatmentName = 'טיפול';
+          try {
+            const customerDoc = await getDoc(doc(db, 'users', appointmentData.userId));
+            if (customerDoc.exists()) {
+              customerName = customerDoc.data().displayName || customerDoc.data().name || 'לקוח';
+            }
+            if (appointmentData.treatmentId) {
+              const treatments = await getTreatments();
+              const treatment = treatments.find(t => t.id === appointmentData.treatmentId);
+              if (treatment) treatmentName = treatment.name;
+            }
+          } catch (e) {
+            console.log('Could not fetch customer/treatment details for WhatsApp');
+          }
+          
+          // Format phone number for WhatsApp (remove dashes, ensure country code)
+          let barberPhone = barber.phone.replace(/[-\s]/g, ''); // Remove dashes and spaces
+          if (!barberPhone.startsWith('+')) {
+            if (barberPhone.startsWith('0')) {
+              barberPhone = '+972' + barberPhone.substring(1); // Convert 052... to +97252...
+            } else {
+              barberPhone = '+972' + barberPhone; // Add country code
+            }
+          }
+          
+          const whatsappMessage = `תור חדש! 📅\n\nלקוח: ${customerName}\nטיפול: ${treatmentName}\nתאריך: ${dateStr}\nשעה: ${timeStr}\nמשך: ${appointmentData.duration || 30} דקות\n\nגל שמש מספרה`;
+          
+          console.log('📱 Sending WhatsApp to barber:', barberPhone);
+          console.log('📱 Message:', whatsappMessage);
+          
+          // Use messaging service to send WhatsApp
+          const { MessagingService } = await import('../app/services/messaging/service');
+          const { messagingConfig } = await import('../app/config/messaging');
+          const messagingService = new MessagingService(messagingConfig);
+          const result = await messagingService.sendMessage({
+            to: barberPhone,
+            message: whatsappMessage,
+            type: 'whatsapp'
+          });
+          
+          if (result.success) {
+            console.log('✅ WhatsApp sent to barber successfully');
+          } else {
+            console.log('⚠️ WhatsApp failed, trying SMS:', result.error);
+            // Fallback to SMS if WhatsApp fails
+            try {
+              await sendSMSReminder(barber.phone, whatsappMessage);
+              console.log('✅ SMS sent to barber as fallback');
+            } catch (smsError) {
+              console.error('❌ Failed to send SMS to barber:', smsError);
+            }
+          }
+        } else {
+          console.log('⚠️ Barber has no phone number, skipping WhatsApp/SMS');
+        }
+      }
+    } catch (whatsappError) {
+      console.error('❌ Failed to send WhatsApp to barber:', whatsappError);
+      // Don't throw - WhatsApp failure shouldn't prevent appointment creation
     }
     
     // Schedule LOCAL notification reminders ONLY (removed Firestore-based reminders to avoid duplicates)
@@ -1491,6 +1911,46 @@ export const updateAppointment = async (appointmentId: string, updates: Partial<
                 await sendAppointmentConfirmationToAdmin(appointmentId);
               } catch (adminNotificationError) {
                 console.log('Failed to send appointment confirmation to admin:', adminNotificationError);
+              }
+              // Send SMS confirmation to user
+              try {
+                const userProfile = await getUserProfile(appointmentData.userId);
+                if (userProfile && userProfile.phone) {
+                  const dateVal: any = appointmentData.date as any;
+                  const asDate = typeof dateVal?.toDate === 'function' ? dateVal.toDate() : new Date(dateVal);
+                  const dateStr = asDate.toLocaleDateString('he-IL');
+                  const timeStr = asDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                  
+                  // Get barber and treatment names
+                  let barberName = 'הספר';
+                  let treatmentName = 'הטיפול';
+                  try {
+                    if (appointmentData.barberId) {
+                      const barber = await getBarber(appointmentData.barberId);
+                      if (barber) barberName = barber.name;
+                    }
+                    if (appointmentData.treatmentId) {
+                      const treatments = await getTreatments();
+                      const treatment = treatments.find(t => t.id === appointmentData.treatmentId);
+                      if (treatment) treatmentName = treatment.name;
+                    }
+                  } catch (e) {
+                    console.log('Could not fetch barber/treatment details for SMS');
+                  }
+                  
+                  // Create SMS message (keep it short for SMS4Free - max 70 chars)
+                  const smsMessage = `תור אושר! ✅\n${dateStr} ${timeStr}\n${barberName} - ${treatmentName}\nגל שמש מספרה`;
+                  const shortMessage = smsMessage.length > 70 ? smsMessage.substring(0, 67) + '...' : smsMessage;
+                  
+                  console.log('📱 Sending SMS confirmation to:', userProfile.phone);
+                  await sendSMSReminder(userProfile.phone, shortMessage);
+                  console.log('✅ SMS confirmation sent successfully');
+                } else {
+                  console.log('⚠️ User has no phone number, skipping SMS confirmation');
+                }
+              } catch (smsError) {
+                console.error('❌ Failed to send SMS confirmation:', smsError);
+                // Don't throw - SMS failure shouldn't prevent appointment update
               }
               break;
             case 'completed':
@@ -1868,12 +2328,13 @@ export const deleteGalleryImage = async (imageId: string) => {
 // Treatment management functions
 export const addTreatment = async (treatmentData: Omit<Treatment, 'id'>) => {
   try {
-    // Validate duration is a multiple of 25 minutes
+    // Validate duration is a multiple of 5 minutes (minimum 5)
     if (treatmentData.duration && !isValidDuration(treatmentData.duration)) {
       throw new Error(`Treatment duration must be a multiple of ${SLOT_SIZE_MINUTES} minutes. Got: ${treatmentData.duration} minutes`);
     }
     
     const docRef = await addDoc(collection(db, 'treatments'), treatmentData);
+    await CacheUtils.clearTreatments();
     
     // Send notification about new treatment
     try {
@@ -1890,13 +2351,14 @@ export const addTreatment = async (treatmentData: Omit<Treatment, 'id'>) => {
 
 export const updateTreatment = async (treatmentId: string, updates: Partial<Treatment>) => {
   try {
-    // Validate duration is a multiple of 25 minutes if being updated
+    // Validate duration is a multiple of 5 minutes (minimum 5) if being updated
     if (updates.duration && !isValidDuration(updates.duration)) {
       throw new Error(`Treatment duration must be a multiple of ${SLOT_SIZE_MINUTES} minutes. Got: ${updates.duration} minutes`);
     }
     
     const docRef = doc(db, 'treatments', treatmentId);
     await updateDoc(docRef, updates);
+    await CacheUtils.clearTreatments();
   } catch (error) {
     throw error;
   }
@@ -1905,6 +2367,7 @@ export const updateTreatment = async (treatmentId: string, updates: Partial<Trea
 export const deleteTreatment = async (treatmentId: string) => {
   try {
     await deleteDoc(doc(db, 'treatments', treatmentId));
+    await CacheUtils.clearTreatments();
   } catch (error) {
     throw error;
   }
@@ -1914,6 +2377,7 @@ export const deleteTreatment = async (treatmentId: string) => {
 export const addBarberProfile = async (barberData: Omit<Barber, 'id'>) => {
   try {
     const docRef = await addDoc(collection(db, 'barbers'), barberData);
+    await CacheUtils.clearBarbers();
     
     // Send notification about new barber
     try {
@@ -1932,6 +2396,7 @@ export const updateBarberProfile = async (barberId: string, updates: Partial<Bar
   try {
     const docRef = doc(db, 'barbers', barberId);
     await updateDoc(docRef, updates);
+    await CacheUtils.clearBarbers();
   } catch (error) {
     throw error;
   }
@@ -1940,6 +2405,7 @@ export const updateBarberProfile = async (barberId: string, updates: Partial<Bar
 export const deleteBarberProfile = async (barberId: string) => {
   try {
     await deleteDoc(doc(db, 'barbers', barberId));
+    await CacheUtils.clearBarbers();
   } catch (error) {
     throw error;
   }
@@ -2014,9 +2480,18 @@ export const getAllStorageImages = async () => {
 export const uploadImageToStorage = async (
   imageUri: string, 
   folderPath: string, 
-  fileName: string
+  fileName: string,
+  mimeType?: string
 ): Promise<string> => {
   try {
+    // Wait for auth to be ready
+    await new Promise((resolve) => {
+      const unsubscribe = auth.onAuthStateChanged((user) => {
+        unsubscribe();
+        resolve(user);
+      });
+    });
+
     const user = auth.currentUser;
     if (!user) {
       throw new Error('User must be authenticated to upload images');
@@ -2025,6 +2500,28 @@ export const uploadImageToStorage = async (
     console.log('📤 Starting image upload:', imageUri);
     console.log('📁 Target folder:', folderPath);
     console.log('📝 File name:', fileName);
+    console.log('👤 Current user:', user.uid, user.email);
+    
+    // Check if user is admin in Firestore (for debugging)
+    try {
+      const userProfile = await getUserProfile(user.uid);
+      console.log('👨‍💼 User profile:', {
+        isAdmin: userProfile?.isAdmin || false,
+        displayName: userProfile?.displayName || 'N/A'
+      });
+    } catch (profileError) {
+      console.warn('⚠️ Could not check user profile:', profileError);
+    }
+    
+    // Get fresh token to ensure authentication
+    try {
+      const token = await user.getIdToken(true); // Force refresh
+      console.log('🔑 User token refreshed:', !!token);
+      console.log('🔑 Token length:', token.length);
+    } catch (tokenError) {
+      console.error('❌ Error getting token:', tokenError);
+      throw new Error('Failed to get authentication token');
+    }
     
     // Create reference
     const imageRef = ref(storage, `${folderPath}/${fileName}`);
@@ -2056,7 +2553,27 @@ export const uploadImageToStorage = async (
     });
     
     console.log('✅ Blob created, uploading to Firebase Storage...');
-    await uploadBytes(imageRef, blob);
+    
+    // Determine content type from mimeType or file extension
+    let contentType = 'image/jpeg'; // default
+    if (mimeType) {
+      contentType = mimeType;
+    } else if (fileName.toLowerCase().endsWith('.png')) {
+      contentType = 'image/png';
+    } else if (fileName.toLowerCase().endsWith('.jpg') || fileName.toLowerCase().endsWith('.jpeg')) {
+      contentType = 'image/jpeg';
+    } else if (fileName.toLowerCase().endsWith('.webp')) {
+      contentType = 'image/webp';
+    }
+    
+    console.log('📄 Content type:', contentType);
+    
+    // Set content type metadata for the upload
+    const metadata: UploadMetadata = {
+      contentType: contentType,
+    };
+    
+    await uploadBytes(imageRef, blob, metadata);
     console.log('✅ Upload complete, getting download URL...');
     
     // Get download URL
@@ -2600,6 +3117,15 @@ export const replaceGalleryPlaceholders = async () => {
 // Initialize gallery with default images
 export const initializeGalleryImages = async () => {
   try {
+    // Check if user is signed in
+    const { auth } = await import('../config/firebase');
+    const currentUser = auth.currentUser;
+    
+    if (!currentUser) {
+      console.log('⚠️ User not signed in, skipping gallery initialization');
+      return;
+    }
+    
     // Check if gallery already has images
     const existingImages = await getGalleryImages();
     
@@ -2653,10 +3179,10 @@ export const initializeGalleryImages = async () => {
       await addGalleryImage(imageData);
     }
     
-    console.log('Gallery initialized with', defaultGalleryImages.length, 'images');
+    console.log('✅ Gallery initialized with', defaultGalleryImages.length, 'images');
   } catch (error) {
-    console.error('Error initializing gallery images:', error);
-    throw error;
+    console.error('❌ Error initializing gallery images:', error);
+    // Don't throw - just log the error so app continues
   }
 };
 
@@ -3144,6 +3670,8 @@ export const replaceAppGalleryImage = async (oldImageUrl: string, newImageUri: s
 };
 
 // Push Notification functions
+// Note: This function now only checks permissions, does not request them
+// Permissions should be requested explicitly by user action (e.g., button press)
 export const registerForPushNotifications = async (userId: string) => {
   try {
     // Check if device supports notifications
@@ -3152,18 +3680,11 @@ export const registerForPushNotifications = async (userId: string) => {
       return null;
     }
 
-    // Check existing permissions
+    // Check existing permissions (don't request)
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
 
-    // Request permissions if not granted
     if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus !== 'granted') {
-      console.log('❌ Failed to get push notification permissions');
+      console.log('❌ Push notification permissions not granted - user must enable notifications first');
       return null;
     }
 
@@ -4303,6 +4824,39 @@ export const createTestNotification = async (userId: string, type: 'appointment'
     return true;
   } catch (error) {
     console.error('Error creating test notification:', error);
+    return false;
+  }
+};
+
+// Delete old notifications (older than specified hours)
+export const deleteOldNotifications = async (userId: string, hoursOld: number = 6): Promise<boolean> => {
+  try {
+    const notificationsRef = collection(db, 'notifications');
+    const cutoffTime = new Date();
+    cutoffTime.setHours(cutoffTime.getHours() - hoursOld);
+    
+    const q = query(
+      notificationsRef, 
+      where('userId', '==', userId),
+      where('createdAt', '<', cutoffTime)
+    );
+    
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) {
+      return true;
+    }
+    
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    await batch.commit();
+    console.log(`Deleted ${snapshot.size} old notifications for user ${userId}`);
+    return true;
+  } catch (error) {
+    console.error('Error deleting old notifications:', error);
     return false;
   }
 };

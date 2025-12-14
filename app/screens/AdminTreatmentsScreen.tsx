@@ -219,9 +219,9 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
 
     const duration = parseInt(formData.duration);
     
-    // Validate duration is a multiple of 20 minutes
+    // Validate duration is a multiple of slot size minutes (5 minutes)
     if (!isValidDuration(duration)) {
-      showToast(`משך הטיפול חייב להיות כפולה של ${SLOT_SIZE_MINUTES} דקות (20, 40, 60, 80, וכו')`, 'error');
+      showToast(`משך הטיפול חייב להיות כפולה של ${SLOT_SIZE_MINUTES} דקות (5, 10, 15, 20, 25, 30, וכו')`, 'error');
       return;
     }
 

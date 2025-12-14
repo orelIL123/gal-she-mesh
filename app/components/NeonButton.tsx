@@ -20,16 +20,16 @@ export const NeonButton: React.FC<NeonButtonProps> = ({
   style,
   textStyle,
 }) => {
-  const getGradientColors = (): [string, string] => {
+  const getGradientColors = (): [string, string, string] => {
     switch (variant) {
       case 'secondary':
-        return [colors.neonPurple, colors.neonPink];
+        return [colors.neonPurple, colors.neonPink, colors.neonPurple];
       case 'success':
-        return [colors.neonGreen, colors.success];
+        return [colors.barberGoldLight, colors.barberGold, colors.barberGoldDark];
       case 'warning':
-        return [colors.warning, colors.neonPink];
+        return [colors.warning, colors.neonPink, colors.warning];
       default:
-        return [colors.neonBlue, colors.gradientEnd];
+        return [colors.barberGoldLight, colors.barberGold, colors.barberGoldDeep];
     }
   };
 
@@ -54,17 +54,18 @@ export const NeonButton: React.FC<NeonButtonProps> = ({
         colors={getGradientColors()}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
+        locations={[0, 0.5, 1]}
         style={{
           paddingHorizontal: 24,
           paddingVertical: 16,
           borderRadius: 12,
           alignItems: 'center',
           justifyContent: 'center',
-          shadowColor: getGradientColors()[0],
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.6,
-          shadowRadius: 16,
-          elevation: 12,
+          shadowColor: getGradientColors()[1],
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.7,
+          shadowRadius: 20,
+          elevation: 15,
         }}
       >
         <Text

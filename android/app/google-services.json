@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "246646930767",
-    "project_id": "barber-app-template",
-    "storage_bucket": "barber-app-template.firebasestorage.app"
+    "project_number": "1007787228112",
+    "project_id": "gal-shemesh",
+    "storage_bucket": "gal-shemesh.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:246646930767:android:00325447393d15bdf2193a",
+        "mobilesdk_app_id": "1:1007787228112:android:43b4cce0387c46fdffd7d5",
         "android_client_info": {
-          "package_name": "com.orelaharon.rontugemanbarber"
+          "package_name": "com.galshemesh.app"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBh3LrIWAsy6ZgzWVir2rr2L0cktqoMvwc"
+          "current_key": "AIzaSyCdwwaXzbb-BvME7dd1OICgvkVr6ee_0tU"
         }
       ],
       "services": {
@@ -26,4 +26,4 @@
     }
   ],
   "configuration_version": "1"
-} 
+}

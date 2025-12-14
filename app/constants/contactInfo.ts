@@ -1,8 +1,8 @@
 export const CONTACT_INFO = {
-  contactText: 'רון תורגמן - מספרה מקצועית\nטלפון: 054-228-0222',
-  email: 'info@ronturgeman.co.il',
-  phone: '054-228-0222',
-  whatsapp: '972542280222',
-  address: 'רחוב הדוגמה 123, תל אביב',
-  businessName: 'רון תורגמן - מספרה מקצועית'
+  contactText: 'גל שמש - מספרה מקצועית\nטלפון: 052-221-0281',
+  email: 'Galshemesh76@gmail.com',
+  phone: '052-221-0281',
+  whatsapp: '972522210281',
+  address: 'החמישה 21 פתח תקווה',
+  businessName: 'גל שמש - מספרה מקצועית'
 };

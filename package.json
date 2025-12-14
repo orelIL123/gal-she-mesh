@@ -15,7 +15,10 @@
     "build:android:production": "eas build --platform android --profile production",
     "update": "eas update",
     "update:preview": "eas update --branch preview",
-    "update:production": "eas update --branch production"
+    "update:production": "eas update --branch production",
+    "import-users": "ts-node scripts/bulkImportLegacyUsers.ts",
+    "auto-import": "ts-node scripts/autoImportWithSMS.ts",
+    "setup-firebase-ultra": "node scripts/setup-firebase-ultra.js"
   },
   "dependencies": {
     "@expo-google-fonts/playfair-display": "^0.4.1",
@@ -27,7 +30,7 @@
     "@react-navigation/native": "^7.1.6",
     "@react-navigation/native-stack": "^7.3.10",
     "@react-navigation/stack": "^7.4.2",
-    "expo": "~53.0.23",
+    "expo": "~53.0.24",
     "expo-blur": "~14.1.5",
     "expo-constants": "~17.1.7",
     "expo-device": "^7.1.4",
@@ -39,7 +42,7 @@
     "expo-linear-gradient": "~14.1.5",
     "expo-linking": "~7.1.7",
     "expo-notifications": "^0.31.4",
-    "expo-router": "~5.1.7",
+    "expo-router": "~5.1.8",
     "expo-splash-screen": "~0.30.10",
     "expo-status-bar": "~2.2.3",
     "expo-symbols": "~0.4.5",
@@ -70,11 +73,11 @@
     "dotenv": "^17.2.3",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~9.2.0",
-    "firebase-admin": "^13.5.0",
+    "firebase-admin": "^13.6.0",
     "tailwindcss": "^3.4.17",
     "ts-node": "^10.9.2",
     "typescript": "~5.8.3"
   },
   "private": true,
-  "description": "naor amar - naor amar Booking App"
+  "description": "gal shemesh - gal shemesh Booking App"
 }

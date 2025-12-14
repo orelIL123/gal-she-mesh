@@ -42,11 +42,11 @@ const styles = StyleSheet.create({
     lineHeight: 28,
   },
   button: {
-    backgroundColor: '#8b4513',
+    backgroundColor: '#FFD700',
     paddingVertical: 18,
     paddingHorizontal: 40,
     borderRadius: 32,
-    shadowColor: '#8b4513',
+    shadowColor: '#FFD700',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
