@@ -28,6 +28,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.galshemesh.app",
+      "versionCode": 2,
       "googleServicesFile": "./app/google-services.json",
       "permissions": [
         "android.permission.READ_EXTERNAL_STORAGE",

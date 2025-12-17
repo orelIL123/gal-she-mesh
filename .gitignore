@@ -46,6 +46,11 @@ naorbaruch-*.json
 *-firebase-adminsdk-*.json
 google-services-*.json
 
+# Google Play Service Account (NEVER COMMIT THIS!)
+google-play-service-account.json
+*-service-account.json
+**/google-play-service-account.json
+
 # Scripts output (contains passwords!)
 scripts/output/
 scripts/*.csv

@@ -56,3 +56,5 @@ git push -u origin main
 echo ""
 echo "✅ הושלם! הפרויקט נדחף ל-GitHub:"
 echo "   https://github.com/orelIL123/gal-she-mesh"
+
+
