@@ -59,3 +59,4 @@ echo "   eas submit --platform android --profile production --latest"
 echo ""
 echo "📖 לפרטים נוספים, ראה: GOOGLE_PLAY_SETUP.md"
 
+

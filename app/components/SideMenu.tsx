@@ -149,6 +149,16 @@ const SideMenu: React.FC<SideMenuProps> = ({ visible, onClose, onNavigate, onNot
                       </Text>
                       {i18n.language === 'en' && <Ionicons name="checkmark" size={20} color="#FFD700" />}
                     </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.languageOption, i18n.language === 'ar' && styles.activeLanguage]}
+                      onPress={() => handleLanguageChange('ar')}
+                    >
+                      <Text style={[styles.languageText, i18n.language === 'ar' && styles.activeLanguageText]}>
+                        {t('settings.arabic')}
+                      </Text>
+                      {i18n.language === 'ar' && <Ionicons name="checkmark" size={20} color="#FFD700" />}
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>

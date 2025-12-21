@@ -78,3 +78,4 @@ echo "   ✅ iOS Build Number: $IOS_BUILD"
 echo "   ✅ Android Version Code: $ANDROID_VERSION_CODE"
 echo "   ✅ Version: $VERSION (זהה בשניהם)"
 
+

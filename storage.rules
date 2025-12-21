@@ -38,61 +38,71 @@ service firebase.storage {
     // Gallery images - allow authenticated users to upload (admin screen)
     match /gallery/{allPaths=**} {
       allow read: if true;
-      // Allow authenticated admins to upload
-      allow write: if isAdmin() && isValidImage();
+      // Allow authenticated admins to upload and delete
+      allow create, update: if isAdmin() && isValidImage();
+      allow delete: if isAdmin();
     }
     
     // Barber/Worker images
     match /barbers/{allPaths=**} {
       allow read: if true;
-      allow write: if (isBarber() || isAdmin()) && isValidImage();
+      allow create, update: if (isBarber() || isAdmin()) && isValidImage();
+      allow delete: if (isBarber() || isAdmin());
     }
-    
+
     match /workers/{allPaths=**} {
       allow read: if true;
-      allow write: if (isBarber() || isAdmin()) && isValidImage();
+      allow create, update: if (isBarber() || isAdmin()) && isValidImage();
+      allow delete: if (isBarber() || isAdmin());
     }
-    
+
     // Backgrounds
     match /backgrounds/{allPaths=**} {
       allow read: if true;
-      allow write: if isAdmin() && isValidImage();
+      allow create, update: if isAdmin() && isValidImage();
+      allow delete: if isAdmin();
     }
-    
+
     // Splash screens
     match /splash/{allPaths=**} {
       allow read: if true;
-      allow write: if isAdmin() && isValidImage();
+      allow create, update: if isAdmin() && isValidImage();
+      allow delete: if isAdmin();
     }
-    
+
     // About Us images
     match /aboutus/{allPaths=**} {
       allow read: if true;
-      allow write: if isAdmin() && isValidImage();
+      allow create, update: if isAdmin() && isValidImage();
+      allow delete: if isAdmin();
     }
 
     // App images (settings-managed images, gallery, etc.)
     match /app-images/{allPaths=**} {
       allow read: if true;
-      allow write: if isAdmin() && isValidImage();
+      allow create, update: if isAdmin() && isValidImage();
+      allow delete: if isAdmin();
     }
-    
+
     // Shop images
     match /shop/{allPaths=**} {
       allow read: if true;
-      allow write: if isAdmin() && isValidImage();
+      allow create, update: if isAdmin() && isValidImage();
+      allow delete: if isAdmin();
     }
-    
+
     // Treatment images
     match /treatments/{allPaths=**} {
       allow read: if true;
-      allow write: if isAdmin() && isValidImage();
+      allow create, update: if isAdmin() && isValidImage();
+      allow delete: if isAdmin();
     }
-    
+
     // Business assets
     match /business/{allPaths=**} {
       allow read: if true;
-      allow write: if isAdminSafe() && isValidImage();
+      allow create, update: if isAdminSafe() && isValidImage();
+      allow delete: if isAdminSafe();
     }
   }
 }

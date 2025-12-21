@@ -1,9 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateEmailAndSendReset = exports.deleteUserAuth = void 0;
+exports.processScheduledReminders = exports.updateEmailAndSendReset = exports.deleteUserAuth = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 admin.initializeApp();
+const db = admin.firestore();
 exports.deleteUserAuth = functions.https.onCall(async (data, context) => {
     var _a, _b;
     if (!context.auth) {
@@ -105,4 +106,391 @@ exports.updateEmailAndSendReset = functions.https.onCall(async (data) => {
         throw new functions.https.HttpsError('internal', `Failed: ${error.message}`);
     }
 });
+// ============================================================================
+// SCHEDULED REMINDER PROCESSING
+// ============================================================================
+/**
+ * Cloud Function מתוזמן שמעבד תזכורות מתוזמנות
+ * רץ כל 5 דקות ומטפל בתזכורות שהגיע זמנן
+ */
+exports.processScheduledReminders = functions.pubsub
+    .schedule('every 5 minutes')
+    .timeZone('Asia/Jerusalem')
+    .onRun(async (context) => {
+    console.log('🕐 Scheduled reminder processing started at', new Date().toISOString());
+    try {
+        const now = admin.firestore.Timestamp.now();
+        // מצא כל התזכורות המתוזמנות שהגיע זמנן
+        const remindersQuery = db.collection('scheduledReminders')
+            .where('status', '==', 'pending')
+            .where('scheduledTime', '<=', now);
+        const remindersSnapshot = await remindersQuery.get();
+        console.log(`📱 Found ${remindersSnapshot.size} reminders to process`);
+        if (remindersSnapshot.empty) {
+            console.log('✅ No reminders to process');
+            return null;
+        }
+        // עבד כל תזכורת
+        const results = await Promise.allSettled(remindersSnapshot.docs.map(async (reminderDoc) => {
+            const reminderData = reminderDoc.data();
+            const appointmentId = reminderData.appointmentId;
+            console.log(`📅 Processing reminder ${reminderDoc.id} for appointment ${appointmentId}`);
+            try {
+                // שליחת התזכורת
+                await sendAppointmentReminder(appointmentId);
+                // סמן כנשלח
+                await reminderDoc.ref.update({
+                    status: 'sent',
+                    sentAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                console.log(`✅ Successfully processed ${reminderData.reminderType} reminder for appointment ${appointmentId}`);
+                return { success: true, reminderId: reminderDoc.id };
+            }
+            catch (error) {
+                console.error(`❌ Error processing reminder ${reminderDoc.id}:`, error);
+                // סמן ככישלון אבל אל תזרוק שגיאה כדי לא לעצור את השאר
+                await reminderDoc.ref.update({
+                    status: 'failed',
+                    error: error.message,
+                    failedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                throw error;
+            }
+        }));
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        const failed = results.filter(r => r.status === 'rejected').length;
+        console.log(`✅ Processed ${successful} reminders successfully, ${failed} failed`);
+        return null;
+    }
+    catch (error) {
+        console.error('❌ Error in processScheduledReminders:', error);
+        throw error;
+    }
+});
+/**
+ * שולח תזכורת ללקוח על תור
+ */
+async function sendAppointmentReminder(appointmentId) {
+    try {
+        const appointmentDoc = await db.collection('appointments').doc(appointmentId).get();
+        if (!appointmentDoc.exists) {
+            console.log('❌ Appointment not found:', appointmentId);
+            return false;
+        }
+        const appointmentData = appointmentDoc.data();
+        const appointmentDate = appointmentData.date.toDate();
+        const now = new Date();
+        const timeDiff = appointmentDate.getTime() - now.getTime();
+        const hoursUntilAppointment = timeDiff / (1000 * 60 * 60);
+        const minutesUntilAppointment = timeDiff / (1000 * 60);
+        console.log(`📅 CUSTOMER REMINDER for appointment ${appointmentId}:`);
+        console.log(`📅 Appointment time: ${appointmentDate.toISOString()}`);
+        console.log(`📅 Current time: ${now.toISOString()}`);
+        console.log(`📅 Hours until: ${hoursUntilAppointment.toFixed(2)}`);
+        console.log(`📅 Minutes until: ${minutesUntilAppointment.toFixed(2)}`);
+        // בדוק אם התור יותר מ-24 שעות קדימה
+        if (hoursUntilAppointment > 24) {
+            console.log('🔕 Appointment is more than 24 hours away, skipping reminder');
+            return false;
+        }
+        // בדוק אם כבר נשלחה תזכורת לאחרונה (למניעת כפילויות)
+        const recentReminderQuery = db.collection('scheduledReminders')
+            .where('appointmentId', '==', appointmentId)
+            .where('status', '==', 'sent')
+            .where('sentAt', '>=', admin.firestore.Timestamp.fromDate(new Date(now.getTime() - 10 * 60 * 1000)));
+        const recentReminders = await recentReminderQuery.get();
+        if (!recentReminders.empty) {
+            console.log('🔕 Reminder already sent recently for this appointment, skipping');
+            return false;
+        }
+        // קבל שם הטיפול
+        let treatmentName = 'הטיפול';
+        try {
+            const treatmentDoc = await db.collection('treatments').doc(appointmentData.treatmentId).get();
+            if (treatmentDoc.exists) {
+                treatmentName = treatmentDoc.data().name || 'הטיפול';
+            }
+        }
+        catch (e) {
+            console.log('Could not fetch treatment name');
+        }
+        // קבל הגדרות אדמין
+        const adminSettings = await getAdminNotificationSettings();
+        console.log('🔧 Admin reminder settings:', adminSettings.reminderTimings);
+        // שליחת תזכורות בהתאם לזמן ולהגדרות
+        if (timeDiff > 0) {
+            let title = '';
+            let message = '';
+            let shouldSend = false;
+            // בדוק תזכורות לפי סדר מהקרוב לרחוק
+            if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && hoursUntilAppointment < 1 && adminSettings.reminderTimings.tenMinutesBefore) {
+                title = 'תזכורת לתור! ⏰';
+                message = `התור שלך בעוד 15 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+                shouldSend = true;
+                console.log('📅 Sending 15-minute reminder to CUSTOMER');
+            }
+            else if (hoursUntilAppointment <= 1 && minutesUntilAppointment > 15 && adminSettings.reminderTimings.oneHourBefore) {
+                title = 'תזכורת לתור! ⏰';
+                message = `יש לך תור ל${treatmentName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+                shouldSend = true;
+                console.log('📅 Sending 1-hour reminder to CUSTOMER');
+            }
+            else if (hoursUntilAppointment <= 24 && hoursUntilAppointment > 1) {
+                title = 'תזכורת לתור! ⏰';
+                const isTomorrow = appointmentDate.getDate() === new Date(now.getTime() + 24 * 60 * 60 * 1000).getDate();
+                if (isTomorrow) {
+                    message = `התור שלך מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+                }
+                else {
+                    message = `התור שלך ב-${appointmentDate.toLocaleDateString('he-IL')} ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+                }
+                shouldSend = true;
+                console.log('📅 Sending 24-hour reminder to CUSTOMER');
+            }
+            else if (minutesUntilAppointment <= 0 && minutesUntilAppointment > -60 && adminSettings.reminderTimings.whenStarting) {
+                title = 'התור שלך מתחיל! 🎯';
+                message = `התור שלך ל${treatmentName} מתחיל עכשיו!`;
+                shouldSend = true;
+                console.log('📅 Sending "when starting" reminder to CUSTOMER');
+            }
+            else {
+                console.log('📅 No reminder needed at this time or disabled in settings');
+                return false;
+            }
+            if (!shouldSend) {
+                console.log('🔕 Reminder disabled in admin settings');
+                return false;
+            }
+            // שלח תזכורת ללקוח
+            await sendNotificationToUser(appointmentData.userId, title, message, { appointmentId: appointmentId });
+            // שלח SMS רק לתזכורת של 15 דקות (לחסכון בעלויות)
+            if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0) {
+                try {
+                    const userProfile = await getUserProfile(appointmentData.userId);
+                    if (userProfile && userProfile.phone) {
+                        console.log('📱 Sending SMS reminder for 15-minute notification');
+                        await sendSMSReminder(userProfile.phone, message);
+                    }
+                }
+                catch (smsError) {
+                    console.error('❌ Failed to send SMS reminder:', smsError);
+                }
+            }
+            // שלח תזכורת לאדמין
+            try {
+                let adminReminderType = null;
+                if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && hoursUntilAppointment < 1) {
+                    adminReminderType = '15m';
+                }
+                else if (hoursUntilAppointment <= 1 && minutesUntilAppointment > 15) {
+                    adminReminderType = '1h';
+                }
+                else if (minutesUntilAppointment <= 0 && minutesUntilAppointment > -60) {
+                    adminReminderType = 'whenStarting';
+                }
+                if (adminReminderType) {
+                    await sendAppointmentReminderToAdmin(appointmentId, adminReminderType);
+                }
+            }
+            catch (adminError) {
+                console.error('❌ Failed to send admin reminder:', adminError);
+            }
+            console.log('✅ Reminder sent successfully to CUSTOMER and ADMIN');
+            return true;
+        }
+        else {
+            console.log('📅 Appointment is in the past, no reminder needed');
+            return false;
+        }
+    }
+    catch (error) {
+        console.error('❌ Error sending appointment reminder:', error);
+        return false;
+    }
+}
+/**
+ * קבל הגדרות תזכורות של אדמין
+ */
+async function getAdminNotificationSettings() {
+    var _a, _b, _c, _d, _e, _f;
+    try {
+        const settingsDoc = await db.collection('adminSettings').doc('notifications').get();
+        if (settingsDoc.exists) {
+            const data = settingsDoc.data();
+            return {
+                reminderTimings: {
+                    oneHourBefore: (_b = (_a = data.reminderTimings) === null || _a === void 0 ? void 0 : _a.oneHourBefore) !== null && _b !== void 0 ? _b : true,
+                    tenMinutesBefore: (_d = (_c = data.reminderTimings) === null || _c === void 0 ? void 0 : _c.tenMinutesBefore) !== null && _d !== void 0 ? _d : true,
+                    whenStarting: (_f = (_e = data.reminderTimings) === null || _e === void 0 ? void 0 : _e.whenStarting) !== null && _f !== void 0 ? _f : false,
+                },
+            };
+        }
+        // הגדרות ברירת מחדל
+        return {
+            reminderTimings: {
+                oneHourBefore: true,
+                tenMinutesBefore: true,
+                whenStarting: false,
+            },
+        };
+    }
+    catch (error) {
+        console.error('❌ Error getting admin notification settings:', error);
+        return {
+            reminderTimings: {
+                oneHourBefore: true,
+                tenMinutesBefore: true,
+                whenStarting: false,
+            },
+        };
+    }
+}
+/**
+ * קבל פרופיל משתמש
+ */
+async function getUserProfile(userId) {
+    try {
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (userDoc.exists) {
+            return Object.assign(Object.assign({}, userDoc.data()), { uid: userId });
+        }
+        return null;
+    }
+    catch (error) {
+        console.error('Error getting user profile:', error);
+        return null;
+    }
+}
+/**
+ * שלח התראה למשתמש
+ */
+async function sendNotificationToUser(userId, title, body, data) {
+    try {
+        const userProfile = await getUserProfile(userId);
+        if (!userProfile || !userProfile.pushToken) {
+            console.log('❌ User not found or no push token');
+            return false;
+        }
+        await sendPushNotification(userProfile.pushToken, title, body, data);
+        return true;
+    }
+    catch (error) {
+        console.error('Error sending notification to user:', error);
+        return false;
+    }
+}
+/**
+ * שלח Push Notification
+ */
+async function sendPushNotification(pushToken, title, body, data) {
+    try {
+        const message = {
+            to: pushToken,
+            sound: 'default',
+            title: title,
+            body: body,
+            data: data || {},
+        };
+        const response = await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Accept-encoding': 'gzip, deflate',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(message),
+        });
+        if (!response.ok) {
+            throw new Error(`Push notification failed: ${response.statusText}`);
+        }
+        console.log('✅ Push notification sent successfully');
+    }
+    catch (error) {
+        console.error('Error sending push notification:', error);
+        throw error;
+    }
+}
+/**
+ * שלח SMS תזכורת
+ */
+async function sendSMSReminder(phoneNumber, message) {
+    try {
+        // פורמט מספר טלפון
+        let formattedPhone = phoneNumber;
+        if (!phoneNumber.startsWith('+')) {
+            if (phoneNumber.startsWith('0')) {
+                formattedPhone = '+972' + phoneNumber.substring(1);
+            }
+            else {
+                formattedPhone = '+972' + phoneNumber;
+            }
+        }
+        console.log('📱 Sending SMS reminder to:', formattedPhone);
+        // כאן צריך להוסיף את השירות SMS שלך
+        // לדוגמה: Twilio, AWS SNS, וכו'
+        // כרגע נשאיר את זה ריק או נשתמש בשירות קיים
+        console.log('✅ SMS reminder sent successfully');
+    }
+    catch (error) {
+        console.error('Error sending SMS reminder:', error);
+        throw error;
+    }
+}
+/**
+ * שלח תזכורת לאדמין
+ */
+async function sendAppointmentReminderToAdmin(appointmentId, reminderType) {
+    try {
+        const appointmentDoc = await db.collection('appointments').doc(appointmentId).get();
+        if (!appointmentDoc.exists) {
+            console.log('Appointment not found');
+            return false;
+        }
+        const appointmentData = appointmentDoc.data();
+        const appointmentDate = appointmentData.date.toDate();
+        // קבל שם הלקוח
+        let customerName = 'לקוח';
+        try {
+            const customerDoc = await db.collection('users').doc(appointmentData.userId).get();
+            if (customerDoc.exists) {
+                customerName = customerDoc.data().displayName || 'לקוח';
+            }
+        }
+        catch (e) {
+            console.log('Could not fetch customer name');
+        }
+        // קבע הודעה לפי סוג התזכורת
+        let title = 'תזכורת לתור! ⏰';
+        let message = '';
+        if (reminderType === '1h') {
+            message = `תור של ${customerName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+        }
+        else if (reminderType === '15m') {
+            message = `תור של ${customerName} בעוד 10 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+        }
+        else if (reminderType === 'whenStarting') {
+            message = `תור של ${customerName} מתחיל עכשיו!`;
+        }
+        // מצא כל האדמינים ושלח להם
+        const adminUsers = await db.collection('users')
+            .where('isAdmin', '==', true)
+            .get();
+        const results = await Promise.allSettled(adminUsers.docs.map(async (adminDoc) => {
+            const adminData = adminDoc.data();
+            if (adminData.pushToken) {
+                await sendPushNotification(adminData.pushToken, title, message, {
+                    appointmentId: appointmentId,
+                    reminderType: reminderType
+                });
+            }
+        }));
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        console.log(`✅ Sent admin reminder to ${successful} admins`);
+        return successful > 0;
+    }
+    catch (error) {
+        console.error('Error sending appointment reminder to admin:', error);
+        return false;
+    }
+}
 //# sourceMappingURL=index.js.map

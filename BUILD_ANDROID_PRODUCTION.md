@@ -44,3 +44,4 @@ eas build --platform android --profile production
 "versionCode": 2  // או 3, 4, וכו'
 ```
 
+

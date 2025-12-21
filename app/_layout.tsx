@@ -11,7 +11,7 @@ import { Alert, View } from 'react-native';
 import 'react-native-reanimated';
 import '../app/globals.css';
 import { auth } from '../config/firebase';
-import { processScheduledReminders } from '../services/firebase';
+// Removed: processScheduledReminders - now handled by Cloud Function
 import { ensureAndroidChannel } from '../services/notifications';
 import AppAuthGate from './components/AppAuthGate';
 import i18n from './i18n';
@@ -117,26 +117,8 @@ export default function RootLayout() {
     checkForUpdates();
   }, []);
 
-  // Process scheduled reminders every 5 minutes
-  useEffect(() => {
-    const processReminders = async () => {
-      try {
-        console.log('🕐 Processing scheduled reminders...');
-        await processScheduledReminders();
-        console.log('✅ Reminders processed successfully');
-      } catch (error) {
-        console.error('❌ Error processing reminders:', error);
-      }
-    };
-
-    // Process reminders immediately when app starts
-    processReminders();
-
-    // Process reminders every 5 minutes
-    const interval = setInterval(processReminders, 5 * 60 * 1000);
-
-    return () => clearInterval(interval);
-  }, []);
+  // NOTE: Reminder processing is now handled by Cloud Function (processScheduledReminders)
+  // No need for client-side polling anymore
 
   if (!loaded) {
     // Show black screen while fonts are loading (matches splash screen)

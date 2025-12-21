@@ -27,9 +27,13 @@ service cloud.firestore {
       // This allows checking if a user exists by phone/email for password reset flow
       // Direct document access requires sign-in, but queries (for password reset) are allowed
       allow get: if isSignedIn(); // Direct document access requires sign-in
-      allow list: if true; // Allow queries for password reset check
-      allow create: if isSignedIn();
-      allow update: if isOwner(userId) || isAdmin();
+      allow create: if (isSignedIn() && isOwner(userId) && 
+                        !request.resource.data.get('isAdmin', false) && 
+                        !request.resource.data.get('isBarber', false)) || 
+                       isAdmin();
+      allow update: if isAdmin() || 
+                       (isOwner(userId) && 
+                        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'isBarber']));
       allow delete: if isAdmin();
     }
     

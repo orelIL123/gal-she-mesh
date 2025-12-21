@@ -30,7 +30,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, onBack }) =
 
   const languages = [
     { code: 'he', name: t('settings.hebrew'), flag: '🇮🇱' },
-    { code: 'en', name: t('settings.english'), flag: '🇺🇸' }
+    { code: 'en', name: t('settings.english'), flag: '🇺🇸' },
+    { code: 'ar', name: t('settings.arabic'), flag: '🇸🇦' }
   ];
 
   const handleLanguageChange = async (langCode: string) => {

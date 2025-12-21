@@ -492,10 +492,10 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
             try {
               // Get image data before deleting
               const imageToDelete = images.find(img => img.id === imageId);
-              
+
               await deleteGalleryImage(imageId);
               setImages(prev => prev.filter(img => img.id !== imageId));
-              
+
               // If deleting background or aboutus, also remove from settings
               if (imageToDelete) {
                 if (imageToDelete.type === 'background') {
@@ -522,11 +522,54 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
                   console.log('✅ Removed aboutUsImage from settings');
                 }
               }
-              
+
               showToast('התמונה נמחקה בהצלחה');
             } catch (error) {
               console.error('Error deleting image:', error);
               showToast('שגיאה במחיקת התמונה', 'error');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleDeleteFromStorage = async (imageUrl: string) => {
+    Alert.alert(
+      'מחיקת תמונה מ-Storage',
+      'האם אתה בטוח? התמונה תימחק לצמיתות מ-Firebase Storage!',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'מחק',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { deleteObject, ref } = await import('firebase/storage');
+              const { storage } = await import('../../config/firebase');
+
+              // Extract the path from the URL
+              const urlParts = imageUrl.split('/o/')[1];
+              if (!urlParts) {
+                showToast('שגיאה: URL לא תקין', 'error');
+                return;
+              }
+
+              const path = decodeURIComponent(urlParts.split('?')[0]);
+              console.log('🗑️ Deleting from storage:', path);
+
+              const imageRef = ref(storage, path);
+              await deleteObject(imageRef);
+
+              console.log('✅ Deleted from storage successfully');
+              showToast('התמונה נמחקה מ-Storage בהצלחה');
+
+              // Refresh storage images
+              const storageImagesData = await getAllStorageImages();
+              setStorageImages(storageImagesData);
+            } catch (error: any) {
+              console.error('Error deleting from storage:', error);
+              showToast('שגיאה במחיקת התמונה מ-Storage', 'error');
             }
           }
         }
@@ -912,8 +955,8 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
                         <Text style={styles.imageStatus}>פעיל</Text>
                       </View>
                       <View style={styles.imageActions}>
-                        <TouchableOpacity 
-                          style={styles.actionButton}
+                        <TouchableOpacity
+                          style={styles.addToGalleryButton}
                           onPress={() => {
                             setFormData({
                               imageUrl: imageUrl,
@@ -923,8 +966,15 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
                             setModalVisible(true);
                           }}
                         >
-                          <Ionicons name="add-circle" size={20} color="#007bff" />
-                          <Text style={styles.actionButtonText}>הוסף לגלריה</Text>
+                          <Ionicons name="add-circle" size={20} color="#fff" />
+                          <Text style={styles.addToGalleryButtonText}>הוסף לגלריה</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.deleteFromStorageButton}
+                          onPress={() => handleDeleteFromStorage(imageUrl)}
+                        >
+                          <Ionicons name="trash" size={20} color="#fff" />
+                          <Text style={styles.deleteFromStorageButtonText}>מחק</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
