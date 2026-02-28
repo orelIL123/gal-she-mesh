@@ -96,7 +96,7 @@ export default function SplashScreen() {
         <Image
           source={require('../assets/images/splash.png')}
           style={styles.image}
-          resizeMode="contain"
+          resizeMode="cover"
         />
       </Animated.View>
     </View>

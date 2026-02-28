@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "TORYX",
+    "name": "Torix",
     "slug": "gal-shemesh",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -51,7 +51,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash.png",
-          "resizeMode": "contain",
+          "resizeMode": "cover",
           "backgroundColor": "#000000"
         }
       ],
@@ -59,7 +59,7 @@
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#FFD700",
+          "color": "#8B5CF6",
           "sounds": ["./assets/sounds/notification.wav"],
           "mode": "production"
         }
@@ -86,8 +86,8 @@
     "owner": "orel895",
     "splash": {
       "image": "./assets/images/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FFD700"
+      "resizeMode": "cover",
+      "backgroundColor": "#000000"
     },
     "updates": {
       "url": "https://u.expo.dev/32ceff23-306e-448b-a0a9-0f9b0fd19e8d"
