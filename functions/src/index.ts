@@ -149,9 +149,11 @@ export const processScheduledReminders = functions.pubsub
       const now = admin.firestore.Timestamp.now();
       
       // מצא כל התזכורות המתוזמנות שהגיע זמנן
+      // Limit to 100 to avoid Cloud Function timeout
       const remindersQuery = db.collection('scheduledReminders')
         .where('status', '==', 'pending')
-        .where('scheduledTime', '<=', now);
+        .where('scheduledTime', '<=', now)
+        .limit(100);
       
       const remindersSnapshot = await remindersQuery.get();
       console.log(`📱 Found ${remindersSnapshot.size} reminders to process`);
@@ -166,12 +168,13 @@ export const processScheduledReminders = functions.pubsub
         remindersSnapshot.docs.map(async (reminderDoc) => {
           const reminderData = reminderDoc.data();
           const appointmentId = reminderData.appointmentId;
+          const reminderType = reminderData.reminderType || null; // Get reminderType from scheduledReminders
           
-          console.log(`📅 Processing reminder ${reminderDoc.id} for appointment ${appointmentId}`);
+          console.log(`📅 Processing reminder ${reminderDoc.id} for appointment ${appointmentId}, type: ${reminderType}`);
           
           try {
-            // שליחת התזכורת
-            await sendAppointmentReminder(appointmentId);
+            // שליחת התזכורת עם reminderType (חשוב לשלוח את הסוג הנכון!)
+            await sendAppointmentReminder(appointmentId, reminderType);
             
             // סמן כנשלח
             await reminderDoc.ref.update({
@@ -179,7 +182,7 @@ export const processScheduledReminders = functions.pubsub
               sentAt: admin.firestore.FieldValue.serverTimestamp()
             });
             
-            console.log(`✅ Successfully processed ${reminderData.reminderType} reminder for appointment ${appointmentId}`);
+            console.log(`✅ Successfully processed ${reminderType} reminder for appointment ${appointmentId}`);
             return { success: true, reminderId: reminderDoc.id };
           } catch (error: any) {
             console.error(`❌ Error processing reminder ${reminderDoc.id}:`, error);
@@ -207,8 +210,10 @@ export const processScheduledReminders = functions.pubsub
 
 /**
  * שולח תזכורת ללקוח על תור
+ * @param appointmentId - ID של התור
+ * @param expectedReminderType - סוג התזכורת (24h, 1h, 15m, whenStarting) - אם לא מסופק, יקבע אוטומטית לפי זמן
  */
-async function sendAppointmentReminder(appointmentId: string): Promise<boolean> {
+async function sendAppointmentReminder(appointmentId: string, expectedReminderType?: string): Promise<boolean> {
   try {
     const appointmentDoc = await db.collection('appointments').doc(appointmentId).get();
     
@@ -229,23 +234,11 @@ async function sendAppointmentReminder(appointmentId: string): Promise<boolean> 
     console.log(`📅 Current time: ${now.toISOString()}`);
     console.log(`📅 Hours until: ${hoursUntilAppointment.toFixed(2)}`);
     console.log(`📅 Minutes until: ${minutesUntilAppointment.toFixed(2)}`);
+    console.log(`📅 Expected reminder type: ${expectedReminderType || 'auto-detect'}`);
     
     // בדוק אם התור יותר מ-24 שעות קדימה
     if (hoursUntilAppointment > 24) {
       console.log('🔕 Appointment is more than 24 hours away, skipping reminder');
-      return false;
-    }
-    
-    // בדוק אם כבר נשלחה תזכורת לאחרונה (למניעת כפילויות)
-    const recentReminderQuery = db.collection('scheduledReminders')
-      .where('appointmentId', '==', appointmentId)
-      .where('status', '==', 'sent')
-      .where('sentAt', '>=', admin.firestore.Timestamp.fromDate(new Date(now.getTime() - 10 * 60 * 1000)));
-    
-    const recentReminders = await recentReminderQuery.get();
-    
-    if (!recentReminders.empty) {
-      console.log('🔕 Reminder already sent recently for this appointment, skipping');
       return false;
     }
     
@@ -264,45 +257,100 @@ async function sendAppointmentReminder(appointmentId: string): Promise<boolean> 
     const adminSettings = await getAdminNotificationSettings();
     console.log('🔧 Admin reminder settings:', adminSettings.reminderTimings);
     
-    // שליחת תזכורות בהתאם לזמן ולהגדרות
+    // שליחת תזכורות בהתאם ל-expectedReminderType (אם מסופק) או לפי זמן
     if (timeDiff > 0) {
       let title = '';
       let message = '';
       let shouldSend = false;
       
-      // בדוק תזכורות לפי סדר מהקרוב לרחוק
-      if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && hoursUntilAppointment < 1 && adminSettings.reminderTimings.tenMinutesBefore) {
-        title = 'תזכורת לתור! ⏰';
-        message = `התור שלך בעוד 15 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
-        shouldSend = true;
-        console.log('📅 Sending 15-minute reminder to CUSTOMER');
-      } else if (hoursUntilAppointment <= 1 && minutesUntilAppointment > 15 && adminSettings.reminderTimings.oneHourBefore) {
-        title = 'תזכורת לתור! ⏰';
-        message = `יש לך תור ל${treatmentName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
-        shouldSend = true;
-        console.log('📅 Sending 1-hour reminder to CUSTOMER');
-      } else if (hoursUntilAppointment <= 24 && hoursUntilAppointment > 1) {
-        title = 'תזכורת לתור! ⏰';
-        const isTomorrow = appointmentDate.getDate() === new Date(now.getTime() + 24 * 60 * 60 * 1000).getDate();
-        if (isTomorrow) {
-          message = `התור שלך מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
-        } else {
-          message = `התור שלך ב-${appointmentDate.toLocaleDateString('he-IL')} ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+      // אם expectedReminderType מסופק, השתמש בו ישירות (מהמערכת המרכזית)
+      // אחרת, קבע אוטומטית לפי זמן (backward compatibility)
+      if (expectedReminderType) {
+        // השתמש בסוג התזכורת מהמערכת המרכזית - זה כבר מתוזמן בזמן הנכון!
+        switch (expectedReminderType) {
+          case '24h':
+            title = 'תזכורת לתור! ⏰';
+            const isTomorrow = appointmentDate.getDate() === new Date(now.getTime() + 24 * 60 * 60 * 1000).getDate();
+            if (isTomorrow) {
+              message = `התור שלך מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+            } else {
+              message = `התור שלך ב-${appointmentDate.toLocaleDateString('he-IL')} ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+            }
+            shouldSend = true;
+            console.log('📅 Sending 24-hour reminder to CUSTOMER (scheduled)');
+            break;
+          case '1h':
+            if (adminSettings.reminderTimings.oneHourBefore) {
+              title = 'תזכורת לתור! ⏰';
+              message = `יש לך תור ל${treatmentName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+              shouldSend = true;
+              console.log('📅 Sending 1-hour reminder to CUSTOMER (scheduled)');
+            } else {
+              console.log('🔕 1-hour reminder disabled in admin settings');
+            }
+            break;
+          case '15m':
+            if (adminSettings.reminderTimings.tenMinutesBefore) {
+              title = 'תזכורת לתור! ⏰';
+              message = `התור שלך בעוד 15 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+              shouldSend = true;
+              console.log('📅 Sending 15-minute reminder to CUSTOMER (scheduled)');
+            } else {
+              console.log('🔕 15-minute reminder disabled in admin settings');
+            }
+            break;
+          case 'whenStarting':
+            if (adminSettings.reminderTimings.whenStarting) {
+              title = 'התור שלך מתחיל! 🎯';
+              message = `התור שלך ל${treatmentName} מתחיל עכשיו!`;
+              shouldSend = true;
+              console.log('📅 Sending "when starting" reminder to CUSTOMER (scheduled)');
+            } else {
+              console.log('🔕 "When starting" reminder disabled in admin settings');
+            }
+            break;
+          default:
+            console.log(`⚠️ Unknown reminder type: ${expectedReminderType}, falling back to time-based detection`);
+            // Fall through to time-based detection
         }
-        shouldSend = true;
-        console.log('📅 Sending 24-hour reminder to CUSTOMER');
-      } else if (minutesUntilAppointment <= 0 && minutesUntilAppointment > -60 && adminSettings.reminderTimings.whenStarting) {
-        title = 'התור שלך מתחיל! 🎯';
-        message = `התור שלך ל${treatmentName} מתחיל עכשיו!`;
-        shouldSend = true;
-        console.log('📅 Sending "when starting" reminder to CUSTOMER');
-      } else {
-        console.log('📅 No reminder needed at this time or disabled in settings');
-        return false;
+      }
+      
+      // אם לא נקבע shouldSend עדיין, קבע לפי זמן (backward compatibility)
+      if (!shouldSend && !expectedReminderType) {
+        // בדוק תזכורות לפי סדר מהקרוב לרחוק
+        if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && hoursUntilAppointment < 1 && adminSettings.reminderTimings.tenMinutesBefore) {
+          title = 'תזכורת לתור! ⏰';
+          message = `התור שלך בעוד 15 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+          shouldSend = true;
+          console.log('📅 Sending 15-minute reminder to CUSTOMER (auto-detected)');
+        } else if (hoursUntilAppointment <= 1 && minutesUntilAppointment > 15 && adminSettings.reminderTimings.oneHourBefore) {
+          title = 'תזכורת לתור! ⏰';
+          message = `יש לך תור ל${treatmentName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+          shouldSend = true;
+          console.log('📅 Sending 1-hour reminder to CUSTOMER (auto-detected)');
+        } else if (hoursUntilAppointment <= 24 && hoursUntilAppointment > 1) {
+          title = 'תזכורת לתור! ⏰';
+          const isTomorrow = appointmentDate.getDate() === new Date(now.getTime() + 24 * 60 * 60 * 1000).getDate();
+          if (isTomorrow) {
+            message = `התור שלך מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+          } else {
+            message = `התור שלך ב-${appointmentDate.toLocaleDateString('he-IL')} ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+          }
+          shouldSend = true;
+          console.log('📅 Sending 24-hour reminder to CUSTOMER (auto-detected)');
+        } else if (minutesUntilAppointment <= 0 && minutesUntilAppointment > -60 && adminSettings.reminderTimings.whenStarting) {
+          title = 'התור שלך מתחיל! 🎯';
+          message = `התור שלך ל${treatmentName} מתחיל עכשיו!`;
+          shouldSend = true;
+          console.log('📅 Sending "when starting" reminder to CUSTOMER (auto-detected)');
+        } else {
+          console.log('📅 No reminder needed at this time or disabled in settings');
+          return false;
+        }
       }
       
       if (!shouldSend) {
-        console.log('🔕 Reminder disabled in admin settings');
+        console.log('🔕 Reminder disabled in admin settings or not needed');
         return false;
       }
       
@@ -315,7 +363,7 @@ async function sendAppointmentReminder(appointmentId: string): Promise<boolean> 
       );
       
       // שלח SMS רק לתזכורת של 15 דקות (לחסכון בעלויות)
-      if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0) {
+      if (expectedReminderType === '15m' || (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0)) {
         try {
           const userProfile = await getUserProfile(appointmentData.userId);
           if (userProfile && userProfile.phone) {
@@ -331,11 +379,11 @@ async function sendAppointmentReminder(appointmentId: string): Promise<boolean> 
       try {
         let adminReminderType: '1h' | '15m' | 'whenStarting' | null = null;
         
-        if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && hoursUntilAppointment < 1) {
+        if (expectedReminderType === '15m' || (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && hoursUntilAppointment < 1)) {
           adminReminderType = '15m';
-        } else if (hoursUntilAppointment <= 1 && minutesUntilAppointment > 15) {
+        } else if (expectedReminderType === '1h' || (hoursUntilAppointment <= 1 && minutesUntilAppointment > 15)) {
           adminReminderType = '1h';
-        } else if (minutesUntilAppointment <= 0 && minutesUntilAppointment > -60) {
+        } else if (expectedReminderType === 'whenStarting' || (minutesUntilAppointment <= 0 && minutesUntilAppointment > -60)) {
           adminReminderType = 'whenStarting';
         }
         
@@ -563,3 +611,87 @@ async function sendAppointmentReminderToAdmin(appointmentId: string, reminderTyp
     return false;
   }
 }
+
+/**
+ * Firestore Trigger: Update custom claims when user document is created or updated
+ * This ensures Firebase Storage rules can check admin status efficiently
+ */
+export const syncUserClaims = functions.firestore
+  .document('users/{userId}')
+  .onWrite(async (change, context) => {
+    const userId = context.params.userId;
+
+    try {
+      // If document was deleted, remove custom claims
+      if (!change.after.exists) {
+        await admin.auth().setCustomUserClaims(userId, { isAdmin: false, isBarber: false });
+        console.log(`🔑 Removed custom claims for deleted user ${userId}`);
+        return null;
+      }
+
+      const userData = change.after.data();
+
+      // Set custom claims based on user data
+      const claims = {
+        isAdmin: userData?.isAdmin === true,
+        isBarber: userData?.isBarber === true
+      };
+
+      await admin.auth().setCustomUserClaims(userId, claims);
+      console.log(`🔑 Updated custom claims for user ${userId}:`, claims);
+
+      return null;
+    } catch (error: any) {
+      console.error(`❌ Error updating custom claims for user ${userId}:`, error);
+      // Don't throw - we don't want to block the user document update
+      return null;
+    }
+  });
+
+/**
+ * Cloud Function: One-time migration to set custom claims for existing users
+ * Call this manually: firebase functions:shell then migratCustomClaims()
+ */
+export const migrateCustomClaims = functions.https.onCall(async (data, context) => {
+  // Only allow admins to call this
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  const callerDoc = await db.collection('users').doc(context.auth.uid).get();
+  if (!callerDoc.exists || !callerDoc.data()?.isAdmin) {
+    throw new functions.https.HttpsError('permission-denied', 'Only admins can run migration');
+  }
+
+  try {
+    const usersSnapshot = await db.collection('users').get();
+    const results = [];
+
+    for (const userDoc of usersSnapshot.docs) {
+      const userData = userDoc.data();
+      const userId = userDoc.id;
+
+      const claims = {
+        isAdmin: userData?.isAdmin === true,
+        isBarber: userData?.isBarber === true
+      };
+
+      try {
+        await admin.auth().setCustomUserClaims(userId, claims);
+        results.push({ userId, success: true, claims });
+        console.log(`✅ Updated claims for ${userId}:`, claims);
+      } catch (error: any) {
+        results.push({ userId, success: false, error: error.message });
+        console.error(`❌ Failed to update claims for ${userId}:`, error);
+      }
+    }
+
+    return {
+      success: true,
+      total: usersSnapshot.size,
+      results
+    };
+  } catch (error: any) {
+    throw new functions.https.HttpsError('internal', `Migration failed: ${error.message}`);
+  }
+});

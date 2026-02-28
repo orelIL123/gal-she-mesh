@@ -1,10 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Notifications from 'expo-notifications';
 import { collection, getDocs, getFirestore, onSnapshot, query, QuerySnapshot, Timestamp, where } from 'firebase/firestore';
 import React, { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
+  Animated,
   Dimensions,
   Image,
   Modal,
@@ -30,7 +30,7 @@ import {
 } from '../../services/firebase';
 import ConfirmationModal from '../components/ConfirmationModal';
 import TopNav from '../components/TopNav';
-import { generateTimeSlots, getSlotsNeeded, SLOT_SIZE_MINUTES, toMin, toYMD } from '../constants/scheduling';
+import { generateTimeSlots, SLOT_SIZE_MINUTES, toMin, toYMD } from '../constants/scheduling';
 
 const { width } = Dimensions.get('window');
 
@@ -748,13 +748,18 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
 
     setBooking(true);
     try {
-      const appointmentDateTime = new Date(selectedDate);
+      // Create appointment date using the selected date directly (avoid timezone issues)
+      // Don't use new Date(selectedDate) as it can cause timezone problems
+      const appointmentDateTime = new Date(selectedDate.getTime()); // Clone the date
       const [hours, minutes] = selectedTime.split(':').map(Number);
       appointmentDateTime.setHours(hours, minutes, 0, 0);
 
-      console.log('Creating appointment:', {
+      console.log('📅 Creating appointment with date:', {
+        selectedDate: selectedDate.toLocaleString('he-IL'),
+        selectedTime: selectedTime,
+        appointmentDateTime: appointmentDateTime.toLocaleString('he-IL'),
+        appointmentDateTimeISO: appointmentDateTime.toISOString(),
         barberId: selectedBarber.id,
-        date: appointmentDateTime.toISOString(),
         duration: selectedTreatment.duration
       });
 
@@ -798,13 +803,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       }));
       setShowSuccessModal(true);
 
-      // אחרי יצירת התור בהצלחה:
-      if (selectedDate && selectedTime && selectedTreatment) {
-        const [hours, minutes] = selectedTime.split(":").map(Number);
-        const appointmentDate = new Date(selectedDate);
-        appointmentDate.setHours(hours, minutes, 0, 0);
-        await scheduleAppointmentReminders(appointmentDate, selectedTreatment.name);
-      }
+      // Removed local scheduleAppointmentReminders call
+      // Reminders are now handled centrally by createAppointment in firebase.ts
+      // which uses the correct date from Firestore and schedules reminders properly
 
     } catch (error) {
       console.error('Error creating appointment:', error);
@@ -864,73 +865,22 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
     }
   };
 
-  // פונקציה לתזמון התראות פוש ללקוח שעה ורבע שעה לפני התור
-  const scheduleAppointmentReminders = async (appointmentDate: Date, treatmentName: string) => {
-    const now = new Date();
+  // Animation state for fade-in
+  const [fadeAnim] = useState(new Animated.Value(0));
 
-    // Check if appointment is in the future
-    const timeUntilAppointment = appointmentDate.getTime() - now.getTime();
-    const hoursUntilAppointment = timeUntilAppointment / (1000 * 60 * 60);
+  useEffect(() => {
+    // Fade in animation when step changes
+    fadeAnim.setValue(0);
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
+  }, [currentStep]);
 
-    console.log('📅 Appointment date:', appointmentDate.toLocaleString());
-    console.log('⏰ Current time:', now.toLocaleString());
-    console.log('⏱️ Hours until appointment:', hoursUntilAppointment);
-
-    // Only schedule reminders if appointment is in the future
-    if (hoursUntilAppointment <= 0) {
-      console.log('❌ Appointment is in the past, skipping reminders');
-      return;
-    }
-
-    // Don't schedule local notifications for appointments more than 24 hours away
-    // The cloud scheduler will handle those via scheduledReminders collection
-    if (hoursUntilAppointment > 24) {
-      console.log('✅ Appointment is more than 24 hours away - cloud scheduler will handle reminders');
-      return;
-    }
-
-    // Calculate notification times
-    const hourBefore = new Date(appointmentDate.getTime() - 60 * 60 * 1000);
-    const quarterBefore = new Date(appointmentDate.getTime() - 15 * 60 * 1000);
-
-    const secondsUntilHour = Math.floor((hourBefore.getTime() - now.getTime()) / 1000);
-    const secondsUntilQuarter = Math.floor((quarterBefore.getTime() - now.getTime()) / 1000);
-
-    console.log('⏰ Seconds until hour reminder:', secondsUntilHour);
-    console.log('⏰ Seconds until quarter reminder:', secondsUntilQuarter);
-
-    // Schedule hour reminder only if it's in the future and appointment is at least 1 hour away
-    if (secondsUntilHour > 0 && hoursUntilAppointment >= 1) {
-      console.log('✅ Scheduling hour reminder for', new Date(now.getTime() + secondsUntilHour * 1000).toLocaleString());
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'תזכורת לתור! 💈',
-          body: `יש לך תור ל-${treatmentName} בעוד שעה!`,
-          sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-        },
-        trigger: { seconds: secondsUntilHour, repeats: false, channelId: 'default' },
-      });
-    } else {
-      console.log('❌ Hour reminder not scheduled - too soon or in past');
-    }
-
-    // Schedule quarter reminder only if it's in the future and appointment is at least 15 minutes away
-    if (secondsUntilQuarter > 0 && hoursUntilAppointment >= 0.25) {
-      console.log('✅ Scheduling quarter reminder for', new Date(now.getTime() + secondsUntilQuarter * 1000).toLocaleString());
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'תזכורת לתור! 💈',
-          body: `יש לך תור ל-${treatmentName} בעוד רבע שעה!`,
-          sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-        },
-        trigger: { seconds: secondsUntilQuarter, repeats: false, channelId: 'default' },
-      });
-    } else {
-      console.log('❌ Quarter reminder not scheduled - too soon or in past');
-    }
-  };
+  // Removed local scheduleAppointmentReminders function
+  // Reminders are now handled centrally by createAppointment in firebase.ts
+  // which uses the correct date from Firestore and schedules reminders properly
 
   if (loading) {
     return (
@@ -953,18 +903,18 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
 
   return (
     <SafeAreaView style={styles.container}>
-      <TopNav 
-        title={t('booking.title')} 
-        onBellPress={() => {}} 
-        onMenuPress={() => {}} 
-        showBackButton={true}
-        onBackPress={onBack}
-        showCloseButton={true}
-        onClosePress={onClose}
-      />
-      
-      {/* Progress Bar */}
-      <View style={styles.progressContainer}>
+        <TopNav 
+          title={t('booking.title')} 
+          onBellPress={() => {}} 
+          onMenuPress={() => {}} 
+          showBackButton={true}
+          onBackPress={onBack}
+          showCloseButton={true}
+          onClosePress={onClose}
+        />
+        
+        {/* Progress Bar */}
+        <View style={styles.progressContainer}>
         <View style={styles.progressBar}>
           <View style={[styles.progressFill, { width: `${(currentStep / 4) * 100}%` }]} />
         </View>
@@ -984,7 +934,14 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Step 1: Select Barber */}
         {currentStep === 1 && (
-          <View style={styles.stepContent}>
+          <Animated.View style={[styles.stepContent, { opacity: fadeAnim }]}>
+            {/* Background gradient for glass effect */}
+            <LinearGradient
+              colors={['rgba(139,69,19,0.05)', 'rgba(255,255,255,0.02)', 'rgba(139,69,19,0.03)']}
+              style={styles.backgroundGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            />
             {barbers.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyStateIcon}>✂️</Text>
@@ -992,7 +949,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
                 <Text style={styles.emptyStateText}>
                   אנא פנה למנהל המערכת להוספת ספרים למערכת
                 </Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.emptyStateButton}
                   onPress={onBack}
                 >
@@ -1000,7 +957,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
                 </TouchableOpacity>
               </View>
             ) : (
-              <View style={styles.barbersGrid}>
+              <View style={styles.barbersList}>
                 {barbers.map((barber) => (
                   <TouchableOpacity
                     key={barber.id}
@@ -1012,11 +969,25 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
                     disabled={false}
                   >
                     <LinearGradient
-                      colors={['#1a1a1a', '#000000', '#1a1a1a']}
+                      colors={selectedBarber?.id === barber.id 
+                        ? ['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.9)', 'rgba(255,255,255,0.85)']
+                        : ['rgba(255,255,255,0.9)', 'rgba(255,255,255,0.85)', 'rgba(255,255,255,0.8)']
+                      }
                       style={styles.barberGradient}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
+                      {/* Glass effect overlay */}
+                      <View style={styles.glassOverlay} />
+                      
+                      {/* Glossy highlight */}
+                      <LinearGradient
+                        colors={['rgba(255,255,255,0.6)', 'rgba(255,255,255,0.1)', 'transparent']}
+                        style={styles.glossyHighlight}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 1 }}
+                      />
+                      
                       <View style={styles.barberImage}>
                         {barber.image ? (
                           <Image
@@ -1028,17 +999,31 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
                           <Text style={styles.barberPlaceholder}>✂️</Text>
                         )}
                       </View>
-                      <Text style={styles.barberName}>{barber.name}</Text>
-                      <Text style={styles.barberExperience}>{barber.experience}</Text>
-                      <TouchableOpacity style={styles.detailsButton} onPress={() => setDetailsBarber(barber)}>
-                        <Text style={styles.detailsButtonText}>{t('booking.details')}</Text>
+                      
+                      <TouchableOpacity 
+                        style={styles.bookButton} 
+                        onPress={() => handleBarberSelect(barber)}
+                      >
+                        <LinearGradient
+                          colors={['#8B4513', '#A0522D', '#8B4513']}
+                          style={styles.bookButtonGradient}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                        >
+                          <Text style={styles.bookButtonText}>הזמנת תור</Text>
+                        </LinearGradient>
                       </TouchableOpacity>
+                      
+                      <View style={styles.barberInfoContainer}>
+                        <Text style={styles.barberName}>{barber.name}</Text>
+                        <Text style={styles.barberExperience}>{barber.experience}</Text>
+                      </View>
                     </LinearGradient>
                   </TouchableOpacity>
                 ))}
               </View>
             )}
-          </View>
+          </Animated.View>
         )}
 
         {/* Step 2: Select Treatment */}
@@ -1070,10 +1055,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
                         <Text style={styles.treatmentPrice}>{t('booking.price', { price: treatment.price })}</Text>
                         <Text style={styles.treatmentDuration}>{t('booking.duration', { duration: treatment.duration })}</Text>
                       </View>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ))}
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                ))}
             </View>
           </View>
         )}
@@ -1265,10 +1250,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
             </LinearGradient>
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
 
-      {/* Confirmation Modal */}
-      <Modal
+        {/* Confirmation Modal */}
+        <Modal
         animationType="fade"
         transparent={true}
         visible={showConfirmModal}
@@ -1317,10 +1302,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
             </View>
           </View>
         </View>
-      </Modal>
+        </Modal>
 
-      {/* Barber Details Modal */}
-      <Modal
+        {/* Barber Details Modal */}
+        <Modal
         visible={!!detailsBarber}
         transparent
         animationType="slide"
@@ -1347,10 +1332,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+        </Modal>
 
-      {/* Success Modal */}
-      <ConfirmationModal
+        {/* Success Modal */}
+        <ConfirmationModal
         visible={showSuccessModal}
         onClose={() => {
           setShowSuccessModal(false);
@@ -1367,10 +1352,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ onNavigate, onBack, onClo
           resetBooking();
           onNavigate('profile');
         }}
-      />
+        />
 
-      {/* Waitlist Modal */}
-      <Modal
+        {/* Waitlist Modal */}
+        <Modal
         animationType="slide"
         transparent={true}
         visible={showWaitlistModal}
@@ -1507,18 +1492,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   stepHeader: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
+    borderBottomColor: '#f0f0f0',
   },
   stepTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#222',
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
   backButton: {
     paddingHorizontal: 16,
@@ -1536,65 +1524,120 @@ const styles = StyleSheet.create({
   },
   stepContent: {
     padding: 16,
+    position: 'relative',
+    minHeight: 400,
   },
-  barbersGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+  backgroundGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 20,
+  },
+  barbersList: {
+    paddingVertical: 10,
+    paddingHorizontal: 4,
   },
   barberCard: {
-    width: (width - 48) / 2,
-    borderRadius: 20,
-    marginBottom: 16,
+    width: width - 32,
+    height: 110,
+    borderRadius: 24,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
     position: 'relative',
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   barberGradient: {
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 20,
+    justifyContent: 'flex-end',
+    height: '100%',
+    borderRadius: 24,
+    position: 'relative',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255,255,255,0.2)',
+    gap: 12,
+  },
+  glassOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  glossyHighlight: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+    borderRadius: 24,
+    zIndex: 1,
   },
   selectedCard: {
     borderWidth: 2,
-    borderColor: '#FFD700',
-    shadowColor: '#FFD700',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
+    borderColor: '#8B4513',
+    shadowColor: '#8B4513',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 10,
+    transform: [{ scale: 1.02 }],
   },
   barberImage: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    marginBottom: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.5)',
+    marginLeft: 'auto',
   },
   barberPlaceholder: {
     fontSize: 30,
-    color: '#fff',
+    color: '#333',
+  },
+  barberInfoContainer: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingRight: 8,
+    marginRight: 8,
   },
   barberName: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#1a1a1a',
     marginBottom: 4,
-    textAlign: 'center',
+    textAlign: 'right',
+    textShadowColor: 'rgba(255,255,255,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   barberExperience: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-    textAlign: 'center',
+    color: '#555',
+    textAlign: 'right',
+    fontWeight: '500',
   },
   unavailableBadge: {
     position: 'absolute',
@@ -1612,12 +1655,11 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   barberPhoto: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     borderWidth: 2,
     borderColor: '#fff',
-    marginBottom: 6,
   },
   treatmentsContainer: {
     marginBottom: 16,
@@ -1853,17 +1895,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  detailsButton: {
-    backgroundColor: '#FFD700',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 16,
+  bookButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#8B4513',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 5,
+    minWidth: 120,
     marginTop: 8,
+    alignSelf: 'flex-end',
   },
-  detailsButtonText: {
+  bookButtonGradient: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bookButtonText: {
     color: '#fff',
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 15,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   refreshContainer: {
     marginBottom: 16,

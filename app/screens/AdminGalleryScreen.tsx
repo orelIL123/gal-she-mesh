@@ -3,31 +3,30 @@ import * as ImagePicker from 'expo-image-picker';
 import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  Image,
-  Modal,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    Image,
+    Modal,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import {
-  addGalleryImage,
-  addShopItem,
-  deleteGalleryImage,
-  deleteShopItem,
-  GalleryImage,
-  getAllStorageImages,
-  getGalleryImages,
-  getShopItems,
-  initializeGalleryImages,
-  ShopItem,
-  updateShopItem,
-  uploadImageToStorage
+    addGalleryImage,
+    addShopItem,
+    deleteGalleryImage,
+    deleteShopItem,
+    GalleryImage,
+    getGalleryImages,
+    getShopItems,
+    initializeGalleryImages,
+    ShopItem,
+    updateShopItem,
+    uploadImageToStorage
 } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
@@ -43,21 +42,6 @@ interface AdminGalleryScreenProps {
 
 const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onBack, initialTab }) => {
   const [images, setImages] = useState<GalleryImage[]>([]);
-  const [storageImages, setStorageImages] = useState<{
-    gallery: string[];
-    backgrounds: string[];
-    splash: string[];
-    workers: string[];
-    aboutus: string[];
-    treatments: string[];
-  }>({
-    gallery: [],
-    backgrounds: [],
-    splash: [],
-    workers: [],
-    aboutus: [],
-    treatments: []
-  });
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -86,11 +70,9 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     editingId: null as string | null
   });
 
-  // הוסף state לתמונות shop מהסטורג'
-  const [shopStorageImages, setShopStorageImages] = useState<string[]>([]);
 
   // Add state for about us text
-  const [aboutUsText, setAboutUsText] = useState('ברוכים הבאים לגל שמש – מספרה משפחתית עם יחס אישי, מקצועיות ואווירה חמה. נשמח לראותכם!');
+  const [aboutUsText, setAboutUsText] = useState('ברוכים הבאים ל־torix – מספרה משפחתית עם יחס אישי, מקצועיות ואווירה חמה. נשמח לראותכם!');
   const [editingAboutUs, setEditingAboutUs] = useState(false);
 
   useEffect(() => {
@@ -100,7 +82,6 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
   useEffect(() => {
     if (selectedTab === 'shop') {
       fetchShopProducts();
-      fetchShopStorageImages();
     }
   }, [selectedTab]);
 
@@ -134,10 +115,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
   const loadImages = async () => {
     try {
       setLoading(true);
-      let [imagesData, storageImagesData] = await Promise.all([
-        getGalleryImages(),
-        getAllStorageImages()
-      ]);
+      let imagesData = await getGalleryImages();
 
       if (!imagesData || imagesData.length === 0) {
         try {
@@ -216,7 +194,6 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
       }
 
       setImages(imagesData);
-      setStorageImages(storageImagesData);
     } catch (error) {
       console.error('Error loading images:', error);
       showToast('שגיאה בטעינת התמונות', 'error');
@@ -232,6 +209,8 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
   const hideToast = () => {
     setToast({ ...toast, visible: false });
   };
+
+  // Fix permissions by migrating custom claims and refreshing token
 
   const openAddModal = (type: 'gallery' | 'background' | 'splash' | 'aboutus' | 'treatments') => {
     setEditingImage(null);
@@ -295,12 +274,30 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
   };
 
   const uploadImageFromDevice = async () => {
+    // בדוק אם זה tab של תמונות
+    if (!isImageTab(selectedTab)) {
+      showToast('אפשר להעלות תמונות רק בטאבים של תמונות', 'error');
+      return;
+    }
+
+    // בדוק אם כבר מעלה תמונה
+    if (isUploading) {
+      return;
+    }
+
     try {
+      setIsUploading(true);
+      
+      // שלב 1: בחר תמונה מהטלפון
       const imageData = await pickImageFromDevice();
-      if (!imageData) return;
+      if (!imageData) {
+        setIsUploading(false);
+        return;
+      }
 
       showToast('מעלה תמונה...', 'success');
       
+      // שלב 2: העלה את התמונה לשרת
       // Determine file extension from mimeType
       let extension = 'jpg';
       if (imageData.mimeType?.includes('png')) {
@@ -310,19 +307,42 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
       }
       
       const fileName = `img_${Date.now()}.${extension}`;
-      const folderPath = formData.type === 'background' ? 'backgrounds' : formData.type;
+      const folderPath = 'gallery'; // תמיד gallery
       
       const downloadURL = await uploadImageToStorage(imageData.uri, folderPath, fileName, imageData.mimeType);
       
-      setFormData({
-        ...formData,
-        imageUrl: downloadURL
-      });
+      // שלב 3: הוסף את התמונה לגלריה
+      // הוסף תמונה חדשה לגלריה
+      const imageDataToSave = {
+        imageUrl: downloadURL,
+        type: 'gallery', // תמיד gallery
+        order: images.filter(img => img.type === 'gallery').length, // הוסף בסוף
+        isActive: true
+      };
+
+      console.log('📝 Adding new image to gallery:', imageDataToSave);
+      const newImageId = await addGalleryImage(imageDataToSave);
+      console.log('✅ Image added to gallery with ID:', newImageId);
       
-      showToast('התמונה הועלתה בהצלחה', 'success');
-    } catch (error) {
+      // עדכן את ה-state המקומי
+      setImages(prev => [...prev, { id: newImageId, ...imageDataToSave, createdAt: new Date() as any }]);
+      
+      // שלב 4: הצג הודעה
+      showToast('התמונה הועלתה בהצלחה! 🎉', 'success');
+      
+      // רענן תמונות
+      const refreshedImages = await getGalleryImages();
+      setImages(refreshedImages);
+      
+    } catch (error: any) {
       console.error('Error uploading image:', error);
-      showToast('שגיאה בהעלאת התמונה', 'error');
+      // Show the real error details so we know exactly what failed
+      Alert.alert(
+        'שגיאה בהעלאת התמונה',
+        `code: ${error?.code || 'unknown'}\nmessage: ${error?.message || JSON.stringify(error)}`
+      );
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -470,9 +490,6 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
       console.log('✅ Refreshed images, total count:', refreshedImages.length);
       console.log('✅ Background images:', refreshedImages.filter(img => img.type === 'background'));
       
-      // Refresh storage images
-      const storageImagesData = await getAllStorageImages();
-      setStorageImages(storageImagesData);
     } catch (error) {
       console.error('Error saving image:', error);
       showToast('שגיאה בהוספת התמונה', 'error');
@@ -534,48 +551,6 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     );
   };
 
-  const handleDeleteFromStorage = async (imageUrl: string) => {
-    Alert.alert(
-      'מחיקת תמונה מ-Storage',
-      'האם אתה בטוח? התמונה תימחק לצמיתות מ-Firebase Storage!',
-      [
-        { text: 'ביטול', style: 'cancel' },
-        {
-          text: 'מחק',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { deleteObject, ref } = await import('firebase/storage');
-              const { storage } = await import('../../config/firebase');
-
-              // Extract the path from the URL
-              const urlParts = imageUrl.split('/o/')[1];
-              if (!urlParts) {
-                showToast('שגיאה: URL לא תקין', 'error');
-                return;
-              }
-
-              const path = decodeURIComponent(urlParts.split('?')[0]);
-              console.log('🗑️ Deleting from storage:', path);
-
-              const imageRef = ref(storage, path);
-              await deleteObject(imageRef);
-
-              console.log('✅ Deleted from storage successfully');
-              showToast('התמונה נמחקה מ-Storage בהצלחה');
-
-              // Refresh storage images
-              const storageImagesData = await getAllStorageImages();
-              setStorageImages(storageImagesData);
-            } catch (error: any) {
-              console.error('Error deleting from storage:', error);
-              showToast('שגיאה במחיקת התמונה מ-Storage', 'error');
-            }
-          }
-        }
-      ]
-    );
-  };
 
   const handleMoveUp = async (image: GalleryImage) => {
     try {
@@ -680,29 +655,6 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
   };
 
   const filteredImages = images.filter(img => img.type === selectedTab);
-  
-  // Get Firebase Storage images for current tab
-  const getStorageImagesForTab = () => {
-    switch (selectedTab) {
-      case 'gallery':
-        return storageImages.gallery;
-      case 'background':
-        return storageImages.backgrounds;
-      case 'splash':
-        return storageImages.splash;
-      case 'aboutus':
-        return storageImages.aboutus;
-      case 'treatments':
-        return storageImages.treatments;
-      // case 'shop':
-      //   return storageImages.workers; // REMOVE THIS LINE
-      default:
-        return [];
-    }
-  };
-
-  // Only use getStorageImagesForTab for non-shop tabs
-  const storageImagesForTab = (selectedTab === 'shop') ? [] : getStorageImagesForTab();
 
   const tabs = [
     { key: 'gallery', label: 'גלריה', icon: 'images' },
@@ -834,15 +786,6 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
     }
   };
 
-  // טען תמונות shop מהסטורג'
-  const fetchShopStorageImages = async () => {
-    try {
-      const all = await getAllStorageImages() as Record<string, string[]>;
-      setShopStorageImages(all.shop || []);
-    } catch (e) {
-      showToast('שגיאה בטעינת תמונות מהסטורג׳', 'error');
-    }
-  };
 
   // Fix openAddModal and getTabTitle calls to only use the original image tabs
   const isImageTab = (tab: string): tab is 'gallery' | 'background' | 'splash' | 'aboutus' | 'treatments' =>
@@ -889,17 +832,17 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
         {/* Add Image Button */}
         <View style={styles.header}>
           {selectedTab === 'shop' ? (
-            <TouchableOpacity 
-              style={styles.addButton} 
+            <TouchableOpacity
+              style={styles.addButton}
               onPress={() => {
-                setShopForm({ 
-                  name: '', 
+                setShopForm({
+                  name: '',
                   description: '',
-                  price: '', 
+                  price: '',
                   category: '',
-                  imageUrl: '', 
+                  imageUrl: '',
                   stock: '',
-                  editingId: null 
+                  editingId: null
                 });
                 setShopModalVisible(true);
               }}
@@ -908,26 +851,19 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
               <Text style={styles.addButtonText}>הוסף מוצר חדש</Text>
             </TouchableOpacity>
           ) : (
-            <>
-              <TouchableOpacity 
-                style={styles.addButton} 
-                onPress={() => isImageTab(selectedTab) && openAddModal(selectedTab)}
-                disabled={!isImageTab(selectedTab)}
-              >
-                <Ionicons name="add" size={24} color="#fff" />
-                <Text style={styles.addButtonText}>
-                  {isImageTab(selectedTab) ? `הוסף תמונה ל${getTabTitle(selectedTab)}` : ''}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.uploadButton} 
-                onPress={uploadImageFromDevice}
-              >
-                <Ionicons name="phone-portrait" size={24} color="#fff" />
-                <Text style={styles.uploadButtonText}>העלה מהטלפון</Text>
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity
+              style={[
+                styles.uploadButton,
+                isUploading && styles.uploadButtonDisabled
+              ]}
+              onPress={uploadImageFromDevice}
+              disabled={isUploading}
+            >
+              <Ionicons name="phone-portrait" size={24} color="#fff" />
+              <Text style={styles.uploadButtonText}>
+                {isUploading ? 'מעלה...' : 'העלה תמונה מהטלפון'}
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
 
@@ -938,55 +874,9 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
           </View>
         ) : (
           <ScrollView style={styles.imagesList}>
-            {/* Firebase Storage Images Section */}
-            {storageImagesForTab.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>תמונות מ-Firebase Storage</Text>
-                <View style={styles.imagesGrid}>
-                  {storageImagesForTab.map((imageUrl, index) => (
-                    <View key={`storage-${index}`} style={styles.imageCard}>
-                      <Image
-                        source={{ uri: imageUrl }}
-                        style={styles.imagePreview}
-                        defaultSource={{ uri: 'https://via.placeholder.com/200x150' }}
-                      />
-                      <View style={styles.imageInfo}>
-                        <Text style={styles.imageOrder}>Firebase Storage</Text>
-                        <Text style={styles.imageStatus}>פעיל</Text>
-                      </View>
-                      <View style={styles.imageActions}>
-                        <TouchableOpacity
-                          style={styles.addToGalleryButton}
-                          onPress={() => {
-                            setFormData({
-                              imageUrl: imageUrl,
-                              type: selectedTab === 'shop' ? 'gallery' : selectedTab,
-                              order: '0'
-                            });
-                            setModalVisible(true);
-                          }}
-                        >
-                          <Ionicons name="add-circle" size={20} color="#fff" />
-                          <Text style={styles.addToGalleryButtonText}>הוסף לגלריה</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.deleteFromStorageButton}
-                          onPress={() => handleDeleteFromStorage(imageUrl)}
-                        >
-                          <Ionicons name="trash" size={20} color="#fff" />
-                          <Text style={styles.deleteFromStorageButtonText}>מחק</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
-            
-            {/* Firestore Images Section */}
+            {/* Gallery Images */}
             {filteredImages.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>תמונות מ-Firestore</Text>
                 <View style={styles.imagesGrid}>
                   {filteredImages.map((image) => (
                     <View key={image.id} style={styles.imageCard}>
@@ -995,64 +885,34 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
                         style={styles.imagePreview}
                         defaultSource={{ uri: 'https://via.placeholder.com/200x150' }}
                       />
-                      <View style={styles.imageOverlay}>
-                        <View style={styles.orderControls}>
-                          <TouchableOpacity
-                            style={styles.orderButton}
-                            onPress={() => handleMoveUp(image)}
-                          >
-                            <Ionicons name="chevron-up" size={16} color="#fff" />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.orderButton}
-                            onPress={() => handleMoveDown(image)}
-                          >
-                            <Ionicons name="chevron-down" size={16} color="#fff" />
-                          </TouchableOpacity>
-                        </View>
-                        <View style={styles.actionControls}>
-                          <TouchableOpacity
-                            style={styles.editImageButton}
-                            onPress={() => openEditModal(image)}
-                          >
-                            <Ionicons name="pencil" size={18} color="#fff" />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.deleteImageButton}
-                            onPress={() => handleDelete(image.id)}
-                          >
-                            <Ionicons name="trash" size={18} color="#fff" />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
                       <View style={styles.imageInfo}>
                         <Text style={styles.imageOrder}>סדר: {image.order}</Text>
                         <Text style={styles.imageStatus}>{image.isActive ? 'פעיל' : 'לא פעיל'}</Text>
                       </View>
                       <View style={styles.imageActions}>
                         <TouchableOpacity 
-                          style={[styles.reorderButton, styles.moveUpButton]}
+                          style={styles.actionButtonSmall}
                           onPress={() => handleMoveUp(image)}
                         >
-                          <Ionicons name="chevron-up" size={20} color="#007bff" />
+                          <Ionicons name="chevron-up" size={18} color="#007bff" />
                         </TouchableOpacity>
                         <TouchableOpacity 
-                          style={[styles.reorderButton, styles.moveDownButton]}
+                          style={styles.actionButtonSmall}
                           onPress={() => handleMoveDown(image)}
                         >
-                          <Ionicons name="chevron-down" size={20} color="#007bff" />
+                          <Ionicons name="chevron-down" size={18} color="#007bff" />
                         </TouchableOpacity>
                         <TouchableOpacity 
-                          style={styles.editButton}
+                          style={[styles.actionButtonSmall, { backgroundColor: 'rgba(40, 167, 69, 0.1)' }]}
                           onPress={() => openEditModal(image)}
                         >
-                          <Ionicons name="create" size={20} color="#28a745" />
+                          <Ionicons name="create" size={18} color="#28a745" />
                         </TouchableOpacity>
                         <TouchableOpacity 
-                          style={styles.deleteButton}
+                          style={[styles.actionButtonSmall, { backgroundColor: 'rgba(220, 53, 69, 0.1)' }]}
                           onPress={() => handleDelete(image.id)}
                         >
-                          <Ionicons name="trash" size={20} color="#dc3545" />
+                          <Ionicons name="trash" size={18} color="#dc3545" />
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -1062,7 +922,7 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
             )}
             
             {/* Empty State */}
-            {filteredImages.length === 0 && storageImagesForTab.length === 0 && (
+            {filteredImages.length === 0 && (
               <View style={styles.emptyState}>
                 <Ionicons name={getTabIcon(selectedTab) as any} size={64} color="#ccc" />
                 <Text style={styles.emptyStateText}>אין תמונות ב{getTabTitle(selectedTab)}</Text>
@@ -1329,31 +1189,6 @@ const AdminGalleryScreen: React.FC<AdminGalleryScreenProps> = ({ onNavigate, onB
                   </View>
                 ))}
               </ScrollView>
-              {selectedTab === 'shop' && (
-                <View style={{margin:16}}>
-                  <Text style={{color:'#fff',fontWeight:'bold',fontSize:16,marginTop:24,marginBottom:8}}>תמונות בסטורג׳ shop שעדיין לא מוצר:</Text>
-                  {shopStorageImages.filter(url => !shopProducts.some(prod => prod.imageUrl === url)).length === 0 ? (
-                    <Text style={{color:'#aaa'}}>כל התמונות כבר משויכות למוצרים.</Text>
-                  ) : (
-                    shopStorageImages.filter(url => !shopProducts.some(prod => prod.imageUrl === url)).map((url, idx) => (
-                      <View key={url} style={{flexDirection:'row',alignItems:'center',backgroundColor:'#222',borderRadius:8,padding:8,marginBottom:8}}>
-                        <Image source={{ uri: url }} style={{width:60,height:60,borderRadius:8,marginRight:8}} />
-                        <TouchableOpacity onPress={()=>setShopForm({ 
-                          name: '', 
-                          description: '',
-                          price: '', 
-                          category: '',
-                          imageUrl: url, 
-                          stock: '',
-                          editingId: null 
-                        })} style={{marginHorizontal:4,backgroundColor:'#007bff',borderRadius:6,padding:8}}>
-                          <Text style={{color:'#fff'}}>הפוך למוצר</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ))
-                  )}
-                </View>
-              )}
             </View>
           </View>
         </Modal>
@@ -1470,7 +1305,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
   },
   addButton: {
@@ -1496,6 +1331,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
+    flex: 1,
+  },
+  uploadButtonDisabled: {
+    backgroundColor: '#ccc',
+    opacity: 0.6,
   },
   uploadButtonText: {
     color: '#fff',
@@ -1570,16 +1410,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 120,
     backgroundColor: '#f0f0f0',
-  },
-  imageOverlay: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-  },
-  deleteImageButton: {
-    backgroundColor: 'rgba(220, 53, 69, 0.8)',
-    borderRadius: 20,
-    padding: 8,
   },
   imageInfo: {
     padding: 12,
@@ -1735,30 +1565,6 @@ const styles = StyleSheet.create({
     color: '#666',
     marginVertical: 8,
   },
-  orderControls: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    flexDirection: 'column',
-  },
-  orderButton: {
-    backgroundColor: 'rgba(0, 123, 255, 0.8)',
-    borderRadius: 4,
-    padding: 4,
-    marginBottom: 2,
-  },
-  actionControls: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    flexDirection: 'column',
-  },
-  editImageButton: {
-    backgroundColor: 'rgba(255, 193, 7, 0.8)',
-    borderRadius: 4,
-    padding: 6,
-    marginBottom: 4,
-  },
   editingInfo: {
     backgroundColor: '#e3f2fd',
     borderRadius: 8,
@@ -1774,34 +1580,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   imageActions: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
+    padding: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
   },
-  reorderButton: {
+  actionButtonSmall: {
+    padding: 6,
+    borderRadius: 20,
     backgroundColor: 'rgba(0, 123, 255, 0.1)',
-    borderRadius: 20,
-    padding: 8,
-  },
-  moveUpButton: {
-    top: 0,
-    left: 0,
-  },
-  moveDownButton: {
-    top: 0,
-    right: 0,
-  },
-  editButton: {
-    backgroundColor: 'rgba(40, 167, 69, 0.1)',
-    borderRadius: 20,
-    padding: 8,
-  },
-  deleteButton: {
-    backgroundColor: 'rgba(220, 53, 69, 0.1)',
-    borderRadius: 20,
-    padding: 8,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

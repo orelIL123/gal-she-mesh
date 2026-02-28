@@ -14,6 +14,8 @@ import {
 import {
     clearAllUserNotifications,
     deleteOldNotifications,
+    dismissBroadcastMessage,
+    getActiveBroadcastMessages,
     getCurrentUser,
     getUserNotifications,
     markNotificationAsRead
@@ -23,11 +25,12 @@ const {} = Dimensions.get('window');
 
 interface Notification {
   id: string;
-  type: 'appointment' | 'general' | 'reminder';
+  type: 'appointment' | 'general' | 'reminder' | 'broadcast';
   title: string;
   message: string;
   time: string;
   isRead: boolean;
+  isBroadcast?: boolean; // Flag to identify broadcast messages
 }
 
 interface NotificationPanelProps {
@@ -51,12 +54,36 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose 
       setLoading(true);
       const user = getCurrentUser();
       if (user) {
-        // First, delete old notifications (older than 6 hours)
-        await deleteOldNotifications(user.uid, 6);
-        
-        // Then load remaining notifications
+        // Load personal notifications
         const userNotifications = await getUserNotifications(user.uid);
-        setNotifications(userNotifications);
+
+        // Load active broadcast messages (not dismissed)
+        const broadcastMessages = await getActiveBroadcastMessages(user.uid);
+
+        // Convert broadcast messages to notification format
+        const broadcastNotifications: Notification[] = broadcastMessages.map(msg => ({
+          id: msg.id,
+          type: 'broadcast' as const,
+          title: msg.title,
+          message: msg.body,
+          time: msg.sentAt?.toDate?.()?.toLocaleString('he-IL', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+          }) || 'לא ידוע',
+          isRead: false, // Broadcast messages are always "unread" until dismissed
+          isBroadcast: true
+        }));
+
+        // Combine and sort by time (newest first)
+        const allNotifications = [...broadcastNotifications, ...userNotifications];
+        setNotifications(allNotifications);
+
+        // Delete old notifications in background
+        deleteOldNotifications(user.uid, 24).catch(err => {
+          console.error('Error deleting old notifications:', err);
+        });
       }
     } catch (error) {
       console.error('Error loading notifications:', error);
@@ -71,8 +98,10 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose 
         return 'calendar';
       case 'reminder':
         return 'alarm';
-      case 'general':
+      case 'broadcast':
         return 'megaphone';
+      case 'general':
+        return 'notifications';
       default:
         return 'notifications';
     }
@@ -84,6 +113,8 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose 
         return '#007bff';
       case 'reminder':
         return '#FF9800';
+      case 'broadcast':
+        return '#000000';
       case 'general':
         return '#28a745';
       default:
@@ -92,23 +123,46 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose 
   };
 
   const handleNotificationPress = async (notification: Notification) => {
-    // Mark as read
-    if (!notification.isRead) {
-      try {
-        await markNotificationAsRead(notification.id);
-        setNotifications(prev => 
-          prev.map(n => n.id === notification.id ? { ...n, isRead: true } : n)
-        );
-      } catch (error) {
-        console.error('Error marking notification as read:', error);
+    // If it's a broadcast message, show with dismiss option
+    if (notification.isBroadcast) {
+      Alert.alert(
+        notification.title,
+        notification.message,
+        [
+          { text: 'סגור', style: 'cancel' },
+          {
+            text: 'סמן כנקרא (לא להציג שוב)',
+            style: 'default',
+            onPress: async () => {
+              const user = getCurrentUser();
+              if (user) {
+                await dismissBroadcastMessage(notification.id, user.uid);
+                // Remove from list
+                setNotifications(prev => prev.filter(n => n.id !== notification.id));
+              }
+            }
+          }
+        ]
+      );
+    } else {
+      // Mark regular notification as read
+      if (!notification.isRead) {
+        try {
+          await markNotificationAsRead(notification.id);
+          setNotifications(prev =>
+            prev.map(n => n.id === notification.id ? { ...n, isRead: true } : n)
+          );
+        } catch (error) {
+          console.error('Error marking notification as read:', error);
+        }
       }
-    }
 
-    Alert.alert(
-      notification.title,
-      notification.message,
-      [{ text: 'סגור', style: 'default' }]
-    );
+      Alert.alert(
+        notification.title,
+        notification.message,
+        [{ text: 'סגור', style: 'default' }]
+      );
+    }
   };
 
   const handleMarkAllRead = async () => {

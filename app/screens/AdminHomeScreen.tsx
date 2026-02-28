@@ -3,16 +3,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-    Dimensions,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Dimensions,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { checkIsAdmin, initializeCollections, initializeGalleryImages, listAllStorageImages, makeCurrentUserAdmin, onAuthStateChange, replaceGalleryPlaceholders, resetGalleryWithRealImages, restoreGalleryFromStorage } from '../../services/firebase';
+import { checkIsAdmin, onAuthStateChange } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
 
@@ -65,7 +65,7 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
         if (snap.exists()) {
           setAboutUsText(snap.data().text || '');
         } else {
-          const defaultText = 'ברוכים הבאים למספרת גל שמש! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח.';
+          const defaultText = 'ברוכים הבאים למספרת torix! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח.';
           setAboutUsText(defaultText);
           await setDoc(docRef, { text: defaultText }, { merge: true });
         }
@@ -86,60 +86,7 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
     setToast({ ...toast, visible: false });
   };
 
-  const handleInitializeGallery = async () => {
-    try {
-      showToast('מאתחל גלריה...', 'success');
-      await initializeGalleryImages();
-      showToast('הגלריה אותחלה בהצלחה!', 'success');
-    } catch (error) {
-      console.error('Error initializing gallery:', error);
-      showToast('שגיאה באתחול הגלריה', 'error');
-    }
-  };
 
-  const handleReplaceGallery = async () => {
-    try {
-      showToast('מחליף תמונות...', 'success');
-      await replaceGalleryPlaceholders();
-      showToast('התמונות הוחלפו בהצלחה!', 'success');
-    } catch (error) {
-      console.error('Error replacing gallery:', error);
-      showToast('שגיאה בהחלפת התמונות', 'error');
-    }
-  };
-
-  const handleResetGallery = async () => {
-    try {
-      showToast('מאפס גלריה...', 'success');
-      await resetGalleryWithRealImages();
-      showToast('הגלריה אופסה והתמונות החדשות נוספו!', 'success');
-    } catch (error) {
-      console.error('Error resetting gallery:', error);
-      showToast('שגיאה באיפוס הגלריה', 'error');
-    }
-  };
-
-  const handleListStorage = async () => {
-    try {
-      showToast('בודק תמונות ב-Firebase Storage...', 'success');
-      await listAllStorageImages();
-      showToast('בדוק את הקונסול לראות את התמונות!', 'success');
-    } catch (error) {
-      console.error('Error listing storage:', error);
-      showToast('שגיאה בבדיקת Storage', 'error');
-    }
-  };
-
-  const handleRestoreFromStorage = async () => {
-    try {
-      showToast('משחזר תמונות מ-Firebase Storage...', 'success');
-      const count = await restoreGalleryFromStorage();
-      showToast(`שוחזרו ${count} תמונות מ-Storage!`, 'success');
-    } catch (error) {
-      console.error('Error restoring from storage:', error);
-      showToast('שגיאה בשחזור מ-Storage', 'error');
-    }
-  };
 
   const handleSaveAboutUs = async () => {
     setAboutUsLoading(true);
@@ -262,23 +209,7 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
           <Ionicons name="warning" size={64} color="#dc3545" />
           <Text style={styles.errorText}>אין לך הרשאות מנהל</Text>
           <Text style={styles.debugText}>UID: {currentUserId}</Text>
-          <TouchableOpacity 
-            style={[styles.backButton, { backgroundColor: '#28a745', marginBottom: 12 }]} 
-            onPress={async () => {
-              try {
-                await makeCurrentUserAdmin();
-                showToast('נוצרו הרשאות מנהל! רענן את האפליקציה', 'success');
-                // Force refresh by reloading the component
-                setTimeout(() => {
-                  onNavigate('admin-home');
-                }, 1000);
-              } catch (error) {
-                showToast('שגיאה ביצירת הרשאות מנהל', 'error');
-              }
-            }}
-          >
-            <Text style={styles.backButtonText}>הפוך אותי למנהל (DEBUG)</Text>
-          </TouchableOpacity>
+
           <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('home')}>
             <Text style={styles.backButtonText}>חזור לעמוד הבית</Text>
           </TouchableOpacity>
@@ -289,14 +220,14 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
 
   return (
     <SafeAreaView style={styles.container}>
-      <TopNav 
+      <TopNav
         title="פאנל מנהל"
-        onBellPress={() => {}}
-        onMenuPress={() => {}}
+        onBellPress={() => { }}
+        onMenuPress={() => { }}
         showBackButton={true}
-        onBackPress={onBack || (() => {})}
+        onBackPress={onBack || (() => { })}
       />
-      
+
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           {/* Welcome Header */}
@@ -310,79 +241,21 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
             </LinearGradient>
           </View>
 
-          {/* System Status */}
-          <View style={styles.systemSection}>
-            <Text style={styles.systemTitle}>מצב המערכת</Text>
-            <View style={styles.systemItem}>
-              <View style={styles.systemInfo}>
-                <Text style={styles.systemLabel}>Firestore Database</Text>
-                <Text style={styles.systemStatus}>פעיל</Text>
-              </View>
-              <View style={[styles.statusIndicator, styles.statusActive]} />
-            </View>
-            
-            <TouchableOpacity 
-              style={styles.initButton}
-              onPress={handleInitializeGallery}
-            >
-              <Ionicons name="images" size={20} color="#fff" />
-              <Text style={styles.initButtonText}>אתחל גלריה עם תמונות דמה</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.initButton, { backgroundColor: '#dc3545', marginTop: 12 }]}
-              onPress={handleReplaceGallery}
-            >
-              <Ionicons name="refresh" size={20} color="#fff" />
-              <Text style={styles.initButtonText}>החלף תמונות אפורות בתמונות אמיתיות</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.initButton, { backgroundColor: '#28a745', marginTop: 12 }]}
-              onPress={handleResetGallery}
-            >
-              <Ionicons name="trash" size={20} color="#fff" />
-              <Text style={styles.initButtonText}>מחק הכל וצור גלריה חדשה</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.initButton, { backgroundColor: '#6f42c1', marginTop: 12 }]}
-              onPress={handleListStorage}
-            >
-              <Ionicons name="folder" size={20} color="#fff" />
-              <Text style={styles.initButtonText}>בדוק מה יש ב-Firebase Storage</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.initButton, { backgroundColor: '#fd7e14', marginTop: 12 }]}
-              onPress={handleRestoreFromStorage}
-            >
-              <Ionicons name="download" size={20} color="#fff" />
-              <Text style={styles.initButtonText}>שחזר התמונות שלי מ-Storage</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.initButton, { backgroundColor: '#9c27b0', marginTop: 12 }]}
-              onPress={() => onNavigate('admin-notification-settings')}
-            >
-              <Ionicons name="settings-outline" size={20} color="#fff" />
-              <Text style={styles.initButtonText}>הגדרות התראות מנהל</Text>
-            </TouchableOpacity>
-          </View>
+
 
           {/* עריכת טקסט הכירו אותנו */}
-          <View style={{margin: 16, backgroundColor: '#222', borderRadius: 12, padding: 16}}>
-            <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 18, marginBottom: 8}}>ערוך טקסט הכירו אותנו</Text>
+          <View style={{ margin: 16, backgroundColor: '#222', borderRadius: 12, padding: 16 }}>
+            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 18, marginBottom: 8 }}>ערוך טקסט הכירו אותנו</Text>
             <TextInput
               value={aboutUsText}
               onChangeText={setAboutUsText}
               placeholder="הכנס טקסט הכירו אותנו..."
-              style={{backgroundColor: '#333', color: '#fff', borderRadius: 8, padding: 8, minHeight: 80, marginBottom: 8}}
+              style={{ backgroundColor: '#333', color: '#fff', borderRadius: 8, padding: 8, minHeight: 80, marginBottom: 8 }}
               placeholderTextColor="#aaa"
               multiline
             />
-            <TouchableOpacity style={{backgroundColor: '#007bff', borderRadius: 8, padding: 12, marginTop: 8}} onPress={handleSaveAboutUs} disabled={aboutUsLoading}>
-              <Text style={{color: 'white', fontWeight: 'bold', textAlign: 'center'}}>{aboutUsLoading ? 'שומר...' : 'שמור טקסט'}</Text>
+            <TouchableOpacity style={{ backgroundColor: '#007bff', borderRadius: 8, padding: 12, marginTop: 8 }} onPress={handleSaveAboutUs} disabled={aboutUsLoading}>
+              <Text style={{ color: 'white', fontWeight: 'bold', textAlign: 'center' }}>{aboutUsLoading ? 'שומר...' : 'שמור טקסט'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -404,11 +277,8 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
                 <View style={[styles.menuIconContainer, { backgroundColor: item.color }]}>
                   <Ionicons name={item.icon as any} size={28} color="#fff" />
                 </View>
-                <View style={styles.menuTextContainer}>
-                  <Text style={styles.menuTitle}>{item.title}</Text>
-                  <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#999" />
+                <Text style={styles.menuTitle}>{item.title}</Text>
+                <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -432,22 +302,7 @@ const AdminHomeScreen: React.FC<AdminHomeScreenProps> = ({ onNavigate, onBack })
             </View>
           </View>
 
-          {/* Initialize Collections Button */}
-          <View style={styles.initSection}>
-            <TouchableOpacity
-              style={styles.initButton}
-              onPress={async () => {
-                try {
-                  await initializeCollections();
-                  showToast('Collections initialized successfully!');
-                } catch (error) {
-                  showToast('Error initializing collections', 'error');
-                }
-              }}
-            >
-              <Text style={styles.initButtonText}>Initialize Database Collections</Text>
-            </TouchableOpacity>
-          </View>
+
         </View>
       </ScrollView>
 
@@ -536,15 +391,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   menuGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     marginBottom: 24,
   },
   menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    width: (width - 44) / 2,
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -552,27 +410,24 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   menuIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
-  },
-  menuTextContainer: {
-    flex: 1,
+    marginBottom: 12,
   },
   menuTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#222',
     marginBottom: 4,
-    textAlign: 'right',
+    textAlign: 'center',
   },
   menuSubtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
-    textAlign: 'right',
+    textAlign: 'center',
   },
   statsSection: {
     marginBottom: 24,
@@ -612,81 +467,7 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
-  initSection: {
-    marginTop: 24,
-    alignItems: 'center',
-  },
-  initButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#007bff',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  initButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  systemSection: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  systemTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#222',
-    marginBottom: 16,
-    textAlign: 'right',
-  },
-  systemItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  systemInfo: {
-    flex: 1,
-  },
-  systemLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    textAlign: 'right',
-  },
-  systemStatus: {
-    fontSize: 14,
-    color: '#28a745',
-    textAlign: 'right',
-    marginTop: 2,
-  },
-  statusIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  statusActive: {
-    backgroundColor: '#28a745',
-  },
+
 });
 
 export default AdminHomeScreen;

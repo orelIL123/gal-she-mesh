@@ -51,3 +51,6 @@ echo ""
 echo "⚠️  חשוב: לפני Build הבא, עדכן versionCode ב-app.json!"
 
 
+
+
+

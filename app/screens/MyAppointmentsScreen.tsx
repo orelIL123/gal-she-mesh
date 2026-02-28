@@ -1,31 +1,32 @@
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Alert,
-  Dimensions,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import { colors } from '../constants/colors';
 import {
-  Appointment,
-  Barber,
-  cancelAppointment,
-  deleteAppointment,
-  getBarbers,
-  getCurrentUser,
-  getTreatments,
-  getUserAppointments,
-  Treatment
+    Appointment,
+    Barber,
+    cancelAppointment,
+    deleteAppointment,
+    getBarbers,
+    getCurrentUser,
+    getTreatments,
+    getUserAppointments,
+    Treatment
 } from '../../services/firebase';
 import ToastMessage from '../components/ToastMessage';
 import TopNav from '../components/TopNav';
+import { colors } from '../constants/colors';
 
 const { width } = Dimensions.get('window');
 
@@ -44,6 +45,7 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>('upcoming');
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' });
+  const [cancellationPolicyHours, setCancellationPolicyHours] = useState(2);
 
   useEffect(() => {
     loadData();
@@ -59,15 +61,18 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
         return;
       }
 
-      const [appointmentsData, barbersData, treatmentsData] = await Promise.all([
+      const { getAdminNotificationSettings } = await import('../../services/firebase');
+      const [appointmentsData, barbersData, treatmentsData, settings] = await Promise.all([
         getUserAppointments(user.uid),
         getBarbers(),
-        getTreatments()
+        getTreatments(),
+        getAdminNotificationSettings()
       ]);
 
       setAppointments(appointmentsData);
       setBarbers(barbersData);
       setTreatments(treatmentsData);
+      setCancellationPolicyHours(settings.cancellationPolicyHours || 2);
     } catch (error) {
       console.error('Error loading appointments:', error);
       showToast('שגיאה בטעינת התורים', 'error');
@@ -135,7 +140,11 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
 
   const isPastAppointment = (appointment: Appointment): boolean => {
     const now = new Date();
-    const aptDate = appointment.date.toDate ? appointment.date.toDate() : new Date(appointment.date);
+    const aptDate = appointment.date instanceof Date
+      ? appointment.date
+      : (appointment.date as any).toDate
+        ? (appointment.date as any).toDate()
+        : new Date(appointment.date as any);
     return aptDate < now || appointment.status === 'completed' || appointment.status === 'cancelled';
   };
 
@@ -145,10 +154,14 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
     }
 
     const now = new Date();
-    const aptDate = appointment.date.toDate ? appointment.date.toDate() : new Date(appointment.date);
+    const aptDate = appointment.date instanceof Date
+      ? appointment.date
+      : (appointment.date as any).toDate
+        ? (appointment.date as any).toDate()
+        : new Date(appointment.date as any);
     const hoursUntilAppointment = (aptDate.getTime() - now.getTime()) / (1000 * 60 * 60);
 
-    return hoursUntilAppointment > 2; // Allow cancellation only if more than 2 hours before appointment
+    return hoursUntilAppointment > cancellationPolicyHours;
   };
 
   const canDeleteAppointment = (appointment: Appointment): boolean => {
@@ -160,7 +173,7 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
     if (!canCancelAppointment(appointment)) {
       Alert.alert(
         'לא ניתן לביטול',
-        'לא ניתן לבטל תור פחות משעתיים לפני המועד',
+        `לא ניתן לבטל תור פחות מ-${cancellationPolicyHours} ${cancellationPolicyHours === 1 ? 'שעה' : 'שעות'} לפני המועד. אנא פנה לספר לטיפול!`,
         [{ text: 'אישור', style: 'default' }]
       );
       return;
@@ -238,35 +251,43 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
   const pastCount = appointments.filter(apt => isPastAppointment(apt)).length;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <TopNav
-        title="התורים שלי"
-        onBellPress={() => {}}
-        onMenuPress={() => {}}
-        showBackButton={true}
-        onBackPress={onBack || (() => onNavigate('profile'))}
-      />
+    <LinearGradient
+      colors={['#0a0a0a', '#1a1a1a', '#0f0f0f']}
+      style={styles.container}
+    >
+      <SafeAreaView style={styles.safeArea}>
+        <TopNav
+          title="התורים שלי"
+          onBellPress={() => { }}
+          onMenuPress={() => { }}
+          showBackButton={true}
+          onBackPress={onBack || (() => onNavigate('profile'))}
+        />
 
-      {/* Filter Buttons */}
-      <View style={styles.filterContainer}>
+        {/* Filter Buttons */}
+        <View style={styles.filterContainer}>
         <TouchableOpacity
           style={[
             styles.filterButton,
             filter === 'upcoming' && styles.activeFilterButtonUpcoming
           ]}
           onPress={() => setFilter('upcoming')}
+          activeOpacity={0.8}
         >
-          <LinearGradient
-            colors={filter === 'upcoming' ? [colors.barberGold, colors.barberGoldDark] : ['#f8f9fa', '#e9ecef']}
-            style={styles.filterGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
+          <BlurView intensity={filter === 'upcoming' ? 20 : 10} style={styles.filterBlur}>
+            {filter === 'upcoming' && (
+              <LinearGradient
+                colors={['rgba(255, 215, 0, 0.3)', 'rgba(218, 165, 32, 0.3)']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+            )}
             <View style={styles.filterContent}>
               <Ionicons
                 name="calendar-outline"
                 size={20}
-                color={filter === 'upcoming' ? '#fff' : '#666'}
+                color={filter === 'upcoming' ? '#FFD700' : '#999'}
               />
               <Text style={[
                 styles.filterText,
@@ -286,7 +307,7 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
                 </Text>
               </View>
             </View>
-          </LinearGradient>
+          </BlurView>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -295,18 +316,22 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
             filter === 'past' && styles.activeFilterButtonPast
           ]}
           onPress={() => setFilter('past')}
+          activeOpacity={0.8}
         >
-          <LinearGradient
-            colors={filter === 'past' ? [colors.barberGold, colors.barberGoldDark] : ['#f8f9fa', '#e9ecef']}
-            style={styles.filterGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
+          <BlurView intensity={filter === 'past' ? 20 : 10} style={styles.filterBlur}>
+            {filter === 'past' && (
+              <LinearGradient
+                colors={['rgba(33, 150, 243, 0.3)', 'rgba(25, 118, 210, 0.3)']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+            )}
             <View style={styles.filterContent}>
               <Ionicons
                 name="time-outline"
                 size={20}
-                color={filter === 'past' ? '#fff' : '#666'}
+                color={filter === 'past' ? '#2196F3' : '#999'}
               />
               <Text style={[
                 styles.filterText,
@@ -326,7 +351,7 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
                 </Text>
               </View>
             </View>
-          </LinearGradient>
+          </BlurView>
         </TouchableOpacity>
       </View>
 
@@ -372,13 +397,18 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
           filteredAppointments.map((appointment) => {
             const isPast = isPastAppointment(appointment);
             return (
-              <View key={appointment.id} style={styles.appointmentCard}>
-                <LinearGradient
-                  colors={['#ffffff', '#f8f9fa']}
-                  style={styles.cardGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                >
+              <TouchableOpacity 
+                key={appointment.id} 
+                style={styles.appointmentCard}
+                activeOpacity={0.9}
+              >
+                <BlurView intensity={20} style={styles.cardBlur}>
+                  <LinearGradient
+                    colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                    style={styles.cardGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                  >
                   {/* Card Header */}
                   <View style={styles.cardHeader}>
                     <View style={[
@@ -398,7 +428,14 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
 
                   {/* Treatment Name */}
                   <View style={styles.treatmentContainer}>
-                    <Ionicons name="cut-outline" size={24} color="#FFD700" />
+                    <LinearGradient
+                      colors={['#FFD700', '#FFA500']}
+                      style={styles.iconGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="cut-outline" size={24} color="#000" />
+                    </LinearGradient>
                     <Text style={styles.treatmentName}>
                       {getTreatmentName(appointment.treatmentId)}
                     </Text>
@@ -408,13 +445,13 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
                   <View style={styles.detailsContainer}>
                     <View style={styles.detailRow}>
                       <View style={styles.detailItem}>
-                        <Ionicons name="calendar" size={18} color="#666" />
+                        <Ionicons name="calendar" size={18} color="#FFD700" />
                         <Text style={styles.detailText}>
                           {formatDate(appointment.date)}
                         </Text>
                       </View>
                       <View style={styles.detailItem}>
-                        <Ionicons name="time" size={18} color="#666" />
+                        <Ionicons name="time" size={18} color="#2196F3" />
                         <Text style={styles.detailText}>
                           {formatTime(appointment.date)}
                         </Text>
@@ -423,7 +460,7 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
 
                     <View style={styles.detailRow}>
                       <View style={styles.detailItem}>
-                        <Ionicons name="person" size={18} color="#666" />
+                        <Ionicons name="person" size={18} color="#4CAF50" />
                         <Text style={styles.detailText}>
                           {getBarberName(appointment.barberId)}
                         </Text>
@@ -452,8 +489,9 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
                       </TouchableOpacity>
                     )}
                   </View>
-                </LinearGradient>
-              </View>
+                  </LinearGradient>
+                </BlurView>
+              </TouchableOpacity>
             );
           })
         )}
@@ -476,49 +514,56 @@ const MyAppointmentsScreen: React.FC<MyAppointmentsScreenProps> = ({ onNavigate,
         </TouchableOpacity>
       )}
 
-      <ToastMessage
-        visible={toast.visible}
-        message={toast.message}
-        type={toast.type}
-        onHide={hideToast}
-      />
-    </SafeAreaView>
+        <ToastMessage
+          visible={toast.visible}
+          message={toast.message}
+          type={toast.type}
+          onHide={hideToast}
+        />
+      </SafeAreaView>
+    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+  },
+  safeArea: {
+    flex: 1,
   },
   filterContainer: {
     flexDirection: 'row',
     padding: 16,
     gap: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
   },
   filterButton: {
     flex: 1,
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  filterBlur: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    padding: 12,
   },
   activeFilterButtonUpcoming: {
+    borderColor: 'rgba(255, 215, 0, 0.5)',
     shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   activeFilterButtonPast: {
+    borderColor: 'rgba(33, 150, 243, 0.5)',
     shadowColor: '#2196F3',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-  },
-  filterGradient: {
-    padding: 12,
+    shadowRadius: 8,
+    elevation: 5,
   },
   filterContent: {
     flexDirection: 'row',
@@ -528,18 +573,19 @@ const styles = StyleSheet.create({
   },
   filterText: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#666',
+    fontWeight: '600',
+    color: '#999',
   },
   activeFilterText: {
     color: '#fff',
+    fontWeight: 'bold',
   },
   filterBadge: {
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     borderRadius: 12,
-    minWidth: 24,
+    minWidth: 28,
     alignItems: 'center',
   },
   activeFilterBadge: {
@@ -548,7 +594,7 @@ const styles = StyleSheet.create({
   filterBadgeText: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#666',
+    color: '#ccc',
   },
   activeFilterBadgeText: {
     color: '#fff',
@@ -565,7 +611,8 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: '#666',
+    color: '#999',
+    fontWeight: '500',
   },
   emptyState: {
     flex: 1,
@@ -577,14 +624,14 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#fff',
     marginTop: 16,
     marginBottom: 8,
     textAlign: 'center',
   },
   emptyStateSubtitle: {
     fontSize: 16,
-    color: '#666',
+    color: '#999',
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 24,
@@ -612,16 +659,23 @@ const styles = StyleSheet.create({
   },
   appointmentCard: {
     marginBottom: 16,
-    borderRadius: 16,
+    borderRadius: 20,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  cardBlur: {
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   cardGradient: {
-    padding: 16,
+    padding: 20,
+    borderRadius: 20,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -630,25 +684,41 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   statusText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   pastBadge: {
-    backgroundColor: '#9E9E9E',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    backgroundColor: 'rgba(158, 158, 158, 0.8)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   pastBadgeText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   treatmentContainer: {
     flexDirection: 'row',
@@ -657,13 +727,28 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  iconGradient: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 4,
   },
   treatmentName: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#222',
+    color: '#fff',
     flex: 1,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   detailsContainer: {
     gap: 12,
@@ -682,7 +767,7 @@ const styles = StyleSheet.create({
   },
   detailText: {
     fontSize: 15,
-    color: '#666',
+    color: '#ccc',
     fontWeight: '500',
   },
   actionsContainer: {
@@ -696,15 +781,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#FFF5F5',
+    backgroundColor: 'rgba(244, 67, 54, 0.2)',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#F44336',
+    borderColor: 'rgba(244, 67, 54, 0.5)',
+    overflow: 'hidden',
   },
   cancelButtonText: {
-    color: '#F44336',
+    color: '#FF6B6B',
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -714,15 +800,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: 'rgba(158, 158, 158, 0.2)',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#9E9E9E',
+    borderColor: 'rgba(158, 158, 158, 0.5)',
+    overflow: 'hidden',
   },
   deleteButtonText: {
-    color: '#9E9E9E',
+    color: '#B0B0B0',
     fontSize: 14,
     fontWeight: 'bold',
   },

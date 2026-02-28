@@ -47,7 +47,7 @@ export default function AuthChoiceScreen() {
             style={styles.logo}
             resizeMode="contain"
           />
-          <Text style={styles.appName}>גל שמש</Text>
+          <Text style={styles.appName}>torix</Text>
           <Text style={styles.tagline}>המספרה המקצועית שלך</Text>
         </View>
 
@@ -86,10 +86,10 @@ export default function AuthChoiceScreen() {
             <Text style={styles.modalTitle}>תנאי שימוש ומדיניות פרטיות</Text>
             <ScrollView style={styles.modalScrollView}>
               <Text style={styles.modalText}>
-                <Text style={styles.sectionTitle}>תנאי שימוש - גל שמש מספרה{'\n\n'}</Text>
+                <Text style={styles.sectionTitle}>תנאי שימוש - torix{'\n\n'}</Text>
                 
                 <Text style={styles.subsectionTitle}>1. קבלת השירות{'\n'}</Text>
-                • השירות מיועד לקביעת תורים במספרה של גל שמש{'\n'}
+                • השירות מיועד לקביעת תורים במספרה של torix{'\n'}
                 • יש לספק מידע מדויק ומלא בעת קביעת התור{'\n'}
                 • המספרה שומרת לעצמה את הזכות לסרב לתת שירות במקרים חריגים{'\n\n'}
                 

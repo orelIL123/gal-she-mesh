@@ -1,6 +1,6 @@
 # Terms of Service
 
-By using gal shemesh's app, you agree to the following terms:
+By using TORYX's app, you agree to the following terms:
 
 - You will provide accurate information when booking appointments.
 - You are responsible for managing your appointments and cancellations.

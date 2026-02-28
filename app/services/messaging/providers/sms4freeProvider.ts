@@ -19,7 +19,7 @@ export class SMS4FreeProvider implements MessageProvider {
     this.enabled = cfg.enabled;
     
     // Log to verify correct credentials are being used
-    console.log(`📱 גל שמש SMS Provider initialized with:`);
+    console.log(`📱 torix SMS Provider initialized with:`);
     console.log(`   user: ${this.user}`);
     console.log(`   sender: ${this.sender}`);
     console.log(`   apiKey: ${this.apiKey ? '***' + this.apiKey.slice(-4) : 'missing'}`);
@@ -55,7 +55,7 @@ export class SMS4FreeProvider implements MessageProvider {
         msg: message,
       };
 
-      console.log(`📱 גל שמש SMS: שולח עם user=${this.user} (מהקונפיג)`);
+      console.log(`📱 torix SMS: שולח עם user=${this.user} (מהקונפיג)`);
       console.log(`📱 Request body:`, JSON.stringify(body, null, 2));
 
       const resp = await fetch(this.endpoint, {
@@ -78,7 +78,7 @@ export class SMS4FreeProvider implements MessageProvider {
       
       const out = JSON.parse(responseText); // {status:number, message:string}
 
-      console.log('📱 גל שמש SMS Response:', out);
+      console.log('📱 torix SMS Response:', out);
 
       if (typeof out?.status === 'number' && out.status > 0) {
         return { success: true, messageId: String(out.status), provider: this.name };
@@ -86,7 +86,7 @@ export class SMS4FreeProvider implements MessageProvider {
       
       return { success: false, error: `${out?.status} - ${out?.message || 'unknown'}`, provider: this.name };
     } catch (e: any) {
-      console.error('📱 גל שמש SMS Error:', e);
+      console.error('📱 torix SMS Error:', e);
       return { success: false, error: e.message, provider: this.name };
     }
   }

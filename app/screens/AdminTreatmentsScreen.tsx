@@ -288,6 +288,50 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
     );
   };
 
+  const handleDeleteTreatmentImage = async (treatmentId: string, treatmentName: string, imageUrl: string) => {
+    Alert.alert(
+      'מחיקת תמונה',
+      `האם אתה בטוח שברצונך למחוק את התמונה של הטיפול "${treatmentName}"?`,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'מחק תמונה',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // עדכן את הטיפול ללא תמונה
+              await updateTreatment(treatmentId, { image: '' });
+              
+              // מחק את התמונה מ-Storage אם זה Firebase Storage URL
+              if (imageUrl && imageUrl.includes('firebasestorage.googleapis.com')) {
+                try {
+                  const { deleteImageFromStorage } = await import('../../services/firebase');
+                  await deleteImageFromStorage(imageUrl);
+                  console.log('✅ Image deleted from storage');
+                } catch (storageError) {
+                  console.error('Error deleting from storage:', storageError);
+                  // ממשיך גם אם המחיקה מ-Storage נכשלה
+                }
+              }
+              
+              // עדכן את ה-state המקומי
+              setTreatments(prev => 
+                prev.map(t => 
+                  t.id === treatmentId ? { ...t, image: '' } : t
+                )
+              );
+              
+              showToast('התמונה נמחקה בהצלחה');
+            } catch (error) {
+              console.error('Error deleting treatment image:', error);
+              showToast('שגיאה במחיקת התמונה', 'error');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <TopNav 
@@ -350,6 +394,12 @@ const AdminTreatmentsScreen: React.FC<AdminTreatmentsScreenProps> = ({ onNavigat
                         style={styles.treatmentImage}
                         defaultSource={{ uri: 'https://via.placeholder.com/200x150' }}
                       />
+                      <TouchableOpacity
+                        style={styles.deleteImageButton}
+                        onPress={() => handleDeleteTreatmentImage(treatment.id, treatment.name, treatment.image)}
+                      >
+                        <Ionicons name="trash" size={20} color="#fff" />
+                      </TouchableOpacity>
                     </View>
                   )}
                   
@@ -694,10 +744,29 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 12,
     backgroundColor: '#f0f0f0',
+    position: 'relative',
   },
   treatmentImage: {
     width: '100%',
     height: '100%',
+  },
+  deleteImageButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#dc3545',
+    borderRadius: 16,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
   treatmentDescription: {
     fontSize: 14,

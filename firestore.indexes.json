@@ -4,82 +4,190 @@
       "collectionGroup": "appointments",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "barberId", "order": "ASCENDING" },
-        { "fieldPath": "date", "order": "ASCENDING" },
-        { "fieldPath": "time", "order": "ASCENDING" }
+        {
+          "fieldPath": "barberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "time",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "appointments",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "barberId", "order": "ASCENDING" },
-        { "fieldPath": "date", "order": "ASCENDING" }
+        {
+          "fieldPath": "barberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "appointments",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "clientId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "clientId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "appointments",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "date", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "dailyAvailability",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "barberId", "order": "ASCENDING" },
-        { "fieldPath": "date", "order": "ASCENDING" }
+        {
+          "fieldPath": "barberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "dailyAvailability",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "barberId", "order": "ASCENDING" },
-        { "fieldPath": "isAvailable", "order": "ASCENDING" }
+        {
+          "fieldPath": "barberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isAvailable",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "waitlist",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "waitlist",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "barberId", "order": "ASCENDING" },
-        { "fieldPath": "date", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "barberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "waitlist",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "date", "order": "ASCENDING" }
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "reviews",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "barberId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "barberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "scheduledReminders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "scheduledTime",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],

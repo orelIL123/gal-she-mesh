@@ -3,26 +3,26 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Dimensions,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { colors } from '../constants/colors';
 import {
-    checkIsAdmin,
-    getAllUsers,
-    onAuthStateChange
+  checkIsAdmin,
+  getAllUsers,
+  onAuthStateChange
 } from '../../services/firebase';
 import TopNav from '../components/TopNav';
+import { colors } from '../constants/colors';
 
 const { width } = Dimensions.get('window');
 
@@ -47,6 +47,8 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
   const [notificationTitle, setNotificationTitle] = useState('');
   const [notificationBody, setNotificationBody] = useState('');
   const [selectedUser, setSelectedUser] = useState<string>('all');
+  const [history, setHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (user) => {
@@ -68,6 +70,7 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
   useEffect(() => {
     if (isAdmin) {
       loadUsers();
+      loadHistory();
     }
   }, [isAdmin]);
 
@@ -83,6 +86,43 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
     }
   };
 
+  const loadHistory = async () => {
+    try {
+      setLoadingHistory(true);
+      const { getBroadcastNotifications } = await import('../../services/firebase');
+      const historyData = await getBroadcastNotifications();
+      setHistory(historyData);
+    } catch (error) {
+      console.error('Error loading history:', error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleDeleteHistory = async (id: string) => {
+    Alert.alert(
+      'מחיקת הודעה',
+      'האם אתה בטוח שברצונך למחוק הודעה זו מההיסטוריה?',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'מחק',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { deleteBroadcastNotification } = await import('../../services/firebase');
+              await deleteBroadcastNotification(id);
+              setHistory(history.filter(item => item.id !== id));
+            } catch (error) {
+              console.error('Error deleting history:', error);
+              Alert.alert('שגיאה', 'לא ניתן למחוק את ההודעה');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const sendNotification = async () => {
     if (!notificationTitle.trim() || !notificationBody.trim()) {
       Alert.alert('שגיאה', 'נא למלא את כותרת ההודעה ותוכן ההודעה');
@@ -92,9 +132,9 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
     try {
       // Import notification functions
       const { sendNotificationToAllUsers, sendNotificationToUser } = await import('../../services/firebase');
-      
+
       let success = false;
-      
+
       if (selectedUser === 'all') {
         // Use the fixed function that filters out admins
         const sentCount = await sendNotificationToAllUsers(notificationTitle, notificationBody);
@@ -102,7 +142,7 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
       } else {
         success = await sendNotificationToUser(selectedUser, notificationTitle, notificationBody);
       }
-      
+
       if (success) {
         Alert.alert(
           'התראה נשלחה',
@@ -115,6 +155,7 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
                 setNotificationTitle('');
                 setNotificationBody('');
                 setSelectedUser('all');
+                loadHistory();
               }
             }
           ]
@@ -162,10 +203,10 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
 
   return (
     <SafeAreaView style={styles.container}>
-      <TopNav 
+      <TopNav
         title="ניהול התראות"
-        onBellPress={() => {}}
-        onMenuPress={() => {}}
+        onBellPress={() => { }}
+        onMenuPress={() => { }}
         showBackButton={true}
         onBackPress={onBack || (() => onNavigate('admin-home'))}
       />
@@ -233,6 +274,41 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
                   </View>
                 ))}
               </View>
+
+              {/* History Section */}
+              <View style={styles.historyContainer}>
+                <Text style={styles.historyTitle}>היסטוריית הודעות שנשלחו</Text>
+                {loadingHistory ? (
+                  <Text style={styles.loadingHistoryText}>טוען היסטוריה...</Text>
+                ) : history.length === 0 ? (
+                  <Text style={styles.emptyHistoryText}>אין היסטוריית הודעות</Text>
+                ) : (
+                  history.map((item) => (
+                    <View key={item.id} style={styles.historyItem}>
+                      <View style={styles.historyContent}>
+                        <Text style={styles.historyItemTitle}>{item.title}</Text>
+                        <Text style={styles.historyItemBody}>{item.body}</Text>
+                        <View style={styles.historyFooter}>
+                          <Text style={styles.historyDate}>
+                            {item.sentAt?.toLocaleDateString('he-IL')} {item.sentAt?.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                          </Text>
+                          {item.successCount !== undefined && (
+                            <Text style={styles.historyStats}>
+                              נשלח ל-{item.successCount}/{item.totalCount}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.deleteHistoryButton}
+                        onPress={() => handleDeleteHistory(item.id)}
+                      >
+                        <Ionicons name="trash-outline" size={20} color="#dc3545" />
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                )}
+              </View>
             </View>
           </ScrollView>
           {/* Send Button always visible at bottom */}
@@ -252,7 +328,7 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
         visible={modalVisible}
         onRequestClose={() => setModalVisible(false)}
       >
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           style={styles.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
@@ -261,85 +337,85 @@ const AdminNotificationsScreen: React.FC<AdminNotificationsScreenProps> = ({ onN
             keyboardShouldPersistTaps="handled"
           >
             <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>שלח הודעה חדשה</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalBody}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>כותרת ההודעה *</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={notificationTitle}
-                  onChangeText={setNotificationTitle}
-                  placeholder="לדוגמה: תור חדש זמין"
-                  textAlign="right"
-                  placeholderTextColor="#999"
-                />
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>שלח הודעה חדשה</Text>
+                <TouchableOpacity onPress={() => setModalVisible(false)}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>תוכן ההודעה *</Text>
-                <TextInput
-                  style={[styles.textInput, styles.textArea]}
-                  value={notificationBody}
-                  onChangeText={setNotificationBody}
-                  placeholder="תוכן ההודעה..."
-                  multiline
-                  numberOfLines={4}
-                  textAlign="right"
-                  placeholderTextColor="#999"
-                />
-              </View>
+              <View style={styles.modalBody}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>כותרת ההודעה *</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={notificationTitle}
+                    onChangeText={setNotificationTitle}
+                    placeholder="לדוגמה: תור חדש זמין"
+                    textAlign="right"
+                    placeholderTextColor="#999"
+                  />
+                </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>שלח ל:</Text>
-                <View style={styles.radioGroup}>
-                  <TouchableOpacity
-                    style={[styles.radioButton, selectedUser === 'all' && styles.radioButtonSelected]}
-                    onPress={() => setSelectedUser('all')}
-                  >
-                    <Ionicons 
-                      name={selectedUser === 'all' ? 'radio-button-on' : 'radio-button-off'} 
-                      size={20} 
-                      color={selectedUser === 'all' ? '#007bff' : '#666'} 
-                    />
-                    <Text style={styles.radioLabel}>כל המשתמשים ({users.length})</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[styles.radioButton, selectedUser === 'with-tokens' && styles.radioButtonSelected]}
-                    onPress={() => setSelectedUser('with-tokens')}
-                  >
-                    <Ionicons 
-                      name={selectedUser === 'with-tokens' ? 'radio-button-on' : 'radio-button-off'} 
-                      size={20} 
-                      color={selectedUser === 'with-tokens' ? '#007bff' : '#666'} 
-                    />
-                    <Text style={styles.radioLabel}>עם התראות ({getUsersWithTokens().length})</Text>
-                  </TouchableOpacity>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>תוכן ההודעה *</Text>
+                  <TextInput
+                    style={[styles.textInput, styles.textArea]}
+                    value={notificationBody}
+                    onChangeText={setNotificationBody}
+                    placeholder="תוכן ההודעה..."
+                    multiline
+                    numberOfLines={4}
+                    textAlign="right"
+                    placeholderTextColor="#999"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>שלח ל:</Text>
+                  <View style={styles.radioGroup}>
+                    <TouchableOpacity
+                      style={[styles.radioButton, selectedUser === 'all' && styles.radioButtonSelected]}
+                      onPress={() => setSelectedUser('all')}
+                    >
+                      <Ionicons
+                        name={selectedUser === 'all' ? 'radio-button-on' : 'radio-button-off'}
+                        size={20}
+                        color={selectedUser === 'all' ? '#007bff' : '#666'}
+                      />
+                      <Text style={styles.radioLabel}>כל המשתמשים ({users.length})</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.radioButton, selectedUser === 'with-tokens' && styles.radioButtonSelected]}
+                      onPress={() => setSelectedUser('with-tokens')}
+                    >
+                      <Ionicons
+                        name={selectedUser === 'with-tokens' ? 'radio-button-on' : 'radio-button-off'}
+                        size={20}
+                        color={selectedUser === 'with-tokens' ? '#007bff' : '#666'}
+                      />
+                      <Text style={styles.radioLabel}>עם התראות ({getUsersWithTokens().length})</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-            </View>
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.cancelButton]}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.cancelButtonText}>ביטול</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.actionButton, styles.sendButton]}
-                onPress={sendNotification}
-              >
-                <Text style={styles.sendButtonText}>שלח הודעה</Text>
-              </TouchableOpacity>
-            </View>
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.cancelButton]}
+                  onPress={() => setModalVisible(false)}
+                >
+                  <Text style={styles.cancelButtonText}>ביטול</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.sendButton]}
+                  onPress={sendNotification}
+                >
+                  <Text style={styles.sendButtonText}>שלח הודעה</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -596,6 +672,80 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  historyContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+    margin: 16,
+    marginTop: 0,
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  historyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 16,
+    textAlign: 'right',
+  },
+  historyList: {
+    flex: 1,
+  },
+  historyItem: {
+    flexDirection: 'row-reverse',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    alignItems: 'center',
+  },
+  historyContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  historyItemTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#222',
+    textAlign: 'right',
+  },
+  historyItemBody: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  historyFooter: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  historyDate: {
+    fontSize: 12,
+    color: '#999',
+  },
+  historyStats: {
+    fontSize: 12,
+    color: '#28a745',
+    fontWeight: '500',
+  },
+  deleteHistoryButton: {
+    padding: 8,
+  },
+  loadingHistoryText: {
+    textAlign: 'center',
+    color: '#666',
+    marginTop: 20,
+  },
+  emptyHistoryText: {
+    textAlign: 'center',
+    color: '#999',
+    marginTop: 20,
   },
 });
 

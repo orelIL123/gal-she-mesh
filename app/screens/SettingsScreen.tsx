@@ -208,7 +208,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate, onBack }) =
 
           {/* App Info */}
           <View style={styles.appInfo}>
-            <Text style={styles.appInfoText}>גל שמש Barber App</Text>
+            <Text style={styles.appInfoText}>TORYX App</Text>
             <Text style={styles.appVersionText}>{t('common.version') || 'גרסה'} 1.0.0</Text>
             <Text style={styles.appCreditText}>{t('home.powered_by')}</Text>
           </View>

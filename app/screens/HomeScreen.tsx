@@ -85,6 +85,9 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
   const [aboutUsMessage, setAboutUsMessage] = useState('');
   const [showPopup, setShowPopup] = useState(false);
   const [popupMessage, setPopupMessage] = useState('');
+  const [showBroadcastPopup, setShowBroadcastPopup] = useState(false);
+  const [broadcastNotification, setBroadcastNotification] = useState<{title: string; body: string; id: string} | null>(null);
+  const [seenBroadcasts, setSeenBroadcasts] = useState<Set<string>>(new Set());
 
   // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -244,9 +247,9 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
       const aboutDoc = await getDoc(doc(db, 'settings', 'aboutUsText'));
       if (aboutDoc.exists()) {
         const data = aboutDoc.data();
-        setAboutUsMessage(data.text || 'ברוכים הבאים למספרת גל שמש! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. גל, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
+        setAboutUsMessage(data.text || 'ברוכים הבאים למספרת torix! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. אוראל אהרון, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
       } else {
-        setAboutUsMessage('ברוכים הבאים למספרת גל שמש! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. גל, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
+        setAboutUsMessage('ברוכים הבאים למספרת torix! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. אוראל אהרון, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
       }
 
       // Check for popup message
@@ -258,12 +261,46 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
           setShowPopup(true);
         }
       }
+
+      // Check for recent broadcast notifications (last 24 hours)
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const seenData = await AsyncStorage.getItem('seenBroadcasts');
+        const seen = seenData ? new Set(JSON.parse(seenData)) : new Set<string>();
+        setSeenBroadcasts(seen);
+
+        const { getBroadcastNotifications } = await import('../../services/firebase');
+        const broadcasts = await getBroadcastNotifications();
+        const recentBroadcasts = broadcasts.filter(b => {
+          const sentAt = b.sentAt?.toDate ? b.sentAt.toDate() : new Date(b.sentAt);
+          const hoursAgo = (Date.now() - sentAt.getTime()) / (1000 * 60 * 60);
+          return hoursAgo <= 24; // Show broadcasts from last 24 hours
+        });
+
+        // Show the most recent unseen broadcast
+        if (recentBroadcasts.length > 0) {
+          const unseenBroadcast = recentBroadcasts.find(b => !seen.has(b.id));
+          if (unseenBroadcast) {
+            console.log('📢 Showing broadcast notification:', unseenBroadcast.id);
+            setBroadcastNotification({
+              title: unseenBroadcast.title,
+              body: unseenBroadcast.body,
+              id: unseenBroadcast.id
+            });
+            setShowBroadcastPopup(true);
+          } else {
+            console.log('📢 All broadcasts have been seen');
+          }
+        }
+      } catch (error) {
+        console.error('Error loading broadcast notifications:', error);
+      }
     } catch (error) {
       console.warn('Failed to fetch dynamic content:', error);
       // Fallback to translation values
       setWelcomeMessage(t('home.welcome'));
       setSubtitleMessage(t('home.subtitle'));
-      setAboutUsMessage('ברוכים הבאים למספרת גל שמש! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. גל, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
+      setAboutUsMessage('ברוכים הבאים למספרת torix! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. אוראל אהרון, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.');
     }
   };
 
@@ -553,7 +590,7 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
   return (
     <SafeAreaView style={styles.container}>
       <TopNav
-        title="Gal Shemesh"
+        title="torix"
         onBellPress={() => setNotificationPanelVisible(true)}
         onMenuPress={() => setSideMenuVisible(true)}
       />
@@ -883,6 +920,82 @@ function HomeScreen({ onNavigate, isGuestMode = false }: HomeScreenProps) {
             <TouchableOpacity
               style={styles.popupButton}
               onPress={() => setShowPopup(false)}
+            >
+              <Text style={styles.popupButtonText}>הבנתי</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Broadcast Notification Popup */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showBroadcastPopup && !!broadcastNotification}
+        onRequestClose={async () => {
+          if (broadcastNotification) {
+            // Mark as seen
+            try {
+              const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+              const newSeen = new Set(seenBroadcasts);
+              newSeen.add(broadcastNotification.id);
+              setSeenBroadcasts(newSeen);
+              await AsyncStorage.setItem('seenBroadcasts', JSON.stringify(Array.from(newSeen)));
+              console.log('✅ Broadcast marked as seen (onRequestClose):', broadcastNotification.id);
+            } catch (error) {
+              console.error('❌ Error saving seen broadcast:', error);
+            }
+          }
+          setShowBroadcastPopup(false);
+        }}
+      >
+        <View style={styles.popupOverlay}>
+          <View style={styles.popupContent}>
+            <View style={styles.popupHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="megaphone" size={24} color="#007bff" />
+                <Text style={styles.popupTitle}>
+                  {broadcastNotification?.title || 'הודעה מהמספרה'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={async () => {
+                if (broadcastNotification) {
+                  // Mark as seen
+                  try {
+                    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+                    const newSeen = new Set(seenBroadcasts);
+                    newSeen.add(broadcastNotification.id);
+                    setSeenBroadcasts(newSeen);
+                    await AsyncStorage.setItem('seenBroadcasts', JSON.stringify(Array.from(newSeen)));
+                    console.log('✅ Broadcast marked as seen:', broadcastNotification.id);
+                  } catch (error) {
+                    console.error('❌ Error saving seen broadcast:', error);
+                  }
+                }
+                setShowBroadcastPopup(false);
+              }}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.popupMessage}>{broadcastNotification?.body || ''}</Text>
+            <TouchableOpacity
+              style={styles.popupButton}
+              onPress={async () => {
+                if (broadcastNotification) {
+                  // Mark as seen
+                  try {
+                    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+                    const newSeen = new Set(seenBroadcasts);
+                    newSeen.add(broadcastNotification.id);
+                    setSeenBroadcasts(newSeen);
+                    await AsyncStorage.setItem('seenBroadcasts', JSON.stringify(Array.from(newSeen)));
+                    console.log('✅ Broadcast marked as seen:', broadcastNotification.id);
+                  } catch (error) {
+                    console.error('❌ Error saving seen broadcast:', error);
+                  }
+                }
+                setShowBroadcastPopup(false);
+              }}
             >
               <Text style={styles.popupButtonText}>הבנתי</Text>
             </TouchableOpacity>

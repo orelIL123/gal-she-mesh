@@ -79,7 +79,7 @@ const SideMenu: React.FC<SideMenuProps> = ({ visible, onClose, onNavigate, onNot
     { id: 'about', title: t('nav.about') || 'אודות', icon: 'info', screen: null },
   ];
 
-  const aboutText = `ברוכים הבאים למספרה של רון תורג׳מן! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. רון, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית.\n\n✂️ AI: "המספרה שלנו היא לא רק מקום להסתפר, אלא מקום להרגיש בו טוב, להירגע ולצאת עם חיוך. כל תספורת היא יצירת אמנות!"`;
+  const aboutText = `ברוכים הבאים למספרה של torix! כאן תיהנו מחוויה אישית, מקצועית ומפנקת, עם יחס חם לכל לקוח. אוראל אהרון, בעל ניסיון של שנים בתחום, מזמין אתכם להתרווח, להתחדש ולהרגיש בבית. "המספרה שלנו היא לא רק מקום להסתפר, אלא מקום להרגיש בו טוב, להירגע ולצאת עם חיוך. כל תספורת היא יצירת אמנות!"`;
 
   return (
     <Modal
@@ -175,19 +175,34 @@ const SideMenu: React.FC<SideMenuProps> = ({ visible, onClose, onNavigate, onNot
       {/* About Modal */}
       <Modal
         visible={showAbout}
-        animationType="slide"
+        animationType="fade"
         transparent={true}
         onRequestClose={() => setShowAbout(false)}
       >
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ backgroundColor: '#111', borderRadius: 16, padding: 24, maxWidth: 340, alignItems: 'center' }}>
-            <Text style={{ color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 16 }}>אודות</Text>
-            <Text style={{ color: '#fff', fontSize: 16, textAlign: 'right', marginBottom: 24 }}>{aboutText}</Text>
-            <TouchableOpacity onPress={() => setShowAbout(false)} style={{ backgroundColor: '#007bff', borderRadius: 8, paddingHorizontal: 24, paddingVertical: 12 }}>
-              <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>סגור</Text>
+        <TouchableOpacity 
+          style={styles.aboutModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowAbout(false)}
+        >
+          <TouchableOpacity 
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+            style={styles.aboutModalContainer}
+          >
+            <View style={styles.aboutHeader}>
+              <Ionicons name="cut" size={28} color="#FFD700" />
+              <Text style={styles.aboutTitle}>אודות</Text>
+            </View>
+            <View style={styles.aboutDivider} />
+            <Text style={styles.aboutText}>{aboutText}</Text>
+            <TouchableOpacity 
+              onPress={() => setShowAbout(false)} 
+              style={styles.aboutCloseButton}
+            >
+              <Text style={styles.aboutCloseButtonText}>סגור</Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </Modal>
   );
@@ -291,6 +306,68 @@ const styles = StyleSheet.create({
   activeLanguageText: {
     color: '#FFD700',
     fontWeight: '600',
+  },
+  aboutModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  aboutModalContainer: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 20,
+    padding: 28,
+    maxWidth: 380,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#333',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  aboutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 12,
+  },
+  aboutTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  aboutDivider: {
+    height: 1,
+    backgroundColor: '#333',
+    marginBottom: 24,
+  },
+  aboutText: {
+    color: '#e0e0e0',
+    fontSize: 18,
+    textAlign: 'center',
+    lineHeight: 28,
+    marginBottom: 28,
+    fontWeight: '400',
+  },
+  aboutCloseButton: {
+    backgroundColor: '#FFD700',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    alignSelf: 'center',
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  aboutCloseButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 });
 

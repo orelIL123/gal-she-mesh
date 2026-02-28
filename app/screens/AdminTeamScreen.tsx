@@ -334,6 +334,50 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
     );
   };
 
+  const handleDeleteBarberImage = async (barberId: string, barberName: string, imageUrl: string) => {
+    Alert.alert(
+      'מחיקת תמונה',
+      `האם אתה בטוח שברצונך למחוק את התמונה של הספר "${barberName}"?`,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'מחק תמונה',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // עדכן את הספר ללא תמונה
+              await updateBarberProfile(barberId, { image: '' });
+              
+              // מחק את התמונה מ-Storage אם זה Firebase Storage URL
+              if (imageUrl && imageUrl.includes('firebasestorage.googleapis.com')) {
+                try {
+                  const { deleteImageFromStorage } = await import('../../services/firebase');
+                  await deleteImageFromStorage(imageUrl);
+                  console.log('✅ Image deleted from storage');
+                } catch (storageError) {
+                  console.error('Error deleting from storage:', storageError);
+                  // ממשיך גם אם המחיקה מ-Storage נכשלה
+                }
+              }
+              
+              // עדכן את ה-state המקומי
+              setBarbers(prev => 
+                prev.map(b => 
+                  b.id === barberId ? { ...b, image: '', photoUrl: '' } : b
+                )
+              );
+              
+              showToast('התמונה נמחקה בהצלחה');
+            } catch (error) {
+              console.error('Error deleting barber image:', error);
+              showToast('שגיאה במחיקת התמונה', 'error');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const toggleAvailability = async (barberId: string, currentAvailability: boolean) => {
     try {
       await updateBarberProfile(barberId, { available: !currentAvailability });
@@ -506,6 +550,14 @@ const AdminTeamScreen: React.FC<AdminTeamScreenProps> = ({ onNavigate, onBack })
                           console.log('Image loaded successfully for barber:', barber.name, 'URL:', barber.image || barber.photoUrl);
                         }}
                       />
+                      {(barber.image || barber.photoUrl) && (barber.image !== 'https://via.placeholder.com/150x150' && barber.photoUrl !== 'https://via.placeholder.com/150x150') && (
+                        <TouchableOpacity
+                          style={styles.deleteBarberImageButton}
+                          onPress={() => handleDeleteBarberImage(barber.id, barber.name, barber.image || barber.photoUrl || '')}
+                        >
+                          <Ionicons name="trash" size={16} color="#fff" />
+                        </TouchableOpacity>
+                      )}
                       <TouchableOpacity
                         style={[
                           styles.availabilityBadge,
@@ -936,6 +988,24 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: 'bold',
+  },
+  deleteBarberImageButton: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#dc3545',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
   barberInfo: {
     flex: 1,

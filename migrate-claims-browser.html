@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Migrate Custom Claims</title>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-functions.js';
+
+        // Your Firebase config (same as in your app)
+        const firebaseConfig = {
+            apiKey: "AIzaSyDl4nGPWMaH97wHqTEQEhAiokv6XqBWzRw",
+            authDomain: "gal-shemesh.firebaseapp.com",
+            projectId: "gal-shemesh",
+            storageBucket: "gal-shemesh.firebasestorage.app",
+            messagingSenderId: "1007787228112",
+            appId: "1:1007787228112:web:aac4b99e7a6e9d8bdb0d13"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const functions = getFunctions(app, 'us-central1');
+
+        window.migrateClaims = async function() {
+            try {
+                console.log('🔧 Starting custom claims migration...');
+                const migrateFunction = httpsCallable(functions, 'migrateCustomClaims');
+                const result = await migrateFunction({});
+                console.log('✅ Migration completed:', result.data);
+                alert('Migration completed! Check console for details.');
+
+                // Force token refresh
+                const user = auth.currentUser;
+                if (user) {
+                    await user.getIdToken(true);
+                    const tokenResult = await user.getIdTokenResult();
+                    console.log('🔑 Your new token claims:', tokenResult.claims);
+                }
+            } catch (error) {
+                console.error('❌ Migration failed:', error);
+                alert('Migration failed: ' + error.message);
+            }
+        };
+
+        console.log('✅ Migration script loaded. Call migrateClaims() to run migration.');
+        console.log('ℹ️  Make sure you are logged in as admin first!');
+    </script>
+</head>
+<body>
+    <h1>Custom Claims Migration</h1>
+    <p>Open browser console and call: <code>migrateClaims()</code></p>
+    <p>Make sure you're logged in to the app as admin first!</p>
+</body>
+</html>

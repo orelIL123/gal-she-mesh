@@ -72,6 +72,8 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigate, o
         return 'alarm';
       case 'general':
         return 'megaphone';
+      case 'broadcast':
+        return 'megaphone';
       default:
         return 'notifications';
     }
@@ -84,6 +86,8 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigate, o
       case 'reminder':
         return '#FF9800';
       case 'general':
+        return '#FFD700';
+      case 'broadcast':
         return '#FFD700';
       default:
         return '#666';

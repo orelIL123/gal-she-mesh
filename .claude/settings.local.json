@@ -21,7 +21,10 @@
       "Bash(eas update:*)",
       "Bash(npx ts-node:*)",
       "Bash(pkill:*)",
-      "Bash(kill:*)"
+      "Bash(kill:*)",
+      "Bash(firebase deploy:*)",
+      "Bash(firebase login:ci:*)",
+      "Bash(curl -X POST https://us-central1-gal-shemesh.cloudfunctions.net/migrateCustomClaims )"
     ],
     "deny": []
   }

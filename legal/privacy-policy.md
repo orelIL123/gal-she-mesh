@@ -1,6 +1,6 @@
 # Privacy Policy
 
-gal shemesh respects your privacy.
+TORYX respects your privacy.
 
 - We collect only the information necessary to provide our services (such as name, phone, appointments).
 - Your data is not shared with third parties except as required to provide the service or by law.

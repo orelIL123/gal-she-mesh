@@ -1,16 +1,16 @@
-# gal shemesh - Barber Shop App
+# TORYX - Barber Shop App
 
 ## App Configuration
 
 ### Business Details
-- **Business**: gal shemesh
-- **Owner**: gal shemesh
+- **Business**: torix
+- **Owner**: אוראל אהרון
 - **Email**: Galshemesh76@gmail.com
 - **Phone**: 0522210281
 - **Address**: החמישה 21 פתח תקווה
 
 ### App Info
-- **App Name**: Gal Shemesh
+- **App Name**: TORYX
 - **Bundle ID**: com.galshemesh.app
 - **Firebase Project**: 1dd0ee39
 - **Language**: he
@@ -56,4 +56,4 @@ Check `.env.example` for all required environment variables including:
 - WhatsApp API credentials (if enabled)
 
 ## Contact
-gal shemesh - Galshemesh76@gmail.com
+אוראל אהרון (torix) - Galshemesh76@gmail.com

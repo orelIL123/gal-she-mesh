@@ -272,9 +272,9 @@ export default function RegisterScreen() {
             <Text style={styles.modalTitle}>תנאי שימוש ומדיניות פרטיות</Text>
             <ScrollView style={styles.modalScrollView}>
               <Text style={styles.modalText}>
-                <Text style={styles.sectionTitle}>תנאי שימוש - גל שמש מספרה{'\n\n'}</Text>
+                <Text style={styles.sectionTitle}>תנאי שימוש - torix{'\n\n'}</Text>
                 <Text style={styles.subsectionTitle}>1. קבלת השירות{'\n'}</Text>
-                • השירות מיועד לקביעת תורים במספרת גל שמש{'\n'}
+                • השירות מיועד לקביעת תורים במספרת torix{'\n'}
                 • יש לספק מידע מדויק ומלא בעת קביעת התור{'\n'}
                 • המספרה שומרת לעצמה את הזכות לסרב לתת שירות במקרים חריגים{'\n\n'}
                 

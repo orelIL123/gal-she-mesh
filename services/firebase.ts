@@ -15,6 +15,7 @@ import {
 } from 'firebase/auth';
 import {
     addDoc,
+    arrayUnion,
     collection,
     deleteDoc,
     doc,
@@ -82,20 +83,27 @@ export const checkCurrentUserAdminStatus = async () => {
       console.log('❌ No current user');
       return false;
     }
-    
+
     const profile = await getUserProfile(currentUser.uid);
     if (!profile) {
       console.log('❌ No user profile found');
       return false;
     }
-    
+
     console.log(`👤 Current user: ${profile.displayName}`);
     console.log(`👨‍💼 Is admin: ${profile.isAdmin || false}`);
     console.log(`📱 Has push token: ${!!profile.pushToken}`);
-    
+    if (profile.pushToken) {
+      console.log(`📱 Push token: ${profile.pushToken.substring(0, 50)}...`);
+    } else {
+      console.log(`⚠️ NO PUSH TOKEN - User will NOT receive push notifications!`);
+      console.log(`💡 Call registerForPushNotifications to fix this`);
+    }
+
     return {
       isAdmin: profile.isAdmin || false,
       hasPushToken: !!profile.pushToken,
+      pushToken: profile.pushToken,
       profile: profile
     };
   } catch (error) {
@@ -114,7 +122,7 @@ export const makeCurrentUserAdmin = async (): Promise<boolean> => {
     // Check if user profile exists, if not create it
     const userDocRef = doc(db, 'users', currentUser.uid);
     const userDoc = await getDoc(userDocRef);
-    
+
     if (!userDoc.exists()) {
       // Create user profile if it doesn't exist
       const newProfile: UserProfile = {
@@ -241,6 +249,18 @@ export interface AppSettings {
   updatedAt: Timestamp;
 }
 
+export interface BroadcastMessage {
+  id: string;
+  title: string;
+  body: string;
+  sentBy: string;
+  sentByName: string;
+  sentAt: Timestamp;
+  recipientCount: number;
+  includesSMS: boolean;
+  dismissedBy?: string[]; // Array of user IDs who dismissed this message
+}
+
 const derivePhoneFormats = (input: string) => {
   const digitsOnly = (input ?? '').replace(/[^0-9]/g, '');
   let withoutCountry = digitsOnly;
@@ -329,14 +349,14 @@ export const registerUser = async (email: string, password: string, displayName:
   try {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
-    
+
     await updateProfile(user, {
       displayName: displayName
     });
-    
+
     // Check if this is the admin email
     const isAdminEmail = email === 'orel895@gmail.com';
-    
+
     const userProfile: UserProfile = {
       uid: user.uid,
       email: user.email || '',
@@ -345,7 +365,7 @@ export const registerUser = async (email: string, password: string, displayName:
       isAdmin: isAdminEmail, // Automatically set admin for specific email
       createdAt: Timestamp.now()
     };
-    
+
     await setDoc(doc(db, 'users', user.uid), userProfile);
 
     // Save auth data for persistence
@@ -353,17 +373,17 @@ export const registerUser = async (email: string, password: string, displayName:
 
     // Register for push notifications after successful registration
     await registerForPushNotifications(user.uid);
-    
+
     // Send welcome notification
     await sendWelcomeNotification(user.uid);
-    
+
     // Send notification to admin about new user
     try {
       await sendNewUserNotificationToAdmin(displayName, email);
     } catch (adminNotificationError) {
       console.log('Failed to send new user notification to admin:', adminNotificationError);
     }
-    
+
     return user;
   } catch (error) {
     throw error;
@@ -404,6 +424,31 @@ export const logoutUser = async () => {
 const saveAuthDataAfterLogin = async (user: User) => {
   try {
     console.log('🔄 Starting to save auth data for user:', user.uid);
+
+    // Force refresh token to get updated custom claims (for admin status in Storage rules)
+    // This is critical for Storage rules to work correctly
+    try {
+      const token = await user.getIdToken(true);
+      console.log('🔑 Token refreshed with latest custom claims');
+      
+      // Verify token contains correct claims
+      const tokenResult = await user.getIdTokenResult(true);
+      console.log('🔑 Token claims after refresh:', {
+        isAdmin: tokenResult.claims.isAdmin || false,
+        isBarber: tokenResult.claims.isBarber || false,
+        uid: tokenResult.claims.sub || tokenResult.claims.user_id || 'N/A'
+      });
+      
+      // If user is admin in Firestore but token doesn't have claims, log warning
+      const userProfile = await getUserProfile(user.uid);
+      if (userProfile?.isAdmin && !tokenResult.claims.isAdmin) {
+        console.warn('⚠️ User is admin in Firestore but token does not have isAdmin claim. This may cause Storage upload issues.');
+        console.warn('⚠️ The syncUserClaims function should update this. If the issue persists, try logging out and back in.');
+      }
+    } catch (tokenError) {
+      console.warn('⚠️ Could not refresh token, continuing anyway:', tokenError);
+    }
+
     const userProfile = await getUserProfile(user.uid);
     if (userProfile) {
       const authData = {
@@ -421,7 +466,7 @@ const saveAuthDataAfterLogin = async (user: User) => {
           // Password should be saved separately when user explicitly chooses to
         }
       };
-      
+
       console.log('💾 Saving auth data:', {
         uid: authData.uid,
         email: authData.email,
@@ -430,7 +475,7 @@ const saveAuthDataAfterLogin = async (user: User) => {
         isAdmin: authData.isAdmin,
         savedCredentials: authData.savedCredentials
       });
-      
+
       await AuthStorageService.saveAuthData(authData);
       console.log('✅ Auth data saved successfully');
     } else {
@@ -464,7 +509,7 @@ export const sendSMSVerification = async (phoneNumber: string) => {
   try {
     // Format phone number for SMS service
     let formattedPhone = phoneNumber;
-    
+
     // Add +972 prefix if not present
     if (!phoneNumber.startsWith('+')) {
       if (phoneNumber.startsWith('0')) {
@@ -473,9 +518,9 @@ export const sendSMSVerification = async (phoneNumber: string) => {
         formattedPhone = '+972' + phoneNumber;
       }
     }
-    
+
     console.log('📱 Sending SMS to:', formattedPhone);
-    
+
     // Generate a verification code
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
     const verificationId = `sms4free_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -773,14 +818,14 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
     const credential = PhoneAuthProvider.credential(verificationId, verificationCode);
     const userCredential = await signInWithCredential(auth, credential);
     const user = userCredential.user;
-    
+
     await updateProfile(user, {
       displayName: displayName
     });
-    
+
     // Check if this is the admin phone number
     const isAdminPhone = phoneNumber === '+972532706369' || phoneNumber === '+972542280222';
-    
+
     const userProfile: UserProfile = {
       uid: user.uid,
       displayName: displayName,
@@ -789,7 +834,7 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
       hasPassword: false,
       createdAt: Timestamp.now()
     };
-    
+
     await setDoc(doc(db, 'users', user.uid), userProfile);
 
     // Save auth data for persistence
@@ -806,7 +851,7 @@ export const registerUserWithPhone = async (phoneNumber: string, displayName: st
       console.error('❌ Error sending admin notification:', error);
       // Don't fail registration if notification fails
     }
-    
+
     return user;
   } catch (error) {
     console.error('Error registering user with phone:', error);
@@ -885,19 +930,19 @@ export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exist
         continue;
       }
     }
-    
+
     // If not found by phone, try to find by the auto-generated email
     console.log(`🔍 Phone search failed, trying email search for: ${phoneNumber}`);
     const possibleEmails = buildPhoneEmailCandidates(phoneFormats);
-    
+
     console.log(`🔍 Trying email formats:`, possibleEmails);
-    
+
     for (const emailFormat of possibleEmails) {
       try {
         console.log(`🔍 Searching for email format: ${emailFormat}`);
         const q = query(usersRef, where('email', '==', emailFormat));
         const querySnapshot = await getDocs(q);
-        
+
         if (!querySnapshot.empty) {
           const userDoc = querySnapshot.docs[0];
           const userData = userDoc.data();
@@ -916,10 +961,10 @@ export const checkPhoneUserExists = async (phoneNumber: string): Promise<{ exist
         continue;
       }
     }
-    
+
     console.log(`❌ No user found with any phone or email format for: ${phoneNumber}`);
     return { exists: false, hasPassword: false };
-    
+
   } catch (error) {
     console.error('Error checking phone user:', error);
     return { exists: false, hasPassword: false };
@@ -936,11 +981,11 @@ export const setPasswordForSMSUser = async (phoneNumber: string, password: strin
 
     // Create email from phone number for Firebase Auth
     const tempEmail = `${phoneNumber.replace(/[^0-9]/g, '')}@temp.galshemesh.com`;
-    
+
     try {
       // Try to create user with temp email and password
       const userCredential = await createUserWithEmailAndPassword(auth, tempEmail, password);
-      
+
       // Update user profile to link to existing user data
       const userDocRef = doc(db, 'users', userCheck.uid!);
       await updateDoc(userDocRef, {
@@ -948,7 +993,7 @@ export const setPasswordForSMSUser = async (phoneNumber: string, password: strin
         email: tempEmail,
         authUid: userCredential.user.uid
       });
-      
+
       // Save auth data for persistence
       await saveAuthDataAfterLogin(userCredential.user);
 
@@ -960,7 +1005,7 @@ export const setPasswordForSMSUser = async (phoneNumber: string, password: strin
         await updateDoc(doc(db, 'users', userCheck.uid!), {
           hasPassword: true
         });
-        
+
         // Try to sign in with existing credentials
         const userCredential = await signInWithEmailAndPassword(auth, tempEmail, password);
 
@@ -1024,10 +1069,10 @@ export const loginWithPhoneAndPassword = async (phoneNumber: string, password: s
 
       // Continue to check Firestore - don't throw for invalid-credential
       // because the email might have been updated
-      if (error.code !== 'auth/user-not-found' && 
-          error.code !== 'auth/invalid-email' && 
-          error.code !== 'auth/invalid-credential' &&
-          error.code !== 'auth/wrong-password') {
+      if (error.code !== 'auth/user-not-found' &&
+        error.code !== 'auth/invalid-email' &&
+        error.code !== 'auth/invalid-credential' &&
+        error.code !== 'auth/wrong-password') {
         throw error;
       }
     }
@@ -1123,17 +1168,17 @@ export const loginWithPhoneAndPassword = async (phoneNumber: string, password: s
     }
 
     throw new Error('פרטי הכניסה שגויים. בדוק את הטלפון והסיסמה.');
-    
+
   } catch (error: any) {
     console.error('Error login with phone and password:', error);
-    
+
     // If it's already our custom error message, just throw it
-    if (error.message.includes('משתמש לא נמצא במערכת') || 
-        error.message.includes('לא הוגדרה סיסמה') ||
-        error.message.includes('פרטי הכניסה שגויים')) {
+    if (error.message.includes('משתמש לא נמצא במערכת') ||
+      error.message.includes('לא הוגדרה סיסמה') ||
+      error.message.includes('פרטי הכניסה שגויים')) {
       throw error;
     }
-    
+
     if (error.code === 'auth/user-not-found') {
       throw new Error('משתמש לא נמצא במערכת ההזדהות');
     } else if (error.code === 'auth/wrong-password') {
@@ -1141,7 +1186,7 @@ export const loginWithPhoneAndPassword = async (phoneNumber: string, password: s
     } else if (error.code === 'auth/invalid-credential') {
       throw new Error('פרטי הכניסה שגויים');
     }
-    
+
     throw error;
   }
 };
@@ -1152,7 +1197,7 @@ export const checkUserExistsForPasswordReset = async (phoneNumber: string): Prom
     const phoneFormats = derivePhoneFormats(phoneNumber.trim());
     const normalizedPhone = phoneFormats.normalizedPhone || phoneNumber.trim();
     const userCheck = await checkPhoneUserExists(normalizedPhone);
-    
+
     return {
       exists: userCheck.exists,
       userId: userCheck.uid,
@@ -1169,13 +1214,13 @@ export const sendPasswordResetToEmail = async (email: string): Promise<void> => 
   try {
     const normalizedEmail = email.toLowerCase().trim();
     console.log(`📧 Attempting to send password reset email to: ${normalizedEmail}`);
-    
+
     await sendPasswordResetEmail(auth, normalizedEmail);
     console.log(`✅ Password reset email sent successfully to: ${normalizedEmail}`);
   } catch (error: any) {
     console.error(`❌ Failed to send password reset email to ${email}:`, error?.code, error?.message);
     console.error(`❌ Full error details:`, JSON.stringify(error, null, 2));
-    
+
     if (error?.code === 'auth/user-not-found') {
       throw new Error('לא נמצא חשבון עם האימייל הזה במערכת ההזדהות. האימייל במערכת שלנו לא קשור לחשבון Firebase. אנא פנה לתמיכה.');
     } else if (error?.code === 'auth/invalid-email') {
@@ -1227,89 +1272,10 @@ export const initiatePasswordReset = async (identifier: string): Promise<string>
   if (!userCheck.exists) {
     throw new Error('USER_NOT_FOUND'); // Special error code to trigger email input
   }
-  
+
   // User exists - return special indicator to request email
   return `USER_EXISTS:${normalizedPhone}`;
 
-  // Try the email from Firestore first if it exists
-  if (userCheck.email && userCheck.email.includes('@')) {
-    try {
-      await sendResetForEmail(userCheck.email);
-      return userCheck.email;
-    } catch (error: any) {
-      console.log(`⚠️ Email from Firestore failed, trying all formats...`);
-      // Continue to try all formats
-    }
-  }
-
-  // Try all possible email formats (auto-generated emails)
-  console.log('🔍 Trying all possible email formats for phone:', normalizedPhone);
-  const possibleEmails = buildPhoneEmailCandidates(phoneFormats);
-  
-  let lastError: any = null;
-  for (const email of possibleEmails) {
-    try {
-      console.log(`🔍 Trying password reset for email: ${email}`);
-      await sendPasswordResetEmail(auth, email);
-      console.log(`✅ Password reset email sent to: ${email}`);
-      return email;
-    } catch (error: any) {
-      console.log(`❌ Failed for ${email}:`, error?.code);
-      lastError = error;
-      // Continue to next email format
-      continue;
-    }
-  }
-
-  // If all email attempts failed, try sending SMS with reset link
-  // Generate a reset code and send via SMS
-  try {
-    console.log('📱 Email reset failed, trying SMS reset for phone:', normalizedPhone);
-    
-    // Generate a 6-digit reset code
-    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const resetCodeId = `reset_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    // Store reset code in Firestore with expiration (10 minutes)
-    const resetCodeRef = doc(db, 'passwordResetCodes', resetCodeId);
-    await setDoc(resetCodeRef, {
-      phone: normalizedPhone,
-      code: resetCode,
-      userId: userCheck.uid,
-      createdAt: Timestamp.now(),
-      expiresAt: Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000)), // 10 minutes
-      used: false
-    });
-    
-    // Send SMS with reset code
-    const { MessagingService } = await import('../app/services/messaging/service');
-    const { messagingConfig } = await import('../app/config/messaging');
-    const messagingService = new MessagingService(messagingConfig);
-    
-    const smsMessage = `קוד איפוס סיסמה: ${resetCode}\nתוקף 10 דקות\nגל שמש מספרה`;
-    
-    const smsResult = await messagingService.sendMessage({
-      to: normalizedPhone,
-      message: smsMessage,
-      type: 'sms'
-    });
-    
-    if (smsResult.success) {
-      console.log('✅ Password reset SMS sent successfully');
-      return `SMS_SENT:${normalizedPhone}`; // Return special indicator for SMS
-    } else {
-      throw new Error('לא ניתן לשלוח SMS. אנא נסה שוב מאוחר יותר.');
-    }
-  } catch (smsError: any) {
-    console.error('❌ SMS reset failed:', smsError);
-    
-    // If all attempts failed, throw a helpful error
-    if (lastError?.code === 'auth/user-not-found') {
-      throw new Error('לא נמצא חשבון עם מספר הטלפון הזה. אנא בדקו את המספר או הירשמו מחדש.');
-    }
-    
-    throw new Error('לא ניתן לשלוח קישור איפוס. אנא נסה שוב מאוחר יותר או פנה לתמיכה.');
-  }
 };
 
 // Verify password reset code from SMS
@@ -1317,7 +1283,7 @@ export const verifyPasswordResetCode = async (phoneNumber: string, code: string)
   try {
     const phoneFormats = derivePhoneFormats(phoneNumber.trim());
     const normalizedPhone = phoneFormats.normalizedPhone || phoneNumber.trim();
-    
+
     // Find reset code in Firestore
     const resetCodesRef = collection(db, 'passwordResetCodes');
     const q = query(
@@ -1326,22 +1292,22 @@ export const verifyPasswordResetCode = async (phoneNumber: string, code: string)
       where('code', '==', code),
       where('used', '==', false)
     );
-    
+
     const querySnapshot = await getDocs(q);
-    
+
     if (querySnapshot.empty) {
       return { valid: false };
     }
-    
+
     const resetCodeDoc = querySnapshot.docs[0];
     const resetCodeData = resetCodeDoc.data();
-    
+
     // Check if code expired
     const expiresAt = resetCodeData.expiresAt?.toDate();
     if (!expiresAt || expiresAt < new Date()) {
       return { valid: false };
     }
-    
+
     return {
       valid: true,
       resetCodeId: resetCodeDoc.id,
@@ -1357,17 +1323,17 @@ export const verifyPasswordResetCode = async (phoneNumber: string, code: string)
 export const resetPasswordWithCode = async (phoneNumber: string, code: string, newPassword: string): Promise<void> => {
   try {
     const verification = await verifyPasswordResetCode(phoneNumber, code);
-    
+
     if (!verification.valid || !verification.resetCodeId || !verification.userId) {
       throw new Error('קוד איפוס לא תקין או שפג תוקפו');
     }
-    
+
     // Get user profile to find email
     const userProfile = await getUserProfile(verification.userId);
     if (!userProfile || !userProfile.email) {
       throw new Error('לא נמצא אימייל למשתמש');
     }
-    
+
     // Update password using Firebase Auth
     // Note: Firebase doesn't have direct password update, so we need to use the reset link
     // For now, we'll mark the code as used and guide user to use email reset
@@ -1375,10 +1341,10 @@ export const resetPasswordWithCode = async (phoneNumber: string, code: string, n
       used: true,
       usedAt: Timestamp.now()
     });
-    
+
     // Try to send password reset email as fallback
     await sendPasswordResetEmail(auth, userProfile.email);
-    
+
     throw new Error('קישור איפוס סיסמה נשלח לאימייל שלך. אנא השתמש בקישור כדי לאפס את הסיסמה.');
   } catch (error: any) {
     console.error('Error resetting password with code:', error);
@@ -1401,11 +1367,11 @@ export const setPasswordForPhoneUser = async (phoneNumber: string, password: str
 
     // Create email from phone number for Firebase Auth
     const email = `${phoneNumber.replace(/[^0-9]/g, '')}@galshemesh.local`;
-    
+
     // Link email/password credential to existing phone user
     const emailCredential = EmailAuthProvider.credential(email, password);
     await linkWithCredential(currentUser, emailCredential);
-    
+
     // Update user profile
     const userProfile = await getUserProfile(userCheck.uid!);
     if (userProfile) {
@@ -1443,7 +1409,7 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
   try {
     const docRef = doc(db, 'users', uid);
     const docSnap = await getDoc(docRef);
-    
+
     if (docSnap.exists()) {
       return docSnap.data() as UserProfile;
     }
@@ -1468,14 +1434,14 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
   try {
     const querySnapshot = await getDocs(collection(db, 'users'));
     const users: UserProfile[] = [];
-    
+
     querySnapshot.forEach((doc) => {
       users.push({
         uid: doc.id,
         ...doc.data()
       } as UserProfile);
     });
-    
+
     return users;
   } catch (error) {
     console.error('Error getting users:', error);
@@ -1617,7 +1583,7 @@ export const getBarber = async (barberId: string): Promise<Barber | null> => {
   try {
     const docRef = doc(db, 'barbers', barberId);
     const docSnap = await getDoc(docRef);
-    
+
     if (docSnap.exists()) {
       return {
         id: docSnap.id,
@@ -1645,20 +1611,20 @@ export const getTreatments = async (useCache: boolean = true): Promise<Treatment
 
     const querySnapshot = await getDocs(collection(db, 'treatments'));
     const treatments: Treatment[] = [];
-    
+
     querySnapshot.forEach((doc) => {
       treatments.push({
         id: doc.id,
         ...doc.data()
       } as Treatment);
     });
-    
+
     // Cache the results for 60 minutes
     if (useCache) {
       await CacheUtils.setTreatments(treatments, 60);
       console.log('💾 Treatments cached for 60 minutes');
     }
-    
+
     return treatments;
   } catch (error) {
     console.error('Error getting treatments:', error);
@@ -1673,15 +1639,15 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
     if (appointmentData.duration && !isValidDuration(appointmentData.duration)) {
       throw new Error(`Duration must be a multiple of ${SLOT_SIZE_MINUTES} minutes. Got: ${appointmentData.duration} minutes`);
     }
-    
+
     const appointment = {
       ...appointmentData,
       createdAt: Timestamp.now()
     };
-    
+
     const docRef = await addDoc(collection(db, 'appointments'), appointment);
     console.log('Appointment created with ID:', docRef.id);
-    
+
     // Send notification to user about new appointment
     try {
       const dateVal: any = appointmentData.date as any;
@@ -1691,7 +1657,7 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
     } catch (notificationError) {
       console.log('Failed to send appointment notification:', notificationError);
     }
-    
+
     // Send SMS confirmation to user
     try {
       const userProfile = await getUserProfile(appointmentData.userId);
@@ -1700,7 +1666,7 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
         const asDate = typeof dateVal?.toDate === 'function' ? dateVal.toDate() : new Date(dateVal);
         const dateStr = asDate.toLocaleDateString('he-IL');
         const timeStr = asDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
-        
+
         // Get barber and treatment names
         let barberName = 'הספר';
         let treatmentName = 'הטיפול';
@@ -1717,29 +1683,25 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
         } catch (e) {
           console.log('Could not fetch barber/treatment details for SMS');
         }
-        
-        // Create SMS message (keep it short for SMS4Free - max 70 chars)
-        const smsMessage = `תור אושר! 📅\n${dateStr} ${timeStr}\n${barberName} - ${treatmentName}\nגל שמש מספרה`;
-        const shortMessage = smsMessage.length > 70 ? smsMessage.substring(0, 67) + '...' : smsMessage;
-        
-        console.log('📱 Sending SMS confirmation to:', userProfile.phone);
-        await sendSMSReminder(userProfile.phone, shortMessage);
-        console.log('✅ SMS confirmation sent successfully');
+
+        // SMS removed - only push notifications are sent for appointment confirmations
+        // SMS is only available for broadcast messages (admin can choose)
+        console.log('✅ Appointment confirmation sent via push notification (SMS disabled)');
       } else {
-        console.log('⚠️ User has no phone number, skipping SMS confirmation');
+        console.log('⚠️ User has no phone number');
       }
     } catch (smsError) {
-      console.error('❌ Failed to send SMS confirmation:', smsError);
-      // Don't throw - SMS failure shouldn't prevent appointment creation
+      console.error('❌ Error:', smsError);
+      // Don't throw - failure shouldn't prevent appointment creation
     }
-    
+
     // Send notification to admin about new appointment
     try {
       const dateVal: any = appointmentData.date as any;
       const asDate = typeof dateVal?.toDate === 'function' ? dateVal.toDate() : new Date(dateVal);
       const dateStr = asDate.toLocaleDateString('he-IL');
       const timeStr = asDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
-      
+
       // Get customer name for better admin notification
       let customerName = 'לקוח';
       try {
@@ -1750,17 +1712,17 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
       } catch (e) {
         console.log('Could not fetch customer name');
       }
-      
+
       await sendNotificationToAdmin(
-        'תור חדש! 📅', 
-        `${customerName} קבע תור ל-${dateStr} ב-${timeStr}`, 
+        'תור חדש! 📅',
+        `${customerName} קבע תור ל-${dateStr} ב-${timeStr}`,
         { appointmentId: docRef.id }
       );
       console.log('✅ Admin notification sent for new appointment');
     } catch (adminNotificationError) {
       console.log('❌ Failed to send admin notification:', adminNotificationError);
     }
-    
+
     // Send WhatsApp message to barber about new appointment
     try {
       if (appointmentData.barberId) {
@@ -1770,7 +1732,7 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
           const asDate = typeof dateVal?.toDate === 'function' ? dateVal.toDate() : new Date(dateVal);
           const dateStr = asDate.toLocaleDateString('he-IL');
           const timeStr = asDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
-          
+
           // Get customer and treatment details
           let customerName = 'לקוח';
           let treatmentName = 'טיפול';
@@ -1787,7 +1749,7 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
           } catch (e) {
             console.log('Could not fetch customer/treatment details for WhatsApp');
           }
-          
+
           // Format phone number for WhatsApp (remove dashes, ensure country code)
           let barberPhone = barber.phone.replace(/[-\s]/g, ''); // Remove dashes and spaces
           if (!barberPhone.startsWith('+')) {
@@ -1797,12 +1759,12 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
               barberPhone = '+972' + barberPhone; // Add country code
             }
           }
-          
+
           const whatsappMessage = `תור חדש! 📅\n\nלקוח: ${customerName}\nטיפול: ${treatmentName}\nתאריך: ${dateStr}\nשעה: ${timeStr}\nמשך: ${appointmentData.duration || 30} דקות\n\nגל שמש מספרה`;
-          
+
           console.log('📱 Sending WhatsApp to barber:', barberPhone);
           console.log('📱 Message:', whatsappMessage);
-          
+
           // Use messaging service to send WhatsApp
           const { MessagingService } = await import('../app/services/messaging/service');
           const { messagingConfig } = await import('../app/config/messaging');
@@ -1812,7 +1774,7 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
             message: whatsappMessage,
             type: 'whatsapp'
           });
-          
+
           if (result.success) {
             console.log('✅ WhatsApp sent to barber successfully');
           } else {
@@ -1833,8 +1795,25 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
       console.error('❌ Failed to send WhatsApp to barber:', whatsappError);
       // Don't throw - WhatsApp failure shouldn't prevent appointment creation
     }
-    
-    // Schedule LOCAL notification reminders ONLY (removed Firestore-based reminders to avoid duplicates)
+
+    // Schedule reminders using the CENTRAL system (Firestore-based scheduledReminders)
+    // This ensures reminders are scheduled with the correct date from Firestore
+    // and handles timezone issues properly
+    try {
+      console.log('📱 Scheduling appointment reminders via CENTRAL system...');
+      const appointmentDate = appointmentData.date.toDate();
+      await scheduleAppointmentReminders(docRef.id, {
+        ...appointmentData,
+        date: appointmentData.date
+      });
+      console.log('✅ CENTRAL appointment reminders scheduled successfully');
+    } catch (scheduleError) {
+      console.error('❌ Failed to schedule CENTRAL appointment reminders:', scheduleError);
+      // Don't throw - allow appointment creation to succeed even if reminders fail
+    }
+
+    // Also schedule LOCAL notification reminders for appointments within 24 hours
+    // (for immediate local notifications on the device)
     try {
       console.log('📱 Scheduling LOCAL appointment reminders...');
       const appointmentDate = appointmentData.date.toDate();
@@ -1845,6 +1824,7 @@ export const createAppointment = async (appointmentData: Omit<Appointment, 'id' 
       console.log('✅ LOCAL appointment reminders scheduled successfully');
     } catch (localScheduleError) {
       console.log('❌ Failed to schedule LOCAL appointment reminders:', localScheduleError);
+      // Don't throw - local reminders are optional
     }
 
     return docRef.id;
@@ -1859,17 +1839,17 @@ export const getUserAppointments = async (userId: string): Promise<Appointment[]
       collection(db, 'appointments'),
       where('userId', '==', userId)
     );
-    
+
     const querySnapshot = await getDocs(q);
     const appointments: Appointment[] = [];
-    
+
     querySnapshot.forEach((doc) => {
       appointments.push({
         id: doc.id,
         ...doc.data()
       } as Appointment);
     });
-    
+
     // Sort by date in JavaScript instead of Firestore
     appointments.sort((a, b) => {
       if (a.date && b.date) {
@@ -1879,7 +1859,7 @@ export const getUserAppointments = async (userId: string): Promise<Appointment[]
       }
       return 0;
     });
-    
+
     return appointments;
   } catch (error) {
     console.error('Error getting user appointments:', error);
@@ -1900,6 +1880,7 @@ export const updateAppointment = async (appointmentId: string, updates: Partial<
 
         let notificationTitle = 'התור שלך עודכן! 📅';
         let notificationBody = 'התור שלך עודכן בהצלחה.';
+        let shouldSendUserNotification = true;
 
         if (updates.status) {
           switch (updates.status) {
@@ -1920,7 +1901,7 @@ export const updateAppointment = async (appointmentId: string, updates: Partial<
                   const asDate = typeof dateVal?.toDate === 'function' ? dateVal.toDate() : new Date(dateVal);
                   const dateStr = asDate.toLocaleDateString('he-IL');
                   const timeStr = asDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
-                  
+
                   // Get barber and treatment names
                   let barberName = 'הספר';
                   let treatmentName = 'הטיפול';
@@ -1937,25 +1918,22 @@ export const updateAppointment = async (appointmentId: string, updates: Partial<
                   } catch (e) {
                     console.log('Could not fetch barber/treatment details for SMS');
                   }
-                  
+
                   // Create SMS message (keep it short for SMS4Free - max 70 chars)
-                  const smsMessage = `תור אושר! ✅\n${dateStr} ${timeStr}\n${barberName} - ${treatmentName}\nגל שמש מספרה`;
-                  const shortMessage = smsMessage.length > 70 ? smsMessage.substring(0, 67) + '...' : smsMessage;
-                  
-                  console.log('📱 Sending SMS confirmation to:', userProfile.phone);
-                  await sendSMSReminder(userProfile.phone, shortMessage);
-                  console.log('✅ SMS confirmation sent successfully');
+                  // SMS removed - only push notifications are sent for appointment confirmations
+                  // SMS is only available for broadcast messages (admin can choose)
+                  console.log('✅ Appointment confirmation sent via push notification (SMS disabled)');
                 } else {
-                  console.log('⚠️ User has no phone number, skipping SMS confirmation');
+                  console.log('⚠️ User has no phone number');
                 }
               } catch (smsError) {
-                console.error('❌ Failed to send SMS confirmation:', smsError);
-                // Don't throw - SMS failure shouldn't prevent appointment update
+                console.error('❌ Error:', smsError);
+                // Don't throw - failure shouldn't prevent appointment update
               }
               break;
             case 'completed':
-              notificationTitle = 'התור הושלם! 🎉';
-              notificationBody = 'התור שלך הושלם בהצלחה.';
+              // Do not send user notification on completion (auto or manual)
+              shouldSendUserNotification = false;
               // Send notification to admin about appointment completion
               try {
                 await sendAppointmentCompletionToAdmin(appointmentId);
@@ -1996,12 +1974,16 @@ export const updateAppointment = async (appointmentId: string, updates: Partial<
           }
         }
 
-        await sendNotificationToUser(
-          appointmentData.userId,
-          notificationTitle,
-          notificationBody,
-          { appointmentId: appointmentId }
-        );
+        if (shouldSendUserNotification) {
+          await sendNotificationToUser(
+            appointmentData.userId,
+            notificationTitle,
+            notificationBody,
+            { appointmentId: appointmentId }
+          );
+        } else {
+          console.log('🔕 Skipping user notification for completed appointment');
+        }
       }
     } catch (notificationError) {
       console.log('Failed to send appointment update notification:', notificationError);
@@ -2019,19 +2001,19 @@ export const cancelAppointment = async (appointmentId: string) => {
     if (!appointmentDoc.exists()) {
       throw new Error('התור לא נמצא');
     }
-    
+
     const appointmentData = appointmentDoc.data() as Appointment;
-    
+
     // Update appointment status to cancelled
     await updateDoc(doc(db, 'appointments', appointmentId), {
       status: 'cancelled',
       cancelledAt: Timestamp.now()
     });
-    
+
     // Send notification to admin about cancellation
     try {
       console.log('🔔 Sending cancellation notification to admin...');
-      
+
       // Get customer name for better admin notification
       let customerName = 'לקוח';
       try {
@@ -2042,11 +2024,11 @@ export const cancelAppointment = async (appointmentId: string) => {
       } catch (e) {
         console.log('Could not fetch customer name');
       }
-      
+
       const appointmentDate = appointmentData.date.toDate();
       const dateStr = appointmentDate.toLocaleDateString('he-IL');
       const timeStr = appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
-      
+
       await sendNotificationToAdmin(
         'תור בוטל! ❌',
         `${customerName} ביטל תור ל-${dateStr} ב-${timeStr}`,
@@ -2056,7 +2038,7 @@ export const cancelAppointment = async (appointmentId: string) => {
     } catch (notificationError) {
       console.log('❌ Failed to send cancellation notification to admin:', notificationError);
     }
-    
+
     // Cancel local notification reminders
     try {
       console.log('🔔 Cancelling local notification reminders...');
@@ -2149,7 +2131,7 @@ export const makeUserAdmin = async (email: string): Promise<boolean> => {
     const usersRef = collection(db, 'users');
     const q = query(usersRef, where('email', '==', email));
     const querySnapshot = await getDocs(q);
-    
+
     if (!querySnapshot.empty) {
       const userDoc = querySnapshot.docs[0];
       await updateDoc(userDoc.ref, { isAdmin: true });
@@ -2170,7 +2152,7 @@ export const createUserProfileFromAuth = async (email: string): Promise<boolean>
     const usersRef = collection(db, 'users');
     const q = query(usersRef, where('email', '==', email));
     const querySnapshot = await getDocs(q);
-    
+
     if (!querySnapshot.empty) {
       console.log('User already exists in Firestore');
       return true;
@@ -2193,7 +2175,7 @@ export const createUserProfileFromAuth = async (email: string): Promise<boolean>
       isAdmin: isAdminEmail,
       createdAt: Timestamp.now()
     };
-    
+
     await setDoc(doc(db, 'users', currentUser.uid), userProfile);
     console.log(`User profile created for ${email}`);
     return true;
@@ -2208,14 +2190,14 @@ export const getAllAppointments = async (): Promise<Appointment[]> => {
     const q = query(collection(db, 'appointments'));
     const querySnapshot = await getDocs(q);
     const appointments: Appointment[] = [];
-    
+
     querySnapshot.forEach((doc) => {
       appointments.push({
         id: doc.id,
         ...doc.data()
       } as Appointment);
     });
-    
+
     // Sort by date (most recent first)
     appointments.sort((a, b) => {
       if (a.date && b.date) {
@@ -2226,7 +2208,7 @@ export const getAllAppointments = async (): Promise<Appointment[]> => {
       }
       return 0;
     });
-    
+
     return appointments;
   } catch (error) {
     console.error('Error getting all appointments:', error);
@@ -2245,14 +2227,14 @@ export const getAppointmentsByDateRange = async (startDate: Date, endDate: Date)
     );
     const querySnapshot = await getDocs(q);
     const appointments: Appointment[] = [];
-    
+
     querySnapshot.forEach((doc) => {
       appointments.push({
         id: doc.id,
         ...doc.data()
       } as Appointment);
     });
-    
+
     return appointments;
   } catch (error) {
     console.error('Error getting appointments by date range:', error);
@@ -2264,21 +2246,21 @@ export const getCurrentMonthAppointments = async (): Promise<Appointment[]> => {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-  
+
   return getAppointmentsByDateRange(startOfMonth, endOfMonth);
 };
 
 export const getRecentAppointments = async (days: number = 30): Promise<Appointment[]> => {
   const now = new Date();
   const startDate = new Date(now.getTime() - (days * 24 * 60 * 60 * 1000));
-  
+
   return getAppointmentsByDateRange(startDate, now);
 };
 
 export const getUpcomingAppointments = async (days: number = 30): Promise<Appointment[]> => {
   const now = new Date();
   const endDate = new Date(now.getTime() + (days * 24 * 60 * 60 * 1000));
-  
+
   return getAppointmentsByDateRange(now, endDate);
 };
 
@@ -2288,14 +2270,14 @@ export const getGalleryImages = async (): Promise<GalleryImage[]> => {
     const q = query(collection(db, 'gallery'));
     const querySnapshot = await getDocs(q);
     const images: GalleryImage[] = [];
-    
+
     querySnapshot.forEach((doc) => {
       images.push({
         id: doc.id,
         ...doc.data()
       } as GalleryImage);
     });
-    
+
     return images.sort((a, b) => a.order - b.order);
   } catch (error) {
     console.error('Error getting gallery images:', error);
@@ -2309,7 +2291,7 @@ export const addGalleryImage = async (imageData: Omit<GalleryImage, 'id' | 'crea
       ...imageData,
       createdAt: Timestamp.now()
     };
-    
+
     const docRef = await addDoc(collection(db, 'gallery'), newImage);
     return docRef.id;
   } catch (error) {
@@ -2332,17 +2314,17 @@ export const addTreatment = async (treatmentData: Omit<Treatment, 'id'>) => {
     if (treatmentData.duration && !isValidDuration(treatmentData.duration)) {
       throw new Error(`Treatment duration must be a multiple of ${SLOT_SIZE_MINUTES} minutes. Got: ${treatmentData.duration} minutes`);
     }
-    
+
     const docRef = await addDoc(collection(db, 'treatments'), treatmentData);
     await CacheUtils.clearTreatments();
-    
+
     // Send notification about new treatment
     try {
       await sendNewTreatmentNotification(treatmentData.name);
     } catch (notificationError) {
       console.log('Failed to send new treatment notification:', notificationError);
     }
-    
+
     return docRef.id;
   } catch (error) {
     throw error;
@@ -2355,7 +2337,7 @@ export const updateTreatment = async (treatmentId: string, updates: Partial<Trea
     if (updates.duration && !isValidDuration(updates.duration)) {
       throw new Error(`Treatment duration must be a multiple of ${SLOT_SIZE_MINUTES} minutes. Got: ${updates.duration} minutes`);
     }
-    
+
     const docRef = doc(db, 'treatments', treatmentId);
     await updateDoc(docRef, updates);
     await CacheUtils.clearTreatments();
@@ -2378,14 +2360,14 @@ export const addBarberProfile = async (barberData: Omit<Barber, 'id'>) => {
   try {
     const docRef = await addDoc(collection(db, 'barbers'), barberData);
     await CacheUtils.clearBarbers();
-    
+
     // Send notification about new barber
     try {
       await sendNewBarberNotification(barberData.name);
     } catch (notificationError) {
       console.log('Failed to send new barber notification:', notificationError);
     }
-    
+
     return docRef.id;
   } catch (error) {
     throw error;
@@ -2416,13 +2398,13 @@ export const getStorageImages = async (folderPath: string): Promise<string[]> =>
   try {
     const imagesRef = ref(storage, folderPath);
     const result = await listAll(imagesRef);
-    
+
     const urls = await Promise.all(
       result.items.map(async (imageRef) => {
         return await getDownloadURL(imageRef);
       })
     );
-    
+
     return urls;
   } catch (error) {
     console.error(`Error getting images from ${folderPath}:`, error);
@@ -2445,14 +2427,14 @@ export const getAllStorageImages = async () => {
   try {
     const [galleryImages, backgroundImages, splashImages, workersImages, aboutusImages, shopImages, treatmentsImages] = await Promise.all([
       getStorageImages('gallery'),
-      getStorageImages('backgrounds'), 
+      getStorageImages('backgrounds'),
       getStorageImages('splash'),
       getStorageImages('workers'),
       getStorageImages('aboutus'),
       getStorageImages('shop'),
       getStorageImages('treatments')
     ]);
-    
+
     return {
       gallery: galleryImages,
       backgrounds: backgroundImages,
@@ -2478,8 +2460,8 @@ export const getAllStorageImages = async () => {
 
 // Simple image upload - React Native compatible
 export const uploadImageToStorage = async (
-  imageUri: string, 
-  folderPath: string, 
+  imageUri: string,
+  folderPath: string,
   fileName: string,
   mimeType?: string
 ): Promise<string> => {
@@ -2501,39 +2483,90 @@ export const uploadImageToStorage = async (
     console.log('📁 Target folder:', folderPath);
     console.log('📝 File name:', fileName);
     console.log('👤 Current user:', user.uid, user.email);
-    
-    // Check if user is admin in Firestore (for debugging)
+
+    // Check if user is admin in Firestore - REQUIRED for upload
+    let userProfile: UserProfile | null = null;
     try {
-      const userProfile = await getUserProfile(user.uid);
+      userProfile = await getUserProfile(user.uid);
       console.log('👨‍💼 User profile:', {
         isAdmin: userProfile?.isAdmin || false,
-        displayName: userProfile?.displayName || 'N/A'
+        displayName: userProfile?.displayName || 'N/A',
+        exists: userProfile !== null
       });
-    } catch (profileError) {
-      console.warn('⚠️ Could not check user profile:', profileError);
+      
+      // If profile doesn't exist, this is a problem - user needs to be registered
+      if (!userProfile) {
+        throw new Error('פרופיל המשתמש לא נמצא במסד הנתונים. אנא צור קשר עם התמיכה כדי להגדיר את החשבון שלך.');
+      }
+      
+      // Check if user is admin
+      if (!userProfile.isAdmin) {
+        throw new Error('רק משתמשים עם הרשאות מנהל יכולים להעלות תמונות. החשבון שלך אינו כולל הרשאות מנהל.');
+      }
+    } catch (profileError: any) {
+      console.error('❌ Error checking user profile:', profileError);
+      // Re-throw the error if it's our custom error, otherwise wrap it
+      if (profileError.message && (profileError.message.includes('admin') || profileError.message.includes('profile'))) {
+        throw profileError;
+      }
+      throw new Error(`Failed to verify admin status: ${profileError.message || 'Unknown error'}`);
     }
-    
-    // Get fresh token to ensure authentication
+
+    // Get fresh token to ensure authentication and custom claims
+    // CRITICAL: Force refresh to get latest custom claims from syncUserClaims function
     try {
-      const token = await user.getIdToken(true); // Force refresh
+      // First, wait a bit to ensure syncUserClaims has run (if user just logged in)
+      // This is a workaround for the race condition where syncUserClaims hasn't finished yet
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const token = await user.getIdToken(true); // Force refresh to get latest custom claims
       console.log('🔑 User token refreshed:', !!token);
       console.log('🔑 Token length:', token.length);
+      
+      // Verify token contains admin claims
+      const tokenResult = await user.getIdTokenResult(true);
+      console.log('🔑 Token claims:', {
+        isAdmin: tokenResult.claims.isAdmin || false,
+        isBarber: tokenResult.claims.isBarber || false,
+        uid: tokenResult.claims.sub || tokenResult.claims.user_id || 'N/A'
+      });
+      
+      // If admin check passed in Firestore but token doesn't have claims, this is a problem
+      if (userProfile?.isAdmin && !tokenResult.claims.isAdmin) {
+        console.error('❌ CRITICAL: User is admin in Firestore but token does not have isAdmin claim!');
+        console.error('❌ This will cause Storage upload to fail. The syncUserClaims function may not have run yet.');
+        console.error('❌ Solution: Try logging out and back in, or wait a few seconds and try again.');
+        
+        // Try one more time after a delay (syncUserClaims might need time to run)
+        console.log('🔄 Waiting 2 seconds for syncUserClaims to complete, then retrying token refresh...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const retryTokenResult = await user.getIdTokenResult(true);
+        if (retryTokenResult.claims.isAdmin) {
+          console.log('✅ Token claims updated after retry! Proceeding with upload...');
+        } else {
+          // Even if token doesn't have claims, Storage rules will fallback to Firestore check
+          // So we can continue, but log a warning
+          console.warn('⚠️ Token still does not have admin claims after retry.');
+          console.warn('⚠️ Storage rules will use Firestore fallback, but this may cause issues in production.');
+          console.warn('⚠️ Please ensure syncUserClaims function is deployed and running correctly.');
+        }
+      }
     } catch (tokenError) {
       console.error('❌ Error getting token:', tokenError);
-      throw new Error('Failed to get authentication token');
+      throw new Error(`Failed to get authentication token: ${tokenError instanceof Error ? tokenError.message : 'Unknown error'}`);
     }
-    
+
     // Create reference
     const imageRef = ref(storage, `${folderPath}/${fileName}`);
     console.log('📍 Storage reference created');
-    
+
     // For React Native, we need to convert the URI to a blob using XMLHttpRequest
     // This is more stable than fetch() in React Native
     console.log('🔄 Converting image URI to blob...');
-    
+
     const blob = await new Promise<Blob>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.onload = function() {
+      xhr.onload = function () {
         try {
           console.log('✅ Image loaded, creating blob...');
           resolve(xhr.response);
@@ -2542,7 +2575,7 @@ export const uploadImageToStorage = async (
           reject(error);
         }
       };
-      xhr.onerror = function(e) {
+      xhr.onerror = function (e) {
         console.error('❌ XHR error:', e);
         reject(new Error('Failed to load image'));
       };
@@ -2551,9 +2584,9 @@ export const uploadImageToStorage = async (
       xhr.open('GET', imageUri, true);
       xhr.send(null);
     });
-    
+
     console.log('✅ Blob created, uploading to Firebase Storage...');
-    
+
     // Determine content type from mimeType or file extension
     let contentType = 'image/jpeg'; // default
     if (mimeType) {
@@ -2565,21 +2598,21 @@ export const uploadImageToStorage = async (
     } else if (fileName.toLowerCase().endsWith('.webp')) {
       contentType = 'image/webp';
     }
-    
+
     console.log('📄 Content type:', contentType);
-    
+
     // Set content type metadata for the upload
     const metadata: UploadMetadata = {
       contentType: contentType,
     };
-    
+
     await uploadBytes(imageRef, blob, metadata);
     console.log('✅ Upload complete, getting download URL...');
-    
+
     // Get download URL
     const downloadURL = await getDownloadURL(imageRef);
     console.log('✅ Image uploaded successfully:', downloadURL);
-    
+
     return downloadURL;
   } catch (error) {
     console.error('❌ Error uploading image:', error);
@@ -2640,28 +2673,28 @@ export const getBarberAvailableSlots = async (barberId: string, date: string): P
 };
 
 // Real-time listener for availability changes (NOW USING dailyAvailability ONLY!)
-export const subscribeToAvailabilityChanges = (barberId: string, callback: (weeklySlots: {[key: number]: string[]}) => void) => {
+export const subscribeToAvailabilityChanges = (barberId: string, callback: (weeklySlots: { [key: number]: string[] }) => void) => {
   console.log('🔔 Subscribing to dailyAvailability changes for barber:', barberId);
-  
+
   // NEW: Listen to dailyAvailability collection
   const q = query(
-    collection(db, 'dailyAvailability'), 
+    collection(db, 'dailyAvailability'),
     where('barberId', '==', barberId)
   );
-  
+
   return onSnapshot(q, (snapshot) => {
     console.log('📡 Daily availability changed, updating slots...');
     console.log('📊 Total dailyAvailability docs:', snapshot.docs.length);
-    
+
     // For backwards compatibility, build a weeklySlots object
     // But each date is independent!
-    const weeklySlots: {[key: number]: string[]} = {};
-    
+    const weeklySlots: { [key: number]: string[] } = {};
+
     snapshot.docs.forEach(doc => {
       const data = doc.data();
       const dayOfWeek = data.dayOfWeek;
       const date = data.date;
-      
+
       console.log(`📡 REAL-TIME: docId=${doc.id}, date=${date}, dayOfWeek=${dayOfWeek}, isAvailable=${data.isAvailable}`);
 
       if (data.isAvailable === true && data.availableSlots && Array.isArray(data.availableSlots)) {
@@ -2673,12 +2706,12 @@ export const subscribeToAvailabilityChanges = (barberId: string, callback: (week
         console.log(`🚫 Real-time: date ${date} (${dayOfWeek}) explicitly UNAVAILABLE`);
       }
     });
-    
+
     // Remove duplicates and sort for each day
     Object.keys(weeklySlots).forEach(day => {
       weeklySlots[parseInt(day)] = [...new Set(weeklySlots[parseInt(day)])].sort();
     });
-    
+
     console.log('✅ Updated availability (from dailyAvailability):', weeklySlots);
     callback(weeklySlots);
   }, (error) => {
@@ -2687,7 +2720,7 @@ export const subscribeToAvailabilityChanges = (barberId: string, callback: (week
 };
 
 // New function for daily availability changes
-export const subscribeToDailyAvailabilityChanges = (barberId: string, callback: (dailySlots: {[key: string]: string[]}) => void) => {
+export const subscribeToDailyAvailabilityChanges = (barberId: string, callback: (dailySlots: { [key: string]: string[] }) => void) => {
   console.log('🔔 Subscribing to daily availability changes for barber:', barberId);
 
   const q = query(
@@ -2700,7 +2733,7 @@ export const subscribeToDailyAvailabilityChanges = (barberId: string, callback: 
     console.log('📡 Daily availability changed, updating slots...');
 
     // Group slots by specific date
-    const dailySlots: {[key: string]: string[]} = {};
+    const dailySlots: { [key: string]: string[] } = {};
 
     snapshot.docs.forEach(doc => {
       const data = doc.data();
@@ -2719,12 +2752,12 @@ export const subscribeToDailyAvailabilityChanges = (barberId: string, callback: 
 // Real-time listener for treatments changes
 export const subscribeToTreatmentsChanges = (callback: (treatments: Treatment[]) => void) => {
   console.log('🔔 Subscribing to treatments changes');
-  
+
   const q = query(collection(db, 'treatments'), orderBy('name'));
-  
+
   return onSnapshot(q, (snapshot) => {
     console.log('📡 Treatments changed, updating list...');
-    
+
     const treatments: Treatment[] = [];
     snapshot.docs.forEach(doc => {
       treatments.push({
@@ -2732,7 +2765,7 @@ export const subscribeToTreatmentsChanges = (callback: (treatments: Treatment[])
         ...doc.data()
       } as Treatment);
     });
-    
+
     console.log('✅ Updated treatments list:', treatments.length, 'treatments');
     callback(treatments);
   }, (error) => {
@@ -2748,7 +2781,7 @@ export const isTimeSlotAvailable = async (barberId: string, date: string, time: 
     if (!availableSlots.includes(time)) {
       return false; // Barber not available at this time
     }
-    
+
     // Then check if there's already an appointment at this time
     const appointmentsRef = collection(db, 'appointments');
     const q = query(
@@ -2758,7 +2791,7 @@ export const isTimeSlotAvailable = async (barberId: string, date: string, time: 
       where('time', '==', time),
       where('status', '!=', 'cancelled')
     );
-    
+
     const snapshot = await getDocs(q);
     return snapshot.empty; // Available if no conflicting appointments
   } catch (error) {
@@ -2771,9 +2804,9 @@ export const isTimeSlotAvailable = async (barberId: string, date: string, time: 
 export const listAllStorageImages = async () => {
   try {
     console.log('📂 Checking Firebase Storage contents...');
-    
+
     const storageImages = await getAllStorageImages();
-    
+
     console.log('🗂️ Firebase Storage contents:');
     console.log('Gallery folder:', storageImages.gallery);
     console.log('Backgrounds folder:', storageImages.backgrounds);
@@ -2782,7 +2815,7 @@ export const listAllStorageImages = async () => {
     console.log('About us folder:', storageImages.aboutus);
     console.log('Shop folder:', storageImages.shop);
     console.log('Treatments folder:', storageImages.treatments);
-    
+
     return storageImages;
   } catch (error) {
     console.error('❌ Error listing storage images:', error);
@@ -2794,20 +2827,20 @@ export const listAllStorageImages = async () => {
 export const restoreGalleryFromStorage = async () => {
   try {
     console.log('🔄 Restoring gallery from Firebase Storage...');
-    
+
     // Get images from Firebase Storage
     const storageImages = await getAllStorageImages();
-    
+
     // Clear existing gallery
     const existingImages = await getGalleryImages();
     for (const image of existingImages) {
       console.log('🗑️ Deleting existing image:', image.id);
       await deleteGalleryImage(image.id);
     }
-    
+
     // Add images from storage to gallery collection
     let addedCount = 0;
-    
+
     // Add gallery images
     for (let i = 0; i < storageImages.gallery.length; i++) {
       const imageUrl = storageImages.gallery[i];
@@ -2820,7 +2853,7 @@ export const restoreGalleryFromStorage = async () => {
       console.log('➕ Added gallery image:', imageUrl);
       addedCount++;
     }
-    
+
     // Add background images
     for (let i = 0; i < storageImages.backgrounds.length; i++) {
       const imageUrl = storageImages.backgrounds[i];
@@ -2833,7 +2866,7 @@ export const restoreGalleryFromStorage = async () => {
       console.log('➕ Added background image:', imageUrl);
       addedCount++;
     }
-    
+
     // Add about us images
     for (let i = 0; i < storageImages.aboutus.length; i++) {
       const imageUrl = storageImages.aboutus[i];
@@ -2846,7 +2879,7 @@ export const restoreGalleryFromStorage = async () => {
       console.log('➕ Added about us image:', imageUrl);
       addedCount++;
     }
-    
+
     // Add shop images
     for (let i = 0; i < storageImages.shop.length; i++) {
       const imageUrl = storageImages.shop[i];
@@ -2859,7 +2892,7 @@ export const restoreGalleryFromStorage = async () => {
       console.log('➕ Added shop image:', imageUrl);
       addedCount++;
     }
-    
+
     console.log('✅ Gallery restored with', addedCount, 'images from Firebase Storage');
     return addedCount;
   } catch (error) {
@@ -2906,19 +2939,19 @@ export const getShopItems = async (): Promise<ShopItem[]> => {
 export const getActiveShopItems = async (): Promise<ShopItem[]> => {
   try {
     console.log('🛍️ Loading shop items...');
-    
+
     // First try with just the isActive filter
     let q = query(
       collection(db, 'shopItems'),
       where('isActive', '==', true)
     );
-    
+
     let snapshot = await getDocs(q);
     let items = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     } as ShopItem));
-    
+
     // Sort manually by createdAt if available
     items.sort((a, b) => {
       if (a.createdAt && b.createdAt) {
@@ -2926,9 +2959,9 @@ export const getActiveShopItems = async (): Promise<ShopItem[]> => {
       }
       return 0;
     });
-    
+
     console.log('🛍️ Loaded', items.length, 'active shop items');
-    
+
     // If no items found, try loading all items
     if (items.length === 0) {
       console.log('🔍 No active items found, loading all shop items...');
@@ -2940,12 +2973,12 @@ export const getActiveShopItems = async (): Promise<ShopItem[]> => {
       console.log('📋 Found', allItems.length, 'total shop items');
       return allItems;
     }
-    
+
     return items;
   } catch (error) {
     console.error('❌ Error loading shop items:', error);
     console.log('🔄 Fallback: Loading all shop items...');
-    
+
     // Fallback - load all items without filters
     try {
       const allSnapshot = await getDocs(collection(db, 'shopItems'));
@@ -2991,17 +3024,17 @@ export const deleteShopItem = async (id: string) => {
 export const resetGalleryWithRealImages = async () => {
   try {
     console.log('🧹 Clearing all gallery images and adding fresh ones...');
-    
+
     // Get all existing gallery images
     const existingImages = await getGalleryImages();
     console.log('Found', existingImages.length, 'existing images to delete');
-    
+
     // Delete ALL existing gallery images
     for (const image of existingImages) {
       console.log('🗑️ Deleting image:', image.id);
       await deleteGalleryImage(image.id);
     }
-    
+
     // Add fresh real images
     const realGalleryImages = [
       {
@@ -3034,7 +3067,7 @@ export const resetGalleryWithRealImages = async () => {
       console.log('➕ Adding fresh image:', imageData.imageUrl);
       await addGalleryImage(imageData);
     }
-    
+
     console.log('✅ Gallery reset with', realGalleryImages.length, 'fresh real images');
     return realGalleryImages.length;
   } catch (error) {
@@ -3047,11 +3080,11 @@ export const resetGalleryWithRealImages = async () => {
 export const replaceGalleryPlaceholders = async () => {
   try {
     console.log('🔄 Replacing placeholder images with real images...');
-    
+
     // Get all existing gallery images
     const existingImages = await getGalleryImages();
     console.log('Found', existingImages.length, 'existing images');
-    
+
     // Debug: show what we have
     existingImages.forEach((img, index) => {
       console.log(`Image ${index}:`, {
@@ -3061,7 +3094,7 @@ export const replaceGalleryPlaceholders = async () => {
         isActive: img.isActive
       });
     });
-    
+
     // Delete old placeholder images
     for (const image of existingImages) {
       if (image.imageUrl && (image.imageUrl.includes('placeholder') || image.imageUrl.includes('via.placeholder'))) {
@@ -3072,7 +3105,7 @@ export const replaceGalleryPlaceholders = async () => {
         await deleteGalleryImage(image.id);
       }
     }
-    
+
     // Add new real images
     const realGalleryImages = [
       {
@@ -3105,7 +3138,7 @@ export const replaceGalleryPlaceholders = async () => {
       console.log('➕ Adding real image:', imageData.imageUrl);
       await addGalleryImage(imageData);
     }
-    
+
     console.log('✅ Gallery updated with', realGalleryImages.length, 'real images');
     return realGalleryImages.length;
   } catch (error) {
@@ -3120,33 +3153,33 @@ export const initializeGalleryImages = async () => {
     // Check if user is signed in
     const { auth } = await import('../config/firebase');
     const currentUser = auth.currentUser;
-    
+
     if (!currentUser) {
       console.log('⚠️ User not signed in, skipping gallery initialization');
       return;
     }
-    
+
     // Check if gallery already has images
     const existingImages = await getGalleryImages();
-    
+
     // If we have placeholder images, replace them
-    const hasPlaceholders = existingImages.some(img => 
+    const hasPlaceholders = existingImages.some(img =>
       img.imageUrl && (img.imageUrl.includes('placeholder') || img.imageUrl.includes('via.placeholder'))
     );
-    
+
     if (hasPlaceholders) {
       console.log('🔄 Found placeholder images, replacing with real images...');
       await replaceGalleryPlaceholders();
       return;
     }
-    
+
     if (existingImages.length > 0) {
       console.log('Gallery already has real images, skipping initialization');
       return;
     }
 
     console.log('Initializing gallery with default images...');
-    
+
     // Add some real gallery images
     const defaultGalleryImages = [
       {
@@ -3178,7 +3211,7 @@ export const initializeGalleryImages = async () => {
     for (const imageData of defaultGalleryImages) {
       await addGalleryImage(imageData);
     }
-    
+
     console.log('✅ Gallery initialized with', defaultGalleryImages.length, 'images');
   } catch (error) {
     console.error('❌ Error initializing gallery images:', error);
@@ -3191,7 +3224,7 @@ export const initializeCollections = async () => {
   try {
     // Initialize gallery images
     await initializeGalleryImages();
-    
+
     // Create availability collection sample
     await addDoc(collection(db, 'availability'), {
       barberId: 'sample-barber-id',
@@ -3201,14 +3234,14 @@ export const initializeCollections = async () => {
       isAvailable: true,
       createdAt: Timestamp.now()
     });
-    
+
     // Create settings collection sample
     await addDoc(collection(db, 'settings'), {
       key: 'business_hours',
       value: { start: '09:00', end: '18:00' },
       updatedAt: Timestamp.now()
     });
-    
+
     console.log('Collections initialized successfully');
   } catch (error) {
     console.error('Error initializing collections:', error);
@@ -3226,14 +3259,14 @@ export const getBarberAvailability = async (barberId: string): Promise<BarberAva
     );
     const querySnapshot = await getDocs(q);
     const availability: BarberAvailability[] = [];
-    
+
     querySnapshot.forEach((doc) => {
       availability.push({
         id: doc.id,
         ...doc.data()
       } as BarberAvailability);
     });
-    
+
     return availability.sort((a, b) => a.dayOfWeek - b.dayOfWeek);
   } catch (error) {
     console.error('Error getting barber availability:', error);
@@ -3245,14 +3278,14 @@ export const getAllAvailability = async (): Promise<BarberAvailability[]> => {
   try {
     const querySnapshot = await getDocs(collection(db, 'availability'));
     const availability: BarberAvailability[] = [];
-    
+
     querySnapshot.forEach((doc) => {
       availability.push({
         id: doc.id,
         ...doc.data()
       } as BarberAvailability);
     });
-    
+
     return availability;
   } catch (error) {
     console.error('Error getting all availability:', error);
@@ -3266,7 +3299,7 @@ export const addAvailability = async (availabilityData: Omit<BarberAvailability,
       ...availabilityData,
       createdAt: Timestamp.now()
     };
-    
+
     const docRef = await addDoc(collection(db, 'availability'), newAvailability);
     return docRef.id;
   } catch (error) {
@@ -3297,14 +3330,14 @@ export const updateBarberWeeklyAvailability = async (barberId: string, weeklySch
     // Delete existing availability for this barber
     const existingAvailability = await getBarberAvailability(barberId);
     await Promise.all(
-      existingAvailability.map(availability => 
+      existingAvailability.map(availability =>
         deleteAvailability(availability.id)
       )
     );
-    
+
     // Add new availability
     await Promise.all(
-      weeklySchedule.map(schedule => 
+      weeklySchedule.map(schedule =>
         addAvailability({
           ...schedule,
           barberId
@@ -3369,7 +3402,7 @@ export const initializeBarberAvailability = async (barberId: string): Promise<vo
     if (existing.length > 0) {
       return; // Already has availability
     }
-    
+
     // Create default availability (Monday-Thursday 9:00-18:00)
     const defaultSchedule = [
       { dayOfWeek: 0, startTime: '09:00', endTime: '18:00', isAvailable: false }, // Sunday
@@ -3380,7 +3413,7 @@ export const initializeBarberAvailability = async (barberId: string): Promise<vo
       { dayOfWeek: 5, startTime: '09:00', endTime: '18:00', isAvailable: false }, // Friday
       { dayOfWeek: 6, startTime: '09:00', endTime: '18:00', isAvailable: false }, // Saturday
     ];
-    
+
     await updateBarberWeeklyAvailability(barberId, defaultSchedule);
     console.log(`Initialized default availability for barber ${barberId}`);
   } catch (error) {
@@ -3395,29 +3428,29 @@ export const getBarberAppointmentsForDay = async (barberId: string, date: Date):
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
-    
+
     console.log('Querying appointments for barber:', barberId);
     console.log('Date range:', startOfDay.toISOString(), 'to', endOfDay.toISOString());
-    
+
     // Simplified query to avoid Firebase index issues
     const q = query(
       collection(db, 'appointments'),
       where('barberId', '==', barberId)
     );
-    
+
     const snapshot = await getDocs(q);
     const allAppointments = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     // Filter in JavaScript instead of Firestore
     const filteredAppointments = allAppointments.filter((appointment: any) => {
       // Only consider confirmed/pending appointments
       if (!['confirmed', 'pending'].includes(appointment.status)) {
         return false;
       }
-      
+
       // Check if appointment is on the selected date
       let appointmentDate;
       if (appointment.date && typeof appointment.date.toDate === 'function') {
@@ -3427,10 +3460,10 @@ export const getBarberAppointmentsForDay = async (barberId: string, date: Date):
       } else {
         return false;
       }
-      
+
       return appointmentDate >= startOfDay && appointmentDate <= endOfDay;
     });
-    
+
     console.log('Found appointments:', filteredAppointments.length);
     console.log('Appointment details:', filteredAppointments);
     return filteredAppointments;
@@ -3453,7 +3486,7 @@ export const getAppImages = async (): Promise<AppImages> => {
   try {
     const docRef = doc(db, 'settings', 'images');
     const docSnap = await getDoc(docRef);
-    
+
     if (docSnap.exists()) {
       const data = docSnap.data();
       return {
@@ -3462,7 +3495,7 @@ export const getAppImages = async (): Promise<AppImages> => {
         galleryImages: Array.isArray(data.galleryImages) ? data.galleryImages : []
       };
     }
-    
+
     return {
       atmosphereImage: '',
       aboutUsImage: '',
@@ -3476,24 +3509,24 @@ export const getAppImages = async (): Promise<AppImages> => {
 
 // Upload image to Firebase Storage for app images
 export const uploadAppImageToStorage = async (
-  imageUri: string, 
-  imagePath: string, 
+  imageUri: string,
+  imagePath: string,
   fileName: string
 ): Promise<string> => {
   try {
     // Convert image URI to blob
     const response = await fetch(imageUri);
     const blob = await response.blob();
-    
+
     // Create storage reference
     const imageRef = ref(storage, `${imagePath}/${fileName}`);
-    
+
     // Upload image
     await uploadBytes(imageRef, blob);
-    
+
     // Get download URL
     const downloadURL = await getDownloadURL(imageRef);
-    
+
     console.log('Image uploaded successfully:', downloadURL);
     return downloadURL;
   } catch (error) {
@@ -3508,15 +3541,15 @@ export const deleteImageFromStorage = async (imageUrl: string): Promise<void> =>
     if (!imageUrl || !imageUrl.includes('firebasestorage.googleapis.com')) {
       return; // Skip if not a Firebase Storage URL
     }
-    
+
     // Extract storage path from URL
     const pathStart = imageUrl.indexOf('/o/') + 3;
     const pathEnd = imageUrl.indexOf('?');
     const path = decodeURIComponent(imageUrl.slice(pathStart, pathEnd));
-    
+
     const imageRef = ref(storage, path);
     await deleteObject(imageRef);
-    
+
     console.log('Image deleted successfully:', path);
   } catch (error) {
     console.error('Error deleting image:', error);
@@ -3528,25 +3561,25 @@ export const deleteImageFromStorage = async (imageUrl: string): Promise<void> =>
 export const updateAtmosphereImage = async (imageUri: string): Promise<string> => {
   try {
     const fileName = `atmosphere_${Date.now()}.jpg`;
-    
+
     // Get current image URL to delete old one
     const currentImages = await getAppImages();
-    
+
     // Upload new image
     const newImageUrl = await uploadAppImageToStorage(imageUri, 'app-images', fileName);
-    
+
     // Update Firestore
     const docRef = doc(db, 'settings', 'images');
     await setDoc(docRef, {
       ...currentImages,
       atmosphereImage: newImageUrl
     }, { merge: true });
-    
+
     // Delete old image after successful update
     if (currentImages.atmosphereImage) {
       await deleteImageFromStorage(currentImages.atmosphereImage);
     }
-    
+
     console.log('Atmosphere image updated successfully');
     return newImageUrl;
   } catch (error) {
@@ -3559,25 +3592,25 @@ export const updateAtmosphereImage = async (imageUri: string): Promise<string> =
 export const updateAboutUsImage = async (imageUri: string): Promise<string> => {
   try {
     const fileName = `about_us_${Date.now()}.jpg`;
-    
+
     // Get current image URL to delete old one
     const currentImages = await getAppImages();
-    
+
     // Upload new image
     const newImageUrl = await uploadAppImageToStorage(imageUri, 'app-images', fileName);
-    
+
     // Update Firestore
     const docRef = doc(db, 'settings', 'images');
     await setDoc(docRef, {
       ...currentImages,
       aboutUsImage: newImageUrl
     }, { merge: true });
-    
+
     // Delete old image after successful update
     if (currentImages.aboutUsImage) {
       await deleteImageFromStorage(currentImages.aboutUsImage);
     }
-    
+
     console.log('About us image updated successfully');
     return newImageUrl;
   } catch (error) {
@@ -3590,21 +3623,21 @@ export const updateAboutUsImage = async (imageUri: string): Promise<string> => {
 export const addAppGalleryImage = async (imageUri: string): Promise<string> => {
   try {
     const fileName = `gallery_${Date.now()}.jpg`;
-    
+
     // Upload new image
     const newImageUrl = await uploadAppImageToStorage(imageUri, 'app-images/gallery', fileName);
-    
+
     // Get current images
     const currentImages = await getAppImages();
     const updatedGallery = [...(currentImages.galleryImages || []), newImageUrl];
-    
+
     // Update Firestore
     const docRef = doc(db, 'settings', 'images');
     await setDoc(docRef, {
       ...currentImages,
       galleryImages: updatedGallery
     }, { merge: true });
-    
+
     console.log('App gallery image added successfully');
     return newImageUrl;
   } catch (error) {
@@ -3619,17 +3652,17 @@ export const removeAppGalleryImage = async (imageUrl: string): Promise<void> => 
     // Get current images
     const currentImages = await getAppImages();
     const updatedGallery = (currentImages.galleryImages || []).filter(url => url !== imageUrl);
-    
+
     // Update Firestore
     const docRef = doc(db, 'settings', 'images');
     await setDoc(docRef, {
       ...currentImages,
       galleryImages: updatedGallery
     }, { merge: true });
-    
+
     // Delete from storage
     await deleteImageFromStorage(imageUrl);
-    
+
     console.log('App gallery image removed successfully');
   } catch (error) {
     console.error('Error removing app gallery image:', error);
@@ -3641,26 +3674,26 @@ export const removeAppGalleryImage = async (imageUrl: string): Promise<void> => 
 export const replaceAppGalleryImage = async (oldImageUrl: string, newImageUri: string): Promise<string> => {
   try {
     const fileName = `gallery_${Date.now()}.jpg`;
-    
+
     // Upload new image
     const newImageUrl = await uploadAppImageToStorage(newImageUri, 'app-images/gallery', fileName);
-    
+
     // Get current images
     const currentImages = await getAppImages();
-    const updatedGallery = (currentImages.galleryImages || []).map(url => 
+    const updatedGallery = (currentImages.galleryImages || []).map(url =>
       url === oldImageUrl ? newImageUrl : url
     );
-    
+
     // Update Firestore
     const docRef = doc(db, 'settings', 'images');
     await setDoc(docRef, {
       ...currentImages,
       galleryImages: updatedGallery
     }, { merge: true });
-    
+
     // Delete old image
     await deleteImageFromStorage(oldImageUrl);
-    
+
     console.log('App gallery image replaced successfully');
     return newImageUrl;
   } catch (error) {
@@ -3670,8 +3703,7 @@ export const replaceAppGalleryImage = async (oldImageUrl: string, newImageUri: s
 };
 
 // Push Notification functions
-// Note: This function now only checks permissions, does not request them
-// Permissions should be requested explicitly by user action (e.g., button press)
+// Automatically requests permissions if not granted
 export const registerForPushNotifications = async (userId: string) => {
   try {
     // Check if device supports notifications
@@ -3680,13 +3712,23 @@ export const registerForPushNotifications = async (userId: string) => {
       return null;
     }
 
-    // Check existing permissions (don't request)
+    // Get current permission status
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
 
+    // If not granted, request permissions from user
     if (existingStatus !== 'granted') {
-      console.log('❌ Push notification permissions not granted - user must enable notifications first');
+      console.log('📱 Requesting notification permissions...');
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') {
+      console.log('❌ Push notification permissions denied by user');
       return null;
     }
+
+    console.log('✅ Push notification permissions granted');
 
     // Get push token
     const token = (await Notifications.getExpoPushTokenAsync()).data;
@@ -3750,7 +3792,7 @@ export const sendSMSReminder = async (phoneNumber: string, message: string) => {
   try {
     // Format phone number for SMS service
     let formattedPhone = phoneNumber;
-    
+
     // Add +972 prefix if not present
     if (!phoneNumber.startsWith('+')) {
       if (phoneNumber.startsWith('0')) {
@@ -3759,9 +3801,9 @@ export const sendSMSReminder = async (phoneNumber: string, message: string) => {
         formattedPhone = '+972' + phoneNumber;
       }
     }
-    
+
     console.log('📱 Sending SMS reminder to:', formattedPhone);
-    
+
     // Use SMS4Free service
     const { MessagingService } = await import('../app/services/messaging/service');
     const { messagingConfig } = await import('../app/config/messaging');
@@ -3788,25 +3830,173 @@ export const sendSMSReminder = async (phoneNumber: string, message: string) => {
 
 export const sendNotificationToAllUsers = async (title: string, body: string, data?: any) => {
   try {
-    const users = await getAllUsers();
-    // Filter out admin users to avoid sending to admins
-    const nonAdminUsers = users.filter(user => !user.isAdmin && user.pushToken);
-    
-    console.log(`📱 Sending notification to ${nonAdminUsers.length} non-admin users`);
-    
-    const results = await Promise.allSettled(
-      nonAdminUsers.map(user => 
-        sendPushNotification(user.pushToken!, title, body, data)
-      )
+    let users: UserProfile[] = [];
+    try {
+      users = await getAllUsers();
+      console.log(`📱 Successfully loaded ${users.length} users`);
+    } catch (getUsersError: any) {
+      console.error('❌ Error getting users:', getUsersError);
+      // If we can't get users, we can't send notifications
+      // But we should still save the broadcast to history
+      throw new Error(`Cannot get users list: ${getUsersError.message || 'Missing permissions'}`);
+    }
+
+    // Include ALL users (including admins) for broadcast messages
+    // Check both pushToken and expoPushToken for compatibility
+    const allUsers = users;
+    const usersWithTokens = allUsers.filter(user =>
+      user.pushToken || (user as any).expoPushToken
     );
-    
-    const successful = results.filter(result => result.status === 'fulfilled').length;
-    console.log(`✅ Successfully sent to ${successful}/${nonAdminUsers.length} users`);
-    
+
+    console.log(`📱 Total users: ${users.length}`);
+    console.log(`📱 All users (including admins): ${allUsers.length}`);
+    console.log(`📱 Users with push tokens: ${usersWithTokens.length}`);
+    console.log(`📱 Sending push notification to ${usersWithTokens.length} users`);
+
+    let successful = 0;
+    if (usersWithTokens.length > 0) {
+      const results = await Promise.allSettled(
+        usersWithTokens.map(user => {
+          const token = user.pushToken || (user as any).expoPushToken;
+          return sendPushNotification(token, title, body, data);
+        })
+      );
+
+      successful = results.filter(result => result.status === 'fulfilled').length;
+      console.log(`✅ Successfully sent push notifications to ${successful}/${usersWithTokens.length} users`);
+    } else {
+      console.log('⚠️ No users with push tokens found - skipping push notifications');
+    }
+
+    // Store in history
+    let broadcastId: string | null = null;
+    try {
+      const broadcastRef = await addDoc(collection(db, 'broadcast_notifications'), {
+        title,
+        body,
+        sentAt: serverTimestamp(),
+        sentBy: auth.currentUser?.uid || 'admin',
+        sentByName: auth.currentUser?.displayName || 'Admin',
+        recipientCount: usersWithTokens.length,
+        includesSMS: false,
+        successCount: successful,
+        totalCount: usersWithTokens.length,
+        totalUsers: allUsers.length,
+        type: 'broadcast'
+      });
+      broadcastId = broadcastRef.id;
+      console.log('📝 Broadcast notification saved to history');
+    } catch (historyError) {
+      console.error('❌ Error saving broadcast history:', historyError);
+    }
+
+    // Also save notification to each user's notifications collection so it appears in their notifications screen
+    // Save for ALL users (including admins), not just those with push tokens
+    try {
+      const BATCH_SIZE = 500; // Firestore batch limit
+      let notificationCount = 0;
+
+      // Process in batches of 500
+      for (let i = 0; i < allUsers.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db);
+        const batchUsers = allUsers.slice(i, i + BATCH_SIZE);
+        
+        batchUsers.forEach(user => {
+          const notificationRef = doc(collection(db, 'notifications'));
+          batch.set(notificationRef, {
+            userId: user.uid,
+            type: 'broadcast',
+            title,
+            message: body,
+            isRead: false,
+            createdAt: serverTimestamp(),
+            broadcastId: broadcastId || null,
+            data: data || {}
+          });
+          notificationCount++;
+        });
+
+        if (batchUsers.length > 0) {
+          await batch.commit();
+          console.log(`📝 Saved batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchUsers.length} notifications`);
+        }
+      }
+
+      console.log(`📝 Saved total ${notificationCount} notifications to users' notification collections`);
+    } catch (notificationError) {
+      console.error('❌ Error saving notifications to users:', notificationError);
+    }
+
     return successful;
   } catch (error) {
     console.error('Error sending notification to all users:', error);
     return 0;
+  }
+};
+
+// Broadcast Notifications History Functions
+export const getBroadcastNotifications = async () => {
+  try {
+    const q = query(collection(db, 'broadcast_notifications'), orderBy('sentAt', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      sentAt: doc.data().sentAt?.toDate() || new Date()
+    }));
+  } catch (error) {
+    console.error('Error getting broadcast notifications:', error);
+    return [];
+  }
+};
+
+export const deleteBroadcastNotification = async (id: string) => {
+  try {
+    await deleteDoc(doc(db, 'broadcast_notifications', id));
+    return true;
+  } catch (error) {
+    console.error('Error deleting broadcast notification:', error);
+    throw error;
+  }
+};
+
+// Dismiss a broadcast message for a specific user
+export const dismissBroadcastMessage = async (messageId: string, userId: string): Promise<boolean> => {
+  try {
+    const messageRef = doc(db, 'broadcast_notifications', messageId);
+    await updateDoc(messageRef, {
+      dismissedBy: arrayUnion(userId)
+    });
+    console.log('✅ Broadcast message dismissed for user:', userId);
+    return true;
+  } catch (error) {
+    console.error('❌ Error dismissing broadcast message:', error);
+    return false;
+  }
+};
+
+// Get active broadcast messages for a specific user (not dismissed)
+export const getActiveBroadcastMessages = async (userId: string): Promise<BroadcastMessage[]> => {
+  try {
+    const messagesQuery = query(
+      collection(db, 'broadcast_notifications'),
+      orderBy('sentAt', 'desc'),
+      limit(50)
+    );
+
+    const snapshot = await getDocs(messagesQuery);
+    const messages: BroadcastMessage[] = snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      } as BroadcastMessage))
+      .filter(msg => !msg.dismissedBy || !msg.dismissedBy.includes(userId)); // Filter out dismissed messages
+
+    console.log(`✅ Retrieved ${messages.length} active broadcast messages for user ${userId}`);
+    return messages;
+  } catch (error) {
+    console.error('❌ Error getting active broadcast messages:', error);
+    return [];
   }
 };
 
@@ -3818,29 +4008,29 @@ export const scheduleAppointmentReminders = async (appointmentId: string, appoin
     const timeDiff = appointmentDate.getTime() - now.getTime();
     const hoursUntilAppointment = timeDiff / (1000 * 60 * 60);
     const minutesUntilAppointment = timeDiff / (1000 * 60);
-    
+
     console.log(`📅 Scheduling reminders for appointment ${appointmentId}:`);
     console.log(`📅 Appointment time: ${appointmentDate.toLocaleString('he-IL')}`);
     console.log(`📅 Current time: ${now.toLocaleString('he-IL')}`);
     console.log(`📅 Time difference: ${timeDiff}ms`);
     console.log(`📅 Hours until appointment: ${hoursUntilAppointment.toFixed(2)}`);
     console.log(`📅 Minutes until appointment: ${minutesUntilAppointment.toFixed(2)}`);
-    
+
     // Only schedule if appointment is in the future
     if (timeDiff <= 0) {
       console.log('❌ Appointment is in the past, not scheduling reminders');
       return;
     }
-    
+
     // Get admin settings to check reminder timings
     const adminSettings = await getAdminNotificationSettings();
     console.log('🔧 Admin reminder settings:', adminSettings.reminderTimings);
-    
+
     // Schedule 24-hour reminder if appointment is more than 24 hours away
     if (hoursUntilAppointment > 24) {
       const reminder24hTime = new Date(appointmentDate.getTime() - 24 * 60 * 60 * 1000);
       console.log(`📅 Scheduling 24h reminder for ${reminder24hTime.toLocaleString('he-IL')}`);
-      
+
       // Store scheduled reminder in Firestore
       await addDoc(collection(db, 'scheduledReminders'), {
         appointmentId: appointmentId,
@@ -3851,12 +4041,12 @@ export const scheduleAppointmentReminders = async (appointmentId: string, appoin
         createdAt: Timestamp.now()
       });
     }
-    
+
     // Schedule 1-hour reminder if appointment is more than 1 hour away AND enabled in settings
     if (hoursUntilAppointment > 1 && adminSettings.reminderTimings.oneHourBefore) {
       const reminder1hTime = new Date(appointmentDate.getTime() - 60 * 60 * 1000);
       console.log(`📅 Scheduling 1h reminder for ${reminder1hTime.toLocaleString('he-IL')} (enabled in settings)`);
-      
+
       await addDoc(collection(db, 'scheduledReminders'), {
         appointmentId: appointmentId,
         userId: appointmentData.userId,
@@ -3868,13 +4058,13 @@ export const scheduleAppointmentReminders = async (appointmentId: string, appoin
     } else if (hoursUntilAppointment > 1) {
       console.log('🔕 1-hour reminder disabled in admin settings');
     }
-    
-    
+
+
     // Schedule 15-minute reminder if appointment is more than 15 minutes away AND enabled in settings
     if (minutesUntilAppointment > 15 && adminSettings.reminderTimings.tenMinutesBefore) {
       const reminder15mTime = new Date(appointmentDate.getTime() - 15 * 60 * 1000);
       console.log(`📅 Scheduling 15m reminder for ${reminder15mTime.toLocaleString('he-IL')} (enabled in settings)`);
-      
+
       await addDoc(collection(db, 'scheduledReminders'), {
         appointmentId: appointmentId,
         userId: appointmentData.userId,
@@ -3886,12 +4076,12 @@ export const scheduleAppointmentReminders = async (appointmentId: string, appoin
     } else if (minutesUntilAppointment > 15) {
       console.log('🔕 15-minute reminder disabled in admin settings');
     }
-    
+
     // Schedule "when starting" reminder if enabled in settings
     if (adminSettings.reminderTimings.whenStarting) {
       const reminderStartTime = new Date(appointmentDate.getTime());
       console.log(`📅 Scheduling "when starting" reminder for ${reminderStartTime.toLocaleString('he-IL')} (enabled in settings)`);
-      
+
       await addDoc(collection(db, 'scheduledReminders'), {
         appointmentId: appointmentId,
         userId: appointmentData.userId,
@@ -3903,7 +4093,7 @@ export const scheduleAppointmentReminders = async (appointmentId: string, appoin
     } else {
       console.log('🔕 "When starting" reminder disabled in admin settings');
     }
-    
+
     console.log(`✅ Successfully scheduled reminders for appointment ${appointmentId}`);
   } catch (error) {
     console.error('❌ Error scheduling appointment reminders:', error);
@@ -3911,33 +4101,33 @@ export const scheduleAppointmentReminders = async (appointmentId: string, appoin
 };
 
 // Send appointment reminder notification (CUSTOMERS ONLY - NOT ADMINS)
-export const sendAppointmentReminder = async (appointmentId: string) => {
+export const sendAppointmentReminder = async (appointmentId: string, expectedReminderType?: string) => {
   try {
     const appointmentDoc = await getDoc(doc(db, 'appointments', appointmentId));
     if (!appointmentDoc.exists()) {
       console.log('❌ Appointment not found');
       return false;
     }
-    
+
     const appointmentData = appointmentDoc.data() as Appointment;
     const appointmentDate = appointmentData.date.toDate();
     const now = new Date();
     const timeDiff = appointmentDate.getTime() - now.getTime();
     const hoursUntilAppointment = timeDiff / (1000 * 60 * 60);
     const minutesUntilAppointment = timeDiff / (1000 * 60);
-    
+
     console.log(`📅 CUSTOMER REMINDER for appointment ${appointmentId}:`);
     console.log(`📅 Appointment time: ${appointmentDate.toLocaleString('he-IL')}`);
     console.log(`📅 Current time: ${now.toLocaleString('he-IL')}`);
     console.log(`📅 Hours until: ${hoursUntilAppointment.toFixed(2)}`);
     console.log(`📅 Minutes until: ${minutesUntilAppointment.toFixed(2)}`);
-    
+
     // Prevent sending reminders for appointments more than 24 hours away
     if (hoursUntilAppointment > 24) {
       console.log('🔕 Appointment is more than 24 hours away, skipping reminder');
       return false;
     }
-    
+
     // IMPORTANT: Check if we already sent a reminder for this appointment recently
     // to avoid sending duplicate reminders every 5 minutes
     const recentReminderQuery = query(
@@ -3947,12 +4137,12 @@ export const sendAppointmentReminder = async (appointmentId: string) => {
       where('sentAt', '>=', Timestamp.fromDate(new Date(now.getTime() - 10 * 60 * 1000))) // Last 10 minutes
     );
     const recentReminders = await getDocs(recentReminderQuery);
-    
+
     if (!recentReminders.empty) {
       console.log('🔕 Reminder already sent recently for this appointment, skipping');
       return false;
     }
-    
+
     // Get treatment name for better message
     let treatmentName = 'הטיפול';
     try {
@@ -3963,57 +4153,106 @@ export const sendAppointmentReminder = async (appointmentId: string) => {
     } catch (e) {
       console.log('Could not fetch treatment name');
     }
-    
+
     // Get admin settings to check reminder timings
     const adminSettings = await getAdminNotificationSettings();
     console.log('🔧 Admin reminder settings for sending:', adminSettings.reminderTimings);
-    
+
     // Send different reminders based on time until appointment AND admin settings
     if (timeDiff > 0) { // Only send if appointment is in the future
       let title = '';
       let message = '';
       let shouldSend = false;
-      
-      // Check reminders in order from closest to furthest
-      if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && hoursUntilAppointment < 1 && adminSettings.reminderTimings.tenMinutesBefore) {
-        // 15 minutes before (only if less than 1 hour away)
-        title = 'תזכורת לתור! ⏰';
-        message = `התור שלך בעוד 15 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
-        shouldSend = true;
-        console.log('📅 Sending 15-minute reminder to CUSTOMER (enabled in settings)');
-      } else if (hoursUntilAppointment <= 1 && minutesUntilAppointment > 15 && adminSettings.reminderTimings.oneHourBefore) {
-        // 1 hour before (only if more than 15 minutes and less than 1 hour)
-        title = 'תזכורת לתור! ⏰';
-        message = `יש לך תור ל${treatmentName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
-        shouldSend = true;
-        console.log('📅 Sending 1-hour reminder to CUSTOMER (enabled in settings)');
-      } else if (hoursUntilAppointment <= 24 && hoursUntilAppointment > 1) {
-        // 24 hours before (only if more than 1 hour and less than 24 hours)
-        title = 'תזכורת לתור! ⏰';
-        const isTomorrow = appointmentDate.getDate() === new Date(now.getTime() + 24 * 60 * 60 * 1000).getDate();
-        if (isTomorrow) {
-          message = `התור שלך מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
-        } else {
-          message = `התור שלך ב-${appointmentDate.toLocaleDateString('he-IL')} ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+
+      // If expectedReminderType is provided, use it directly (from scheduledReminders)
+      // Otherwise, determine based on time (for backward compatibility)
+      if (expectedReminderType) {
+        // Use the reminder type from scheduledReminders - it's already scheduled at the right time
+        switch (expectedReminderType) {
+          case '15m':
+            if (adminSettings.reminderTimings.tenMinutesBefore) {
+              title = 'תזכורת לתור! ⏰';
+              message = `התור שלך בעוד 15 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+              shouldSend = true;
+              console.log('📅 Sending 15-minute reminder to CUSTOMER (scheduled)');
+            }
+            break;
+          case '1h':
+            if (adminSettings.reminderTimings.oneHourBefore) {
+              title = 'תזכורת לתור! ⏰';
+              message = `יש לך תור ל${treatmentName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+              shouldSend = true;
+              console.log('📅 Sending 1-hour reminder to CUSTOMER (scheduled)');
+            }
+            break;
+          case '24h':
+            title = 'תזכורת לתור! ⏰';
+            const isTomorrow = appointmentDate.getDate() === new Date(now.getTime() + 24 * 60 * 60 * 1000).getDate();
+            if (isTomorrow) {
+              message = `התור שלך מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+            } else {
+              message = `התור שלך ב-${appointmentDate.toLocaleDateString('he-IL')} ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+            }
+            shouldSend = true;
+            console.log('📅 Sending 24-hour reminder to CUSTOMER (scheduled)');
+            break;
+          case 'whenStarting':
+            if (adminSettings.reminderTimings.whenStarting) {
+              title = 'התור שלך מתחיל! 🎯';
+              message = `התור שלך ל${treatmentName} מתחיל עכשיו!`;
+              shouldSend = true;
+              console.log('📅 Sending "when starting" reminder to CUSTOMER (scheduled)');
+            }
+            break;
         }
-        shouldSend = true;
-        console.log('📅 Sending 24-hour reminder to CUSTOMER');
-      } else if (minutesUntilAppointment <= 0 && minutesUntilAppointment > -60 && adminSettings.reminderTimings.whenStarting) {
-        // When starting (within 1 hour after appointment time)
-        title = 'התור שלך מתחיל! 🎯';
-        message = `התור שלך ל${treatmentName} מתחיל עכשיו!`;
-        shouldSend = true;
-        console.log('📅 Sending "when starting" reminder to CUSTOMER (enabled in settings)');
       } else {
-        console.log('📅 No reminder needed at this time or disabled in settings');
-        return false;
+        // Fallback: determine based on time (for backward compatibility, but shouldn't be used)
+        console.log('⚠️ sendAppointmentReminder called without reminderType - using time-based detection');
+        
+        // 15 minutes before (exactly 10-20 minutes before)
+        if (minutesUntilAppointment >= 10 && minutesUntilAppointment <= 20 && hoursUntilAppointment < 1 && adminSettings.reminderTimings.tenMinutesBefore) {
+          title = 'תזכורת לתור! ⏰';
+          message = `התור שלך בעוד 15 דקות ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+          shouldSend = true;
+          console.log('📅 Sending 15-minute reminder to CUSTOMER (time-based)');
+        } 
+        // 1 hour before (exactly 55-65 minutes before)
+        else if (minutesUntilAppointment >= 55 && minutesUntilAppointment <= 65 && hoursUntilAppointment < 1.1 && adminSettings.reminderTimings.oneHourBefore) {
+          title = 'תזכורת לתור! ⏰';
+          message = `יש לך תור ל${treatmentName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+          shouldSend = true;
+          console.log('📅 Sending 1-hour reminder to CUSTOMER (time-based)');
+        } 
+        // 24 hours before (exactly 23-25 hours before)
+        else if (hoursUntilAppointment >= 23 && hoursUntilAppointment <= 25 && hoursUntilAppointment > 1) {
+          title = 'תזכורת לתור! ⏰';
+          const isTomorrow = appointmentDate.getDate() === new Date(now.getTime() + 24 * 60 * 60 * 1000).getDate();
+          if (isTomorrow) {
+            message = `התור שלך מחר ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+          } else {
+            message = `התור שלך ב-${appointmentDate.toLocaleDateString('he-IL')} ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+          }
+          shouldSend = true;
+          console.log('📅 Sending 24-hour reminder to CUSTOMER (time-based)');
+        } 
+        // When starting (exactly 0-5 minutes after appointment time)
+        else if (minutesUntilAppointment >= -5 && minutesUntilAppointment <= 0 && adminSettings.reminderTimings.whenStarting) {
+          title = 'התור שלך מתחיל! 🎯';
+          message = `התור שלך ל${treatmentName} מתחיל עכשיו!`;
+          shouldSend = true;
+          console.log('📅 Sending "when starting" reminder to CUSTOMER (time-based)');
+        } 
+        else {
+          console.log(`📅 No reminder needed at this time. Hours: ${hoursUntilAppointment.toFixed(2)}, Minutes: ${minutesUntilAppointment.toFixed(2)}`);
+          return false;
+        }
       }
-      
+
       if (!shouldSend) {
         console.log('🔕 Reminder disabled in admin settings');
         return false;
       }
-      
+
       // Send reminder to the customer
       await sendNotificationToUser(
         appointmentData.userId,
@@ -4021,24 +4260,14 @@ export const sendAppointmentReminder = async (appointmentId: string) => {
         message,
         { appointmentId: appointmentId }
       );
-      
-      // Send SMS only for 10-minute reminder (to save costs)
-      if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0) {
-        try {
-          const userProfile = await getUserProfile(appointmentData.userId);
-          if (userProfile && userProfile.phone) {
-            console.log('📱 Sending SMS reminder for 10-minute notification');
-            await sendSMSReminder(userProfile.phone, message);
-          }
-        } catch (smsError) {
-          console.error('❌ Failed to send SMS reminder:', smsError);
-        }
-      }
-      
+
+      // SMS removed from reminders - only push notifications are sent
+      // SMS is only available for broadcast messages (admin can choose)
+
       // Send reminder to admin (based on admin settings)
       try {
         let adminReminderType: '1h' | '15m' | 'whenStarting' | null = null;
-        
+
         // Check reminders in order from closest to furthest (same logic as customer)
         if (minutesUntilAppointment <= 15 && minutesUntilAppointment > 0 && hoursUntilAppointment < 1) {
           adminReminderType = '15m';
@@ -4047,14 +4276,14 @@ export const sendAppointmentReminder = async (appointmentId: string) => {
         } else if (minutesUntilAppointment <= 0 && minutesUntilAppointment > -60) {
           adminReminderType = 'whenStarting';
         }
-        
+
         if (adminReminderType) {
           await sendAppointmentReminderToAdmin(appointmentId, adminReminderType);
         }
       } catch (adminError) {
         console.error('❌ Failed to send admin reminder:', adminError);
       }
-      
+
       console.log('✅ Reminder sent successfully to CUSTOMER and ADMIN');
       return true;
     } else {
@@ -4075,6 +4304,7 @@ export const getAdminNotificationSettings = async (): Promise<{
   appointmentReminders: boolean;
   reminderTimings: {
     oneHourBefore: boolean;
+    thirtyMinutesBefore: boolean;
     tenMinutesBefore: boolean;
     whenStarting: boolean;
   };
@@ -4084,18 +4314,19 @@ export const getAdminNotificationSettings = async (): Promise<{
     t1hEnabled: boolean;
     t0Enabled: boolean;
   };
+  cancellationPolicyHours: number;
 }> => {
   try {
     console.log('🔧 Getting admin notification settings...');
     const { doc, getDoc, getFirestore } = await import('firebase/firestore');
     const db = getFirestore();
-    
+
     const settingsDoc = await getDoc(doc(db, 'adminSettings', 'notifications'));
-    
+
     if (settingsDoc.exists()) {
       const data = settingsDoc.data();
       console.log('📋 Admin notification settings found:', data);
-      
+
       // Ensure all required fields exist with defaults
       const settings = {
         newUserRegistered: data.newUserRegistered ?? true,
@@ -4104,6 +4335,7 @@ export const getAdminNotificationSettings = async (): Promise<{
         appointmentReminders: data.appointmentReminders ?? true,
         reminderTimings: {
           oneHourBefore: data.reminderTimings?.oneHourBefore ?? true,
+          thirtyMinutesBefore: data.reminderTimings?.thirtyMinutesBefore ?? true,
           tenMinutesBefore: data.reminderTimings?.tenMinutesBefore ?? true,
           whenStarting: data.reminderTimings?.whenStarting ?? false,
         },
@@ -4113,13 +4345,13 @@ export const getAdminNotificationSettings = async (): Promise<{
           t1hEnabled: data.customerReminderSettings?.t1hEnabled ?? true,
           t0Enabled: data.customerReminderSettings?.t0Enabled ?? true,
         },
+        cancellationPolicyHours: data.cancellationPolicyHours ?? 2,
       };
 
       console.log('✅ Processed admin notification settings:', settings);
-      return settings;
+      return settings as any; // Temporary cast to avoid complex interface matching if needed, but I'll try to match exactly
     }
-    
-    console.log('📋 No admin notification settings found, using defaults');
+
     // Return default settings if none exist
     const defaultSettings = {
       newUserRegistered: true,
@@ -4128,6 +4360,7 @@ export const getAdminNotificationSettings = async (): Promise<{
       appointmentReminders: true,
       reminderTimings: {
         oneHourBefore: true,
+        thirtyMinutesBefore: true,
         tenMinutesBefore: true,
         whenStarting: false,
       },
@@ -4137,6 +4370,7 @@ export const getAdminNotificationSettings = async (): Promise<{
         t1hEnabled: true,
         t0Enabled: true,
       },
+      cancellationPolicyHours: 2,
     };
 
     console.log('✅ Using default admin notification settings:', defaultSettings);
@@ -4151,6 +4385,7 @@ export const getAdminNotificationSettings = async (): Promise<{
       appointmentReminders: true,
       reminderTimings: {
         oneHourBefore: true,
+        thirtyMinutesBefore: true,
         tenMinutesBefore: true,
         whenStarting: false,
       },
@@ -4160,6 +4395,7 @@ export const getAdminNotificationSettings = async (): Promise<{
         t1hEnabled: true,
         t0Enabled: true,
       },
+      cancellationPolicyHours: 2,
     };
 
     console.log('✅ Using default admin notification settings due to error:', defaultSettings);
@@ -4171,15 +4407,15 @@ export const getAdminNotificationSettings = async (): Promise<{
 export const sendNotificationToAdmin = async (title: string, body: string, data?: any) => {
   try {
     console.log(`🔔 sendNotificationToAdmin called with title: "${title}"`);
-    
+
     // Check if this type of notification is enabled
     const settings = await getAdminNotificationSettings();
     console.log('🔧 Current admin notification settings:', settings);
-    
+
     // Determine notification type based on title/content
     let shouldSend = false;
     let notificationType = '';
-    
+
     if (title.includes('משתמש חדש') || title.includes('נרשם')) {
       notificationType = 'newUserRegistered';
       shouldSend = settings.newUserRegistered;
@@ -4196,7 +4432,7 @@ export const sendNotificationToAdmin = async (title: string, body: string, data?
       // Check if admin reminders are enabled and which timings
       notificationType = 'appointmentReminders';
       shouldSend = settings.appointmentReminders;
-      
+
       // If reminders are enabled, check specific timing based on the message
       if (shouldSend && data?.reminderType) {
         const reminderType = data.reminderType;
@@ -4211,7 +4447,7 @@ export const sendNotificationToAdmin = async (title: string, body: string, data?
           console.log('🔕 When starting reminder disabled for admin');
         }
       }
-      
+
       console.log(`🔔 Appointment reminder for admin - enabled: ${shouldSend}`);
     } else {
       // Default to sending if we can't determine the type
@@ -4219,18 +4455,18 @@ export const sendNotificationToAdmin = async (title: string, body: string, data?
       shouldSend = true;
       console.log(`🔔 Unknown notification type - defaulting to send: ${shouldSend}`);
     }
-    
+
     if (!shouldSend) {
       console.log(`🔕 Notification disabled for type "${notificationType}": "${title}"`);
       return 0;
     }
-    
+
     console.log(`✅ Notification enabled for type "${notificationType}": "${title}"`);
-    
+
     // Try to get current user's profile directly if they're admin
     const currentUser = getCurrentUser();
     let adminUsers: UserProfile[] = [];
-    
+
     if (currentUser) {
       const currentUserProfile = await getUserProfile(currentUser.uid);
       if (currentUserProfile?.isAdmin && currentUserProfile?.pushToken) {
@@ -4238,7 +4474,7 @@ export const sendNotificationToAdmin = async (title: string, body: string, data?
         console.log(`👨‍💼 Current user is admin with push token: ${currentUserProfile.displayName}`);
       }
     }
-    
+
     // Also try to get all users (fallback)
     try {
       const users = await getAllUsers();
@@ -4253,17 +4489,17 @@ export const sendNotificationToAdmin = async (title: string, body: string, data?
     } catch (getAllUsersError: any) {
       console.log('⚠️ Could not get all users, using current user only:', getAllUsersError.message);
     }
-    
+
     console.log(`👨‍💼 Admin users with push tokens: ${adminUsers.length}`);
     console.log(`📱 Admin users: ${adminUsers.map(u => `${u.displayName} (${u.uid})`).join(', ')}`);
-    
+
     if (adminUsers.length === 0) {
       console.log('❌ No admin users with push tokens found');
       return 0;
     }
-    
+
     console.log(`📱 Sending notification to ${adminUsers.length} admin users`);
-    
+
     const results = await Promise.allSettled(
       adminUsers.map(async (user) => {
         try {
@@ -4275,15 +4511,15 @@ export const sendNotificationToAdmin = async (title: string, body: string, data?
         }
       })
     );
-    
+
     const successful = results.filter(result => result.status === 'fulfilled').length;
     const failed = results.filter(result => result.status === 'rejected').length;
-    
+
     console.log(`✅ Successfully sent to ${successful}/${adminUsers.length} admin users`);
     if (failed > 0) {
       console.log(`❌ Failed to send to ${failed} admin users`);
     }
-    
+
     return successful;
   } catch (error) {
     console.error('Error sending notification to admin:', error);
@@ -4300,22 +4536,22 @@ export const cleanupOldAppointments = async (daysToKeep: number = 10): Promise<{
 }> => {
   try {
     console.log(`🧹 Starting cleanup of appointments older than ${daysToKeep} days`);
-    
+
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-    
+
     // Get all appointments
     const appointmentsRef = collection(db, 'appointments');
     const snapshot = await getDocs(appointmentsRef);
-    
+
     const appointmentsToDelete: string[] = [];
     const errors: string[] = [];
     let errorCount = 0;
-    
+
     snapshot.docs.forEach(doc => {
       const appointmentData = doc.data();
       const appointmentDate = appointmentData.date?.toDate();
-      
+
       if (appointmentDate && appointmentDate < cutoffDate) {
         // Only delete if appointment is older than cutoff date
         // AND if it's not a future appointment (safety check)
@@ -4325,26 +4561,26 @@ export const cleanupOldAppointments = async (daysToKeep: number = 10): Promise<{
         }
       }
     });
-    
+
     console.log(`📋 Found ${appointmentsToDelete.length} old appointments to delete`);
-    
+
     // Delete appointments in batches to avoid overwhelming Firebase
     const batchSize = 10;
     let deletedCount = 0;
-    
+
     for (let i = 0; i < appointmentsToDelete.length; i += batchSize) {
       const batch = appointmentsToDelete.slice(i, i + batchSize);
-      
+
       try {
         await Promise.all(
-          batch.map(appointmentId => 
+          batch.map(appointmentId =>
             deleteDoc(doc(db, 'appointments', appointmentId))
           )
         );
-        
+
         deletedCount += batch.length;
         console.log(`✅ Deleted batch ${Math.floor(i / batchSize) + 1}: ${batch.length} appointments`);
-        
+
         // Small delay between batches to be gentle on Firebase
         if (i + batchSize < appointmentsToDelete.length) {
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -4355,15 +4591,15 @@ export const cleanupOldAppointments = async (daysToKeep: number = 10): Promise<{
         errors.push(`Batch ${Math.floor(i / batchSize) + 1}: ${error}`);
       }
     }
-    
+
     console.log(`🧹 Cleanup completed: ${deletedCount} deleted, ${errorCount} errors`);
-    
+
     return {
       deletedCount,
       errorCount,
       errors
     };
-    
+
   } catch (error) {
     console.error('Error during appointment cleanup:', error);
     return {
@@ -4377,35 +4613,47 @@ export const cleanupOldAppointments = async (daysToKeep: number = 10): Promise<{
 export const processScheduledReminders = async () => {
   try {
     const now = new Date();
+    // Get reminders that are due (scheduledTime <= now) and still pending
     const remindersQuery = query(
       collection(db, 'scheduledReminders'),
       where('status', '==', 'pending'),
-      where('scheduledTime', '<=', Timestamp.fromDate(now))
+      where('scheduledTime', '<=', Timestamp.fromDate(now)),
+      orderBy('scheduledTime', 'asc'),
+      limit(100) // Process max 100 at a time to avoid timeout
     );
-    
+
     const remindersSnapshot = await getDocs(remindersQuery);
     console.log(`📱 Processing ${remindersSnapshot.size} scheduled reminders`);
-    
+
+    if (remindersSnapshot.empty) {
+      console.log('📱 No reminders to process');
+      return 0;
+    }
+
     const results = await Promise.allSettled(
       remindersSnapshot.docs.map(async (reminderDoc) => {
         const reminderData = reminderDoc.data();
-        
-        // Send the actual notification
-        await sendAppointmentReminder(reminderData.appointmentId);
-        
-        // Mark as sent
-        await updateDoc(doc(db, 'scheduledReminders', reminderDoc.id), {
-          status: 'sent',
-          sentAt: Timestamp.now()
-        });
-        
-        console.log(`✅ Processed ${reminderData.reminderType} reminder for appointment ${reminderData.appointmentId}`);
+        const reminderType = reminderData.reminderType; // '24h', '1h', '15m', 'whenStarting'
+
+        // Send the actual notification with the reminder type
+        const sent = await sendAppointmentReminder(reminderData.appointmentId, reminderType);
+
+        if (sent) {
+          // Mark as sent only if successfully sent
+          await updateDoc(doc(db, 'scheduledReminders', reminderDoc.id), {
+            status: 'sent',
+            sentAt: Timestamp.now()
+          });
+          console.log(`✅ Processed ${reminderType} reminder for appointment ${reminderData.appointmentId}`);
+        } else {
+          console.log(`⚠️ Failed to send ${reminderType} reminder for appointment ${reminderData.appointmentId}`);
+        }
       })
     );
-    
+
     const successful = results.filter(result => result.status === 'fulfilled').length;
     console.log(`✅ Successfully processed ${successful} scheduled reminders`);
-    
+
     return successful;
   } catch (error) {
     console.error('Error processing scheduled reminders:', error);
@@ -4414,32 +4662,17 @@ export const processScheduledReminders = async () => {
 };
 
 // Send reminder to all users with upcoming appointments
+// NOTE: This function now ONLY processes scheduled reminders from scheduledReminders collection
+// Reminders are scheduled when appointments are created/updated, and processed here
+// This prevents duplicate reminders and ensures reminders are sent at the exact right time
 export const sendRemindersToAllUsers = async () => {
   try {
-    // First process any scheduled reminders that are due
-    await processScheduledReminders();
+    // Process scheduled reminders that are due (this is the main way reminders are sent)
+    // Reminders are scheduled in scheduleAppointmentReminders() when appointments are created
+    const processed = await processScheduledReminders();
     
-    const appointments = await getAllAppointments();
-    const now = new Date();
-    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    
-    const upcomingAppointments = appointments.filter(appointment => {
-      const appointmentDate = appointment.date.toDate();
-      return appointmentDate >= now && appointmentDate <= tomorrow && appointment.status === 'confirmed';
-    });
-    
-    console.log(`📱 Sending reminders for ${upcomingAppointments.length} appointments`);
-    
-    const results = await Promise.allSettled(
-      upcomingAppointments.map(appointment => 
-        sendAppointmentReminder(appointment.id)
-      )
-    );
-    
-    const successful = results.filter(result => result.status === 'fulfilled' && result.value).length;
-    console.log(`✅ Successfully sent ${successful} reminders`);
-    
-    return successful;
+    console.log(`✅ Processed ${processed} scheduled reminders`);
+    return processed;
   } catch (error) {
     console.error('Error sending reminders to all users:', error);
     return 0;
@@ -4466,18 +4699,18 @@ export const sendPromotionalNotification = async (title: string, body: string, d
   try {
     const users = await getAllUsers();
     const usersWithTokens = users.filter(user => user.pushToken && !user.isAdmin); // Don't send to admins
-    
+
     console.log(`📱 Sending promotional notification to ${usersWithTokens.length} users`);
-    
+
     const results = await Promise.allSettled(
-      usersWithTokens.map(user => 
+      usersWithTokens.map(user =>
         sendPushNotification(user.pushToken!, title, body, data)
       )
     );
-    
+
     const successful = results.filter(result => result.status === 'fulfilled').length;
     console.log(`✅ Successfully sent promotional notification to ${successful}/${usersWithTokens.length} users`);
-    
+
     return successful;
   } catch (error) {
     console.error('Error sending promotional notification:', error);
@@ -4558,14 +4791,14 @@ export const sendAppointmentReminderToAdmin = async (appointmentId: string, remi
       console.log('Appointment not found');
       return false;
     }
-    
+
     const appointmentData = appointmentDoc.data() as Appointment;
     const appointmentDate = appointmentData.date.toDate();
     const now = new Date();
     const timeDiff = appointmentDate.getTime() - now.getTime();
     const hoursUntilAppointment = timeDiff / (1000 * 60 * 60);
     const minutesUntilAppointment = timeDiff / (1000 * 60);
-    
+
     // Get customer name for better message
     let customerName = 'לקוח';
     try {
@@ -4576,11 +4809,11 @@ export const sendAppointmentReminderToAdmin = async (appointmentId: string, remi
     } catch (e) {
       console.log('Could not fetch customer name');
     }
-    
+
     // Determine message based on reminder type
     let title = 'תזכורת לתור! ⏰';
     let message = '';
-    
+
     if (reminderType === '1h') {
       message = `תור של ${customerName} בעוד שעה ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
     } else if (reminderType === '15m') {
@@ -4588,13 +4821,13 @@ export const sendAppointmentReminderToAdmin = async (appointmentId: string, remi
     } else if (reminderType === 'whenStarting') {
       message = `תור של ${customerName} מתחיל עכשיו!`;
     }
-    
+
     await sendNotificationToAdmin(
       title,
       message,
       { appointmentId: appointmentId, reminderType: reminderType }
     );
-    
+
     return true;
   } catch (error) {
     console.error('Error sending appointment reminder to admin:', error);
@@ -4609,24 +4842,24 @@ export const sendDailySummaryToAdmin = async () => {
     const today = new Date();
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-    
+
     const todayAppointments = appointments.filter(appointment => {
       const appointmentDate = appointment.date.toDate();
       return appointmentDate >= todayStart && appointmentDate < todayEnd;
     });
-    
+
     const confirmedAppointments = todayAppointments.filter(app => app.status === 'confirmed');
     const completedAppointments = todayAppointments.filter(app => app.status === 'completed');
     const cancelledAppointments = todayAppointments.filter(app => app.status === 'cancelled');
-    
+
     const summary = `סיכום יומי: ${confirmedAppointments.length} תורים מאושרים, ${completedAppointments.length} הושלמו, ${cancelledAppointments.length} בוטלו`;
-    
+
     await sendNotificationToAdmin(
       'סיכום יומי 📊',
       summary,
       { type: 'daily_summary' }
     );
-    
+
     return true;
   } catch (error) {
     console.error('Error sending daily summary to admin:', error);
@@ -4668,16 +4901,16 @@ export const sendAppointmentConfirmationToAdmin = async (appointmentId: string) 
       console.log('Appointment not found');
       return false;
     }
-    
+
     const appointmentData = appointmentDoc.data() as Appointment;
     const appointmentDate = appointmentData.date.toDate();
-    
+
     await sendNotificationToAdmin(
       'תור אושר! ✅',
       `תור אושר עבור ${appointmentDate.toLocaleDateString('he-IL')} ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`,
       { appointmentId: appointmentId }
     );
-    
+
     return true;
   } catch (error) {
     console.error('Error sending appointment confirmation to admin:', error);
@@ -4693,16 +4926,16 @@ export const sendAppointmentCompletionToAdmin = async (appointmentId: string) =>
       console.log('Appointment not found');
       return false;
     }
-    
+
     const appointmentData = appointmentDoc.data() as Appointment;
     const appointmentDate = appointmentData.date.toDate();
-    
+
     await sendNotificationToAdmin(
       'תור הושלם! 🎉',
       `תור הושלם עבור ${appointmentDate.toLocaleDateString('he-IL')} ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`,
       { appointmentId: appointmentId }
     );
-    
+
     return true;
   } catch (error) {
     console.error('Error sending appointment completion to admin:', error);
@@ -4718,16 +4951,16 @@ export const sendAppointmentCancellationToAdmin = async (appointmentId: string) 
       console.log('Appointment not found');
       return false;
     }
-    
+
     const appointmentData = appointmentDoc.data() as Appointment;
     const appointmentDate = appointmentData.date.toDate();
-    
+
     await sendNotificationToAdmin(
       'תור בוטל! ❌',
       `תור בוטל עבור ${appointmentDate.toLocaleDateString('he-IL')} ב-${appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`,
       { appointmentId: appointmentId }
     );
-    
+
     return true;
   } catch (error) {
     console.error('Error sending appointment cancellation to admin:', error);
@@ -4738,7 +4971,7 @@ export const sendAppointmentCancellationToAdmin = async (appointmentId: string) 
 // Get user notifications
 export const getUserNotifications = async (userId: string): Promise<{
   id: string;
-  type: 'appointment' | 'general' | 'reminder';
+  type: 'appointment' | 'general' | 'reminder' | 'broadcast';
   title: string;
   message: string;
   time: string;
@@ -4752,7 +4985,7 @@ export const getUserNotifications = async (userId: string): Promise<{
       orderBy('createdAt', 'desc'),
       limit(50)
     );
-    
+
     const querySnapshot = await getDocs(q);
     const notifications = querySnapshot.docs.map(doc => {
       const data = doc.data();
@@ -4761,14 +4994,14 @@ export const getUserNotifications = async (userId: string): Promise<{
         type: data.type || 'general',
         title: data.title || 'הודעה',
         message: data.message || '',
-        time: data.createdAt?.toDate?.()?.toLocaleTimeString('he-IL', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
+        time: data.createdAt?.toDate?.()?.toLocaleTimeString('he-IL', {
+          hour: '2-digit',
+          minute: '2-digit'
         }) || 'עכשיו',
         isRead: data.isRead || false
       };
     });
-    
+
     return notifications;
   } catch (error) {
     console.error('Error getting user notifications:', error);
@@ -4793,14 +5026,14 @@ export const clearAllUserNotifications = async (userId: string): Promise<boolean
   try {
     const notificationsRef = collection(db, 'notifications');
     const q = query(notificationsRef, where('userId', '==', userId));
-    
+
     const querySnapshot = await getDocs(q);
     const batch = writeBatch(db);
-    
+
     querySnapshot.docs.forEach((doc) => {
       batch.delete(doc.ref);
     });
-    
+
     await batch.commit();
     return true;
   } catch (error) {
@@ -4834,24 +5067,24 @@ export const deleteOldNotifications = async (userId: string, hoursOld: number = 
     const notificationsRef = collection(db, 'notifications');
     const cutoffTime = new Date();
     cutoffTime.setHours(cutoffTime.getHours() - hoursOld);
-    
+
     const q = query(
-      notificationsRef, 
+      notificationsRef,
       where('userId', '==', userId),
       where('createdAt', '<', cutoffTime)
     );
-    
+
     const snapshot = await getDocs(q);
-    
+
     if (snapshot.empty) {
       return true;
     }
-    
+
     const batch = writeBatch(db);
     snapshot.docs.forEach((doc) => {
       batch.delete(doc.ref);
     });
-    
+
     await batch.commit();
     console.log(`Deleted ${snapshot.size} old notifications for user ${userId}`);
     return true;
@@ -4867,7 +5100,7 @@ export const deleteOldNotifications = async (userId: string, hoursOld: number = 
 export const createWaitlistEntry = async (waitlistData: Omit<WaitlistEntry, 'id' | 'createdAt'>) => {
   try {
     console.log('📝 Creating waitlist entry with data:', JSON.stringify(waitlistData, null, 2));
-    
+
     // Check if user already on waitlist for this date
     const existingQuery = query(
       collection(db, 'waitlist'),
@@ -4876,7 +5109,7 @@ export const createWaitlistEntry = async (waitlistData: Omit<WaitlistEntry, 'id'
       where('date', '==', waitlistData.date)
     );
     const existingSnapshot = await getDocs(existingQuery);
-    
+
     if (!existingSnapshot.empty) {
       // Update existing entry instead of creating duplicate
       const existingDoc = existingSnapshot.docs[0];
@@ -4890,16 +5123,16 @@ export const createWaitlistEntry = async (waitlistData: Omit<WaitlistEntry, 'id'
       console.log('✅ Updated existing waitlist entry:', existingDoc.id);
       return existingDoc.id;
     }
-    
+
     const entry = {
       ...waitlistData,
       createdAt: Timestamp.now()
     };
-    
+
     console.log('💾 Saving to Firestore:', entry);
     const docRef = await addDoc(collection(db, 'waitlist'), entry);
     console.log('✅ Waitlist entry created successfully with ID:', docRef.id);
-    
+
     // Verify it was saved
     const savedDoc = await getDoc(docRef);
     if (savedDoc.exists()) {
@@ -4907,7 +5140,7 @@ export const createWaitlistEntry = async (waitlistData: Omit<WaitlistEntry, 'id'
     } else {
       console.error('❌ WARNING: Document was not saved!');
     }
-    
+
     return docRef.id;
   } catch (error) {
     console.error('❌ Error creating waitlist entry:', error);
@@ -4922,17 +5155,17 @@ export const createWaitlistEntry = async (waitlistData: Omit<WaitlistEntry, 'id'
 export const getWaitlistEntriesForDate = async (barberId: string, date: string): Promise<WaitlistEntry[]> => {
   try {
     console.log(`🔍 Fetching waitlist entries for barberId: ${barberId}, date: ${date}`);
-    
+
     const waitlistQuery = query(
       collection(db, 'waitlist'),
       where('barberId', '==', barberId),
       where('date', '==', date),
       orderBy('createdAt', 'asc')
     );
-    
+
     const snapshot = await getDocs(waitlistQuery);
     console.log(`📊 Raw snapshot size: ${snapshot.docs.length} documents`);
-    
+
     const entries: WaitlistEntry[] = snapshot.docs.map(doc => {
       const data = doc.data();
       console.log(`  - Document ${doc.id}:`, data);
@@ -4941,7 +5174,7 @@ export const getWaitlistEntriesForDate = async (barberId: string, date: string):
         ...data
       } as WaitlistEntry;
     });
-    
+
     console.log(`✅ Found ${entries.length} waitlist entries for date ${date}`);
     return entries;
   } catch (error) {
@@ -4954,25 +5187,25 @@ export const getWaitlistEntriesForDate = async (barberId: string, date: string):
 };
 
 // Get all waitlist entries for next 7 days (for admin view)
-export const getWaitlistEntriesForWeek = async (barberId: string): Promise<{[date: string]: WaitlistEntry[]}> => {
+export const getWaitlistEntriesForWeek = async (barberId: string): Promise<{ [date: string]: WaitlistEntry[] }> => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    const entriesByDate: {[date: string]: WaitlistEntry[]} = {};
-    
+
+    const entriesByDate: { [date: string]: WaitlistEntry[] } = {};
+
     // Get next 7 days
     for (let i = 0; i < 7; i++) {
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
-      
+
       const entries = await getWaitlistEntriesForDate(barberId, dateStr);
       if (entries.length > 0) {
         entriesByDate[dateStr] = entries;
       }
     }
-    
+
     console.log(`Found waitlist entries for ${Object.keys(entriesByDate).length} days`);
     return entriesByDate;
   } catch (error) {
@@ -5000,13 +5233,13 @@ export const getUserWaitlistEntries = async (userId: string): Promise<WaitlistEn
       where('userId', '==', userId),
       orderBy('date', 'asc')
     );
-    
+
     const snapshot = await getDocs(waitlistQuery);
     const entries: WaitlistEntry[] = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     } as WaitlistEntry));
-    
+
     console.log(`Found ${entries.length} waitlist entries for user ${userId}`);
     return entries;
   } catch (error) {
@@ -5021,13 +5254,13 @@ export const cleanupOldWaitlistEntries = async () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayStr = today.toISOString().split('T')[0];
-    
+
     const waitlistRef = collection(db, 'waitlist');
     const snapshot = await getDocs(waitlistRef);
-    
+
     const batch = writeBatch(db);
     let deletedCount = 0;
-    
+
     snapshot.docs.forEach((docSnapshot) => {
       const data = docSnapshot.data();
       if (data.date < todayStr) {
@@ -5035,7 +5268,7 @@ export const cleanupOldWaitlistEntries = async () => {
         deletedCount++;
       }
     });
-    
+
     await batch.commit();
     console.log(`Cleaned up ${deletedCount} old waitlist entries`);
     return deletedCount;
@@ -5051,19 +5284,19 @@ export const notifyWaitlistOnCancellation = async (barberId: string, appointment
     const dateStr = appointmentDate.toISOString().split('T')[0]; // YYYY-MM-DD
     const timeStr = appointmentDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
     const displayDate = appointmentDate.toLocaleDateString('he-IL');
-    
+
     console.log(`Notifying waitlist for barber ${barberId}, date ${dateStr}, time ${timeStr}`);
-    
+
     // Get all waitlist entries for this date
     const entries = await getWaitlistEntriesForDate(barberId, dateStr);
-    
+
     if (entries.length === 0) {
       console.log('No waitlist entries found for this date');
       return;
     }
-    
+
     console.log(`Found ${entries.length} waitlist entries to notify`);
-    
+
     // Send notification to each user on the waitlist
     for (const entry of entries) {
       try {
@@ -5071,7 +5304,7 @@ export const notifyWaitlistOnCancellation = async (barberId: string, appointment
           entry.userId,
           'הזדרז! תור התפנה! 🎉',
           `מישהו ביטל תור לתאריך ${displayDate} בשעה ${timeStr}. מהר להזמין!`,
-          { 
+          {
             type: 'waitlist_slot_available',
             barberId: barberId,
             date: dateStr,
@@ -5083,9 +5316,26 @@ export const notifyWaitlistOnCancellation = async (barberId: string, appointment
         console.error(`Failed to send notification to user ${entry.userId}:`, notifError);
       }
     }
-    
+
     console.log('Finished notifying waitlist users');
   } catch (error) {
     console.error('Error notifying waitlist on cancellation:', error);
+  }
+};
+
+/**
+ * One-time migration to set custom claims for all existing users
+ * This should be called once after deploying the custom claims system
+ * Only admins can call this function
+ */
+export const migrateCustomClaims = async (): Promise<{ success: boolean; total: number; results: any[] }> => {
+  try {
+    const migrateFunction = httpsCallable(functions, 'migrateCustomClaims');
+    const result = await migrateFunction({});
+    console.log('✅ Custom claims migration completed:', result.data);
+    return result.data as { success: boolean; total: number; results: any[] };
+  } catch (error: any) {
+    console.error('❌ Error migrating custom claims:', error);
+    throw error;
   }
 };

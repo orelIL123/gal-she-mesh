@@ -239,15 +239,35 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
     return dates;
   };
 
-  // Return available slots for the barber on selected date
+  // Return available slots for the barber on selected date, filtered by treatment duration
   const generateTimeSlotsForAdmin = () => {
     // If no barber or date selected, return empty
     if (!selectedBarber || !selectedDate) {
       return [];
     }
-    
-    // Return the actual available slots from the barber's availability
-    return availableSlots;
+
+    // If no treatment selected yet, return the 5-minute slots
+    if (!selectedTreatment) {
+      return availableSlots;
+    }
+
+    // Get the selected treatment to know its duration
+    const selectedTreatmentObj = treatments.find(t => t.id === selectedTreatment);
+    if (!selectedTreatmentObj) {
+      return availableSlots;
+    }
+
+    const treatmentDuration = selectedTreatmentObj.duration;
+
+    // Filter slots to only show times that align with the treatment duration
+    // For example, if treatment is 25 minutes, show slots every 25 minutes (not every 5 minutes)
+    const filteredSlots: string[] = [];
+
+    for (let i = 0; i < availableSlots.length; i += Math.max(1, treatmentDuration / SLOT_SIZE_MINUTES)) {
+      filteredSlots.push(availableSlots[i]);
+    }
+
+    return filteredSlots;
   };
 
   // Check if a slot is occupied
@@ -268,8 +288,10 @@ const AdminAppointmentsScreen: React.FC<AdminAppointmentsScreenProps> = ({ onNav
         let apptStart: Date;
         if (appt.date && typeof appt.date.toDate === 'function') {
           apptStart = appt.date.toDate();
+        } else if (appt.date instanceof Date) {
+          apptStart = appt.date;
         } else if (appt.date) {
-          apptStart = new Date(appt.date);
+          apptStart = new Date(appt.date as any);
         } else {
           continue;
         }

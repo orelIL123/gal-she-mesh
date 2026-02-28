@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Gal Shemesh",
+    "name": "TORYX",
     "slug": "gal-shemesh",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -55,7 +55,15 @@
           "backgroundColor": "#000000"
         }
       ],
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#FFD700",
+          "sounds": ["./assets/sounds/notification.wav"],
+          "mode": "production"
+        }
+      ],
       "expo-font",
       [
         "expo-image-picker",

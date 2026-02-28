@@ -27,6 +27,7 @@ service cloud.firestore {
       // This allows checking if a user exists by phone/email for password reset flow
       // Direct document access requires sign-in, but queries (for password reset) are allowed
       allow get: if isSignedIn(); // Direct document access requires sign-in
+      allow list: if isAdmin(); // Allow admins to query all users (for sending notifications, etc.)
       allow create: if (isSignedIn() && isOwner(userId) && 
                         !request.resource.data.get('isAdmin', false) && 
                         !request.resource.data.get('isBarber', false)) || 
@@ -136,6 +137,20 @@ service cloud.firestore {
     match /statistics/{statId} {
       allow read: if isAdmin();
       allow write: if isAdmin();
+    }
+
+    // Admin settings for notifications, cancellation policy etc.
+    match /adminSettings/{documentId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Broadcast Messages (history of messages sent to all users)
+    match /broadcast_notifications/{messageId} {
+      allow read: if isSignedIn(); // All signed-in users can read
+      allow create: if isAdmin(); // Only admin can create
+      allow update: if isAdmin() || isSignedIn(); // Admin can update everything, users can only dismiss
+      allow delete: if isAdmin(); // Only admin can delete
     }
   }
 }
